@@ -1,0 +1,18 @@
+{
+    "api": {
+        "base_url": "https://api.deepseek.com",
+        "api_key": "",
+        "model": "deepseek-chat",
+        "max_tokens": 8192,
+        "temperature": 0.0
+    },
+    "agent": {
+        "max_context_window": 65536,
+        "max_tool_calls_per_turn": 16,
+        "enable_thinking": true
+    },
+    "logging": {
+        "level": "info",
+        "file": "clf_agent.log"
+    }
+}
