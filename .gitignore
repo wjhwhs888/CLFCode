@@ -1,19 +1,19 @@
-# æ„å»ºäº§ç‰©ï¼ˆå¿½ç•¥ Debug/Release å†…å®¹ï¼Œä¿ç•™ READMEï¼‰
+# ¹¹½¨²úÎï£¨ºöÂÔ Debug/Release ÄÚÈİ£¬±£Áô README£©
 bin/*
 !bin/README.md
 lib/*
 !lib/README.md
 build/
 
-# IDE é…ç½®
+# IDE ÅäÖÃ
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Claude Code ä¸ªäººé…ç½®ï¼ˆä¸æäº¤ï¼‰
+# Claude Code ¸öÈËÅäÖÃ£¨²»Ìá½»£©
 .claude/settings.json
 .claude/settings.local.json
 
-# æœ¬åœ°æ•æ„Ÿé…ç½®
+# ±¾µØÃô¸ĞÅäÖÃ
 config/agent_settings.local.json
