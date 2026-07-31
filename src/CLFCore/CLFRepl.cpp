@@ -3,6 +3,7 @@
 #include "CLFCore/CLFRepl.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <iostream>
 
@@ -102,7 +103,7 @@ int CLFRepl::run() {
                 }
                 break;
 
-            case CLFKey::CtrlN:
+            case CLFKey::ShiftTab:
                 cycleMode();
                 break;
 
@@ -193,8 +194,16 @@ void CLFRepl::submit(const std::string& input) {
 
     // 普通对话
     try {
+        auto t1 = std::chrono::steady_clock::now();
         std::string response = m_agent.runTurn(input);
-        if (!response.empty()) {
+        auto t2 = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
+
+        if (elapsed > 0) {
+            CLFTerminal::thoughtMark(static_cast<int>(elapsed));
+        }
+        // 中断已在 CLFAgentLoop 中输出 "⏹ 已中断"，不重复打印
+        if (!response.empty() && response != "[Interrupted]") {
             CLFTerminal::scrollPrint(response + "\n");
         }
     } catch (const std::exception& e) {
@@ -359,6 +368,9 @@ bool CLFRepl::confirmDialog(const std::string& prompt) {
             || key.m_key == CLFKey::Left || key.m_key == CLFKey::Right) {
             selected = (selected == 0) ? 1 : 0;
             CLFTerminal::drawConfirmArea(options, selected);
+        } else if (key.m_key == CLFKey::ShiftTab) {
+            cycleMode(); // 确认过程中支持切换模式
+            CLFTerminal::drawConfirmArea(options, selected);
         } else if (key.m_key == CLFKey::Enter) {
             break;
         } else if (key.m_key == CLFKey::Esc || key.m_key == CLFKey::CtrlC) {
@@ -382,8 +394,8 @@ void CLFRepl::cycleMode() {
             break;
         }
     }
+    // 原地更新状态栏模式行（不输出 scrollPrint 避免内容区堆积）
     CLFTerminal::drawModeArea(m_modeName);
-    CLFTerminal::scrollPrint(CLFTerminal::cyan("● 模式切换: " + m_modeName) + "\n");
 }
 
 void CLFRepl::saveSession(bool incomplete) {

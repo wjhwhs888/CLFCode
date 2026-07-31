@@ -122,7 +122,12 @@ bool CLFProtocolAdapter::hasToolCalls(const CLFAssistantResponse& resp) {
 }
 
 bool CLFProtocolAdapter::isValidFinish(const CLFAssistantResponse& resp) {
-    return resp.m_finishReason == "stop" || resp.m_finishReason == "tool_calls";
+    // stop  = 模型自然结束
+    // tool_calls = 模型请求工具调用
+    // length = 达到 max_tokens 限制被截断（内容有效但不完整）
+    return resp.m_finishReason == "stop"
+        || resp.m_finishReason == "tool_calls"
+        || resp.m_finishReason == "length";
 }
 
 // ============================================================================

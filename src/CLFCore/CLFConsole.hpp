@@ -20,9 +20,9 @@ enum class CLFKey {
     Backspace,  // 退格
     Up, Down, Left, Right, // 方向键
     CtrlO,      // Ctrl+O（折叠/展开）
-    CtrlN,      // Ctrl+N（切换模式，替代 Ctrl+Tab——系统级不可捕获；Ctrl+M 与回车同为 0x0D 无法区分）
     CtrlC,      // Ctrl+C（退出）
-    Esc         // Esc（取消）
+    Esc,        // Esc（取消 / 打断）
+    ShiftTab    // Shift+Tab（切换安全模式，替代 Ctrl+Tab——系统级不可捕获）
 };
 
 struct CLFKeyEvent {
@@ -39,6 +39,10 @@ public:
 
     // 读取一个按键（阻塞），解析方向键序列（ESC [ A）、Ctrl 组合
     static CLFKeyEvent readKey();
+
+    // 非阻塞检测 ESC 是否被按下（用于流式输出中断）
+    // 返回 true 表示 ESC 已被消费，调用方应停止当前操作
+    static bool checkEscape();
 };
 
 } // namespace CLF::CLFCore

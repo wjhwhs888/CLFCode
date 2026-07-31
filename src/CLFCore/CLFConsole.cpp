@@ -1,11 +1,16 @@
 // CLFConsole.cpp — 控制台键盘输入实现
+// Windows：_getch() 直接读（无缓冲、无 VT 干扰）
+// Linux：POSIX read()
 
 #include "CLFCore/CLFConsole.hpp"
 
-#include <iostream>
-
 #ifdef _WIN32
 #include <windows.h>
+#include <conio.h>    // _getch
+#else
+#include <iostream>
+#include <termios.h>
+#include <unistd.h>
 #endif
 
 namespace CLF::CLFCore {
@@ -16,19 +21,14 @@ namespace {
 DWORD g_originalMode = 0;
 bool  g_rawModeActive = false;
 
-// 读取一个原始字节
+// _getch() 读取一个字节（控制台直接读取，无缓冲无回显）
 char readByte() {
-    char c = 0;
-    if (std::cin.get(c)) {
-        return c;
-    }
-    return 0;
+    int c = _getch();
+    return (c == EOF) ? 0 : static_cast<char>(c);
 }
 #else
-#include <termios.h>
-#include <unistd.h>
 termios g_originalTermios;
-bool g_rawModeActive = false;
+bool    g_rawModeActive = false;
 
 char readByte() {
     char c = 0;
@@ -39,11 +39,11 @@ char readByte() {
 }
 #endif
 
-// UTF-8 多字节字符拼装（按前缀字节确定长度）
+// UTF-8 多字节拼装（从 readByte 逐字节读取续字节）
 std::string readUtf8Char(char lead) {
     unsigned char uc = static_cast<unsigned char>(lead);
     int extra = 0;
-    if ((uc & 0xE0) == 0xC0) extra = 1;
+    if      ((uc & 0xE0) == 0xC0) extra = 1;
     else if ((uc & 0xF0) == 0xE0) extra = 2;
     else if ((uc & 0xF8) == 0xF0) extra = 3;
 
@@ -61,8 +61,10 @@ bool CLFConsole::enterRawMode() {
     HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
     if (hIn == INVALID_HANDLE_VALUE) return false;
     if (!GetConsoleMode(hIn, &g_originalMode)) return false;
-    // 去 LINE_INPUT / ECHO_INPUT / PROCESSED_INPUT（保留 ENABLE_VIRTUAL_TERMINAL_INPUT 以支持方向键序列）
-    DWORD rawMode = g_originalMode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+    // 去 LINE_INPUT / ECHO_INPUT / PROCESSED_INPUT
+    // _getch() 已自带无回显 + 逐字符，但设置原始模式可防止系统级缓冲干扰
+    DWORD rawMode = g_originalMode;
+    rawMode &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
     if (!SetConsoleMode(hIn, rawMode)) return false;
     g_rawModeActive = true;
     return true;
@@ -70,7 +72,7 @@ bool CLFConsole::enterRawMode() {
     if (tcgetattr(STDIN_FILENO, &g_originalTermios) != 0) return false;
     termios raw = g_originalTermios;
     raw.c_lflag &= ~(ICANON | ECHO);
-    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VMIN]  = 1;
     raw.c_cc[VTIME] = 0;
     if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) != 0) return false;
     g_rawModeActive = true;
@@ -93,18 +95,95 @@ void CLFConsole::exitRawMode() {
 #endif
 }
 
+#ifdef _WIN32
+
+// ============ Windows：_getch() 实现 ============
+// _getch() 直接读控制台，无 C++ 流缓冲，无 VT 翻译
+// 方向键通过 0xE0 / 0x00 前缀识别（标准扩展键协议）
+
+CLFKeyEvent CLFConsole::readKey() {
+    CLFKeyEvent ev;
+
+    int c = _getch();
+    if (c == EOF) return ev;
+
+    // —— 扩展键前缀（方向键、F 键等）——
+    if (c == 0xE0 || c == 0x00) {
+        int c2 = _getch();
+        if (c2 == EOF) return ev;
+        switch (c2) {
+            case 0x48: ev.m_key = CLFKey::Up;    return ev;  // ↑
+            case 0x50: ev.m_key = CLFKey::Down;  return ev;  // ↓
+            case 0x4B: ev.m_key = CLFKey::Left;  return ev;  // ←
+            case 0x4D: ev.m_key = CLFKey::Right; return ev;  // →
+            // 0x47=Home, 0x4F=End, 0x49=PgUp, 0x51=PgDn → 暂忽略
+            default: return ev; // CLFKey::None
+        }
+    }
+
+    char ch = static_cast<char>(c);
+
+    // —— Shift+Tab（Tab 字符 + Shift 状态检测）——
+    if (ch == '\t' && (GetKeyState(VK_SHIFT) & 0x8000)) {
+        ev.m_key = CLFKey::ShiftTab;
+        return ev;
+    }
+
+    // —— 回车（_getch 返回 \r）——
+    if (ch == '\r' || ch == '\n') {
+        ev.m_key = CLFKey::Enter;
+        return ev;
+    }
+
+    // —— 退格 ——
+    if (ch == '\b' || ch == 0x7F) {
+        ev.m_key = CLFKey::Backspace;
+        return ev;
+    }
+
+    // —— Escape ——
+    if (ch == '\x1B') {
+        ev.m_key = CLFKey::Esc;
+        return ev;
+    }
+
+    // —— Ctrl 组合（_getch 直接返回控制字符 0x01-0x1A）——
+    if (ch == 0x0F) { ev.m_key = CLFKey::CtrlO; return ev; }
+    if (ch == 0x03) { ev.m_key = CLFKey::CtrlC; return ev; }
+
+    // —— 普通字符 ——
+    ev.m_key = CLFKey::Char;
+    if (static_cast<unsigned char>(ch) < 0x80) {
+        ev.m_ch   = ch;
+        ev.m_utf8 = std::string(1, ch);
+    } else {
+        // 多字节 UTF-8（中文等）→ 读续字节拼装
+        ev.m_utf8 = readUtf8Char(ch);
+    }
+    return ev;
+}
+
+bool CLFConsole::checkEscape() {
+    while (_kbhit()) {
+        int c = _getch();
+        if (c == 0x1B) return true;           // ESC 按下
+        if (c == 0xE0 || c == 0x00) _getch(); // 扩展键 → 消费第二字节
+    }
+    return false;
+}
+
+#else // ============ Linux / macOS ============
+
 CLFKeyEvent CLFConsole::readKey() {
     CLFKeyEvent ev;
 
     char c = readByte();
     if (c == 0) return ev;
 
-    // Ctrl 组合（注意：Ctrl+M 与回车同为 0x0D，无法区分，故用 Ctrl+N 切换模式）
-    if (c == 0x0F) { ev.m_key = CLFKey::CtrlO; return ev; }  // Ctrl+O
-    if (c == 0x0E) { ev.m_key = CLFKey::CtrlN; return ev; }  // Ctrl+N
-    if (c == 0x0D || c == 0x0A) { ev.m_key = CLFKey::Enter; return ev; } // 回车
-    if (c == 0x03) { ev.m_key = CLFKey::CtrlC; return ev; }  // Ctrl+C
-    if (c == 0x1B) {                                          // ESC（方向键序列或独立 Esc）
+    if (c == 0x0F) { ev.m_key = CLFKey::CtrlO; return ev; }
+    if (c == 0x0D || c == 0x0A) { ev.m_key = CLFKey::Enter; return ev; }
+    if (c == 0x03) { ev.m_key = CLFKey::CtrlC; return ev; }
+    if (c == 0x1B) {
         char n1 = readByte();
         if (n1 == 0) { ev.m_key = CLFKey::Esc; return ev; }
         if (n1 == '[') {
@@ -120,19 +199,23 @@ CLFKeyEvent CLFConsole::readKey() {
         ev.m_key = CLFKey::Esc;
         return ev;
     }
-
-    // 退格（0x08 或 0x7F）
     if (c == 0x08 || c == 0x7F) { ev.m_key = CLFKey::Backspace; return ev; }
 
-    // 普通字符（UTF-8 多字节拼装）
     ev.m_key = CLFKey::Char;
     if (static_cast<unsigned char>(c) < 0x80) {
-        ev.m_ch = c;
+        ev.m_ch   = c;
         ev.m_utf8 = std::string(1, c);
     } else {
         ev.m_utf8 = readUtf8Char(c);
     }
     return ev;
 }
+
+bool CLFConsole::checkEscape() {
+    // Linux: 无 _kbhit 等价物，暂返回 false
+    return false;
+}
+
+#endif
 
 } // namespace CLF::CLFCore

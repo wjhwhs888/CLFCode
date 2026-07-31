@@ -90,6 +90,10 @@ public:
     static void drawConfirmArea(const std::vector<std::string>& options, int selected);
     static void clearConfirmArea();
 
+    // 思考过程标记（每轮对话完成后显示耗时）
+    // 格式：  Thought for {N}s
+    static void thoughtMark(int seconds);
+
     // 恢复终端状态并清屏（退出时调用）
     static void restoreScrollRegion();
 
@@ -103,6 +107,7 @@ private:
     static std::string s_modeLabel;     // 模式区标签
     static int  s_inputCursor;          // 输入光标位置（UTF-8 字符索引）
     static bool s_inputDrawn;           // 输入区是否已绘制（更新时只重写输入行）
+    static bool s_confirmDrawn;         // 确认区是否已绘制（重绘时覆盖而非追加）
 };
 
 } // namespace CLF::CLFCore

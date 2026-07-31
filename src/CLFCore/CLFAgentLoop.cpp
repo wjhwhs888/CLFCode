@@ -2,6 +2,7 @@
 
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFConsole.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFTerminal.hpp"
 
@@ -44,13 +45,21 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 // ====== 流式路径 ======
                 CLFStreamAccumulator acc;
                 bool hadError = false;
+                bool interrupted = false;
                 std::string errorMsg;
 
                 CLF::CLFNetwork::CLFHttpResponse response =
                     m_httpClient->postJsonStream(
                         "/v1/chat/completions", body,
                         [&](const std::string& line) {
-                            if (hadError) return;
+                            if (hadError || interrupted) return;
+
+                            // ESC 打断检测（非阻塞，仅消费已按下的 ESC）
+                            if (CLFConsole::checkEscape()) {
+                                interrupted = true;
+                                acc.markDone(); // 收尾已累积的内容
+                                return;
+                            }
 
                             // SSE data 行: "data: <json>"
                             if (line.rfind("data: ", 0) != 0) return;
@@ -91,6 +100,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
                 if (hadError) {
                     return std::string("[Error] Stream error: ") + errorMsg;
+                }
+                if (interrupted) {
+                    CLFTerminal::scrollPrint(CLFTerminal::yellow("\n⏹ 已中断") + "\n");
+                    return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
                     return std::string("[Error] ") + response.m_error;
