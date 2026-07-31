@@ -19,8 +19,8 @@ struct CLFAgentConfig {
     std::string m_apiKey;
 
     // —— chat_completions（对齐 DeepSeek API 参数）——
-    std::string m_modelName    = "deepseek-v4-pro";   // 主模型
-    std::string m_subModel     = "deepseek-v4-flash"; // 副模型（轻量任务）
+    std::string m_modelName    = "deepseek-v4-flash";  // 主模型（V4 Flash 正式版）
+    std::string m_subModel     = "deepseek-v4-pro";   // 副模型（Pro 正式版未出，暂作备选）
     int         m_maxTokens    = 8192;
     float       m_temperature  = 0.0f;
     float       m_topP         = 1.0f;

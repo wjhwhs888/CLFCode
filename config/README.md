@@ -38,8 +38,8 @@ API Key **严禁**提交到 Git。推荐通过环境变量注入：`set CLF_API_
 
 | 字段 | 类型 | 默认值 | DeepSeek 参数 | 说明 |
 |------|------|--------|:---:|------|
-| `model` | string | `deepseek-v4-pro` | `model` | **主模型**。可选：`deepseek-v4-pro`（1.6T MoE，49B 活跃）、`deepseek-v4-flash`（284B，13B 活跃）。复杂推理/工具调用用 v4-pro |
-| `sub_model` | string | `deepseek-v4-flash` | — | **副模型**（CLF 自定义）。用于轻量任务：摘要生成、上下文压缩、标题提取等。推荐用 v4-flash（速度快、成本低） |
+| `model` | string | `deepseek-v4-flash` | `model` | **主模型**。V4 Flash 正式版（284B），Agent 能力已超越 V4 Pro Preview。Pro 正式版发布后建议切回 |
+| `sub_model` | string | `deepseek-v4-pro` | — | **副模型**（CLF 自定义）。用于轻量任务。Pro 正式版发布后可再切 Flash 作副模型 |
 | `max_tokens` | int | `8192` | `max_tokens` | 单次响应最大输出 token 数。V4 模型上限 384K。Coding 场景 8192 已够用，长文本生成可调大 |
 | `temperature` | float | `0.0` | `temperature` | 采样温度，范围 0.0~2.0。**0.0 = 确定性输出**（推荐 coding 场景），值越大越随机（创意写作可调到 0.7~1.0） |
 
