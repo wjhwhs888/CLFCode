@@ -52,73 +52,16 @@ int scrollVisibleLines(int H, bool collapsed) {
 
 } // anonymous namespace
 
-namespace {
-
-// ANSI 自检：DSR 查询光标位置（\033[6n），终端支持 VT 时会响应 ESC [ x;yR
-// 读不到响应 = VT 序列无效（旧 conhost / 不支持环境）→ 需降级
-bool verifyAnsi() {
-#ifdef _WIN32
-    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
-    if (hIn == INVALID_HANDLE_VALUE) return false;
-
-    DWORD inMode = 0;
-    if (!GetConsoleMode(hIn, &inMode)) return false;
-    // 临时原始模式（读响应序列）
-    // 关键：加 ENABLE_VIRTUAL_TERMINAL_INPUT，DSR 响应（ESC [ x;yR）才能以按键事件到达
-    DWORD rawInMode = (inMode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT))
-                    | ENABLE_VIRTUAL_TERMINAL_INPUT;
-    if (!SetConsoleMode(hIn, rawInMode)) return false;
-
-    std::cout << "\033[6n" << std::flush;
-
-    // 轮询读取响应（最多 1500ms——conhost 的 DSR 响应可能偏慢）
-    const auto start = std::chrono::steady_clock::now();
-    bool ok = false;
-    INPUT_RECORD rec{};
-    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
-        DWORD events = 0;
-        // 注意：PeekConsoleInput 需要有效缓冲区，不能传 nullptr
-        if (PeekConsoleInput(hIn, &rec, 1, &events) && events > 0) {
-            DWORD n = 0;
-            if (ReadConsoleInput(hIn, &rec, 1, &n) && n == 1
-                && rec.EventType == KEY_EVENT && rec.Event.KeyEvent.bKeyDown) {
-                char c = static_cast<char>(rec.Event.KeyEvent.uChar.AsciiChar);
-                if (c == 0x1B) { // ESC 开头 → VT 响应
-                    ok = true;
-                    break;
-                }
-            }
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    }
-
-    SetConsoleMode(hIn, inMode);
-
-    if (!ok) {
-        // 自检失败：清空输入缓冲（DSR 响应可能延迟到达，防止残留泄漏到界面）
-        DWORD events = 0;
-        while (PeekConsoleInput(hIn, &rec, 1, &events) && events > 0) {
-            DWORD n = 0;
-            if (!ReadConsoleInput(hIn, &rec, 1, &n)) break;
-        }
-    }
-    return ok;
-#else
-    return true;
-#endif
-}
-
-} // anonymous namespace
-
 void CLFTerminal::enableAnsi() {
 #ifdef _WIN32
+    // Win10 1809+ 的 conhost / Windows Terminal 均支持 VT，
+    // SetConsoleMode 成功即可信（不采用 DSR 自检——响应时序不稳定会误判 + 泄漏）
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut != INVALID_HANDLE_VALUE) {
         DWORD mode = 0;
         if (GetConsoleMode(hOut, &mode)) {
             if (SetConsoleMode(hOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
-                s_ansiEnabled = verifyAnsi(); // 自检：VT 序列真的生效才启用
+                s_ansiEnabled = true;
             }
         }
     }
