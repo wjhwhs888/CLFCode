@@ -3,6 +3,7 @@ add_library(clf_core STATIC
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
     CLFCore/CLFProtocolAdapter.cpp
+    CLFCore/CLFSkillLoader.cpp
 )
 
 add_library(clf_network STATIC

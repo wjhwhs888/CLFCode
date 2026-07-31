@@ -1,9 +1,13 @@
 // CLFAgentLoop.cpp — Agent 主循环实现（含 tool-calling 循环 + 流式响应）
 
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFConfigLoader.hpp"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "CLFCore/CLFStreamAccumulator.hpp"
 
@@ -150,6 +154,12 @@ void CLFAgentLoop::clearContext() {
     injectSystemPrompt();
 }
 
+void CLFAgentLoop::injectSkillToContext(const std::string& skillName, const std::string& content) {
+    std::string msg = "[Knowledge: " + skillName + "]\n\n" + content
+                    + "\n\n请遵循以上规则。";
+    m_context.addMessage("system", msg);
+}
+
 // ============================================================================
 // 私有方法
 // ============================================================================
@@ -161,6 +171,22 @@ void CLFAgentLoop::injectSystemPrompt() {
         "你的后端 API 由 DeepSeek 提供，但你是独立的 Agent 产品。\n"
         "你永远不应自称 Claude、OpenAI、Anthropic 或其他 AI 品牌。\n"
         "请始终使用中文与用户交流。";
+
+    // 加载 L1 编码宪法（始终注入）
+    try {
+        std::string constitutionPath =
+            CLFConfigLoader::resolvePath("data/skills/constitution.md");
+        if (std::filesystem::exists(constitutionPath)) {
+            std::ifstream file(constitutionPath);
+            std::ostringstream oss;
+            oss << file.rdbuf();
+            prompt += "\n\n---\n## 行为准则（L1 编码宪法）\n\n";
+            prompt += oss.str();
+        }
+    } catch (...) {
+        // 文件不存在或读取失败，静默跳过
+    }
+
     m_context.addMessage("system", prompt);
 }
 

@@ -8,9 +8,63 @@
 #include <nlohmann/json.hpp>
 #include <cstdlib>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 using json = nlohmann::json;
+namespace fs = std::filesystem;
 
 namespace CLF::CLFCore {
+
+std::string CLFConfigLoader::s_projectRoot;
+
+std::string CLFConfigLoader::findProjectRoot() {
+    if (!s_projectRoot.empty()) return s_projectRoot;
+
+    // 1. 获取可执行文件所在目录
+    std::string exeDir;
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    DWORD len = GetModuleFileNameA(nullptr, buf, sizeof(buf));
+    if (len > 0 && len < sizeof(buf)) {
+        exeDir = fs::path(buf).parent_path().string();
+    }
+#else
+    char buf[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len > 0) {
+        buf[len] = '\0';
+        exeDir = fs::path(buf).parent_path().string();
+    }
+#endif
+
+    // 2. 从 exe 目录向上查找 CMakeLists.txt
+    fs::path dir = exeDir.empty() ? fs::current_path() : fs::path(exeDir);
+    while (!dir.empty() && dir != dir.root_path()) {
+        if (fs::exists(dir / "CMakeLists.txt")) {
+            s_projectRoot = dir.string();
+            return s_projectRoot;
+        }
+        dir = dir.parent_path();
+    }
+
+    // 3. 找不到则回退到 CWD
+    s_projectRoot = fs::current_path().string();
+    return s_projectRoot;
+}
+
+const std::string& CLFConfigLoader::getProjectRoot() {
+    if (s_projectRoot.empty()) findProjectRoot();
+    return s_projectRoot;
+}
+
+std::string CLFConfigLoader::resolvePath(const std::string& relativePath) {
+    if (s_projectRoot.empty()) findProjectRoot();
+    return s_projectRoot + "/" + relativePath;
+}
 
 bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig& outConfig) {
     std::ifstream file(configPath);
@@ -121,21 +175,6 @@ bool CLFConfigLoader::loadFromFileWithEnv(const std::string& configPath, CLFAgen
     }
 
     return fileOk;
-}
-
-std::string CLFConfigLoader::resolveConfigPath(const std::string& relativePath) {
-    namespace fs = std::filesystem;
-    std::vector<std::string> candidates = {
-        relativePath,
-        "../../" + relativePath,
-        "../" + relativePath,
-    };
-    for (const auto& p : candidates) {
-        if (fs::exists(p)) {
-            return p;
-        }
-    }
-    return relativePath; // fallback
 }
 
 } // namespace CLF::CLFCore

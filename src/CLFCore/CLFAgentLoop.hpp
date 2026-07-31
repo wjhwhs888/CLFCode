@@ -59,6 +59,9 @@ public:
     // 清空对话上下文
     void clearContext();
 
+    // 向当前会话注入知识库内容（系统消息级别）
+    void injectSkillToContext(const std::string& skillName, const std::string& content);
+
 private:
     // 执行工具调用并收集结果
     std::vector<CLFToolResult> executeTools(const std::vector<CLFToolCall>& calls);

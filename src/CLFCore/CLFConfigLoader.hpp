@@ -43,12 +43,19 @@ public:
     //   CLF_MODEL         — 覆盖 model
     static bool loadFromFileWithEnv(const std::string& configPath, CLFAgentConfig& outConfig);
 
-    // 解析配置文件路径，依次尝试：
-    //   config/xxx.json（CWD=项目根）
-    //   ../../config/xxx.json（CWD=bin/Debug）
-    //   ../config/xxx.json（CWD=bin）
-    // 返回第一个存在的路径，都不存在返回原始路径
-    static std::string resolveConfigPath(const std::string& relativePath);
+    // 确定项目根目录：从可执行文件向上查找 CMakeLists.txt
+    // 结果缓存到 s_projectRoot，后续 resolvePath 都基于它
+    static std::string findProjectRoot();
+
+    // 获取已缓存的项目根目录
+    static const std::string& getProjectRoot();
+
+    // 基于项目根目录解析相对路径（替代旧的 resolveConfigPath）
+    // 等价于 getProjectRoot() + "/" + relativePath
+    static std::string resolvePath(const std::string& relativePath);
+
+private:
+    static std::string s_projectRoot;
 };
 
 } // namespace CLF::CLFCore
