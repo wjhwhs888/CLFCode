@@ -54,6 +54,10 @@
   - CMake：enable_testing + 5 个 add_test
   - 验证：5 个测试目标全绿（qa_CLFSessionManager 20 asserts / 6 tests）
   - 测试发现并修复：Boost.UT 缺 main、测试漏链 OpenSSL、同秒会话文件覆盖（真实数据丢失风险）
+- [x] **实战验证** — ✅ 完成
+  - 环境变量方式启动（任意目录运行）
+  - 流式 finish_reason 兜底修复（postJsonStream 返回后强制 markDone）
+  - 首个真实任务：五子棋游戏（HTML），工具调用 + 文件写入全流程成功
 - [x] **全量体检修复 4 个 bug**
   - Windows 命令 stdout/stderr 读取（原为 TODO）
   - SSE 跨 chunk 行缓冲（流式丢数据）

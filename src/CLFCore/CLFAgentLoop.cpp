@@ -94,6 +94,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Error] ") + response.m_error;
                 }
 
+                // 流结束后强制收尾：即使未收到 [DONE] 也 finalize + finish_reason 兜底
+                // （部分响应截断 / provider 不发 [DONE] 时防止 finish_reason 丢失）
+                acc.markDone();
+
                 // 构造与非流式相同的 CLFAssistantResponse
                 parsed.m_content      = acc.getContent();
                 parsed.m_toolCalls    = acc.getToolCalls();
@@ -113,8 +117,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             // 检查 finish_reason
             if (!CLFProtocolAdapter::isValidFinish(parsed)) {
-                return std::string("[Error] Unexpected finish_reason: ")
-                       + parsed.m_finishReason;
+                return std::string("[Error] Unexpected finish_reason: '")
+                       + parsed.m_finishReason + "'";
             }
 
             // 累积文本内容
