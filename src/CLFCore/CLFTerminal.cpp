@@ -197,23 +197,30 @@ void CLFTerminal::setupSplitScreen(int extraLines, const std::string& modeLabel)
     }
     std::cout << lightBlue(bottom) << std::flush;
 
-    // 4. 光标回到输入位置（必须在设置滚动区之前——滚动区外的定位会被忽略）
+    // 4. 光标回到输入位置（此时滚动区处于重置状态，任意定位有效）
     moveCursor(H - 3 - shift, 3);
 
-    // 5. 设置滚动区域：内容区 = 1 .. H-5-shift（输入区不参与滚动）
-    //    DECSTBM 不移动光标，输入位置保留
+    // 注意：不在此设置滚动区——DECSTBM 会把光标重置到 home 位置。
+    // 滚动区在 toContentArea()（内容输出前）设置。
     s_contentBottomRow = H - 5 - shift;
-    if (s_ansiEnabled) {
-        std::cout << "\033[1;" << s_contentBottomRow << "r" << std::flush;
-    }
 }
 
 void CLFTerminal::toContentArea() {
-    if (s_contentBottomRow <= 0) {
-        int H = getTerminalHeight();
-        s_contentBottomRow = (H > 0) ? H - 5 : 1;
+    int H = getTerminalHeight();
+    if (H <= 0) return;
+
+    int bottom = s_contentBottomRow;
+    if (bottom <= 0) {
+        bottom = H - 5;
+        s_contentBottomRow = bottom;
     }
-    moveCursor(s_contentBottomRow, 1); // 滚动区最后一行
+
+    // 设置滚动区（内容区 = 1..bottom，输入区不参与滚动）
+    // 注意：DECSTBM 后光标回 home，需重新定位到滚动区最后一行
+    if (s_ansiEnabled) {
+        std::cout << "\033[1;" << bottom << "r" << std::flush;
+    }
+    moveCursor(bottom, 1); // 滚动区最后一行（定位在滚动区内，有效）
 }
 
 void CLFTerminal::restoreScrollRegion() {
