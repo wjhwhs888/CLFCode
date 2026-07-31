@@ -49,6 +49,22 @@ int scrollVisibleLines(int H, bool /*collapsed*/) {
     return scrollBottom(H);
 }
 
+// 按完整 UTF-8 字符截断到指定显示宽度（防止截断产生非法 UTF-8 导致终端渲染错乱）
+std::string truncateToWidth(const std::string& text, int maxWidth) {
+    if (CLFTerminal::textWidth(text) <= maxWidth) return text;
+    std::string result = text;
+    while (CLFTerminal::textWidth(result) > maxWidth) {
+        // 删除最后一个完整字符（lead byte + 续字节）
+        size_t len = 1;
+        while (len < result.size()
+               && (static_cast<unsigned char>(result[result.size() - len]) & 0xC0) == 0x80) {
+            ++len;
+        }
+        result.erase(result.size() - len);
+    }
+    return result;
+}
+
 } // anonymous namespace
 
 void CLFTerminal::enableAnsi() {
@@ -250,14 +266,11 @@ void CLFTerminal::scrollPrint(const std::string& text) {
         clearLine();
         size_t idx = start + i;
         if (idx < s_scrollBuffer.size()) {
-            // 截断超宽行
-            std::string display = s_scrollBuffer[idx];
+            // 截断超宽行（按完整 UTF-8 字符）
             int W = getTerminalWidth();
-            if (W > 0 && textWidth(display) > W - 1) {
-                while (textWidth(display) > W - 1) {
-                    display.pop_back();
-                }
-            }
+            std::string display = (W > 0)
+                ? truncateToWidth(s_scrollBuffer[idx], W - 1)
+                : s_scrollBuffer[idx];
             std::cout << display << std::flush;
         }
     }
@@ -284,19 +297,15 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
     moveCursor(statusTop(H), 1);
     clearLine();
     if (!title.empty()) {
-        std::string display = bold(title);
-        while (textWidth(display) > W - 3) display.pop_back();
-        std::cout << lightBlue("▍ ") << display << std::flush;
+        std::string display = truncateToWidth(title, W - 3);
+        std::cout << lightBlue("▍ ") << bold(display) << std::flush;
     }
     // 内容行
     moveCursor(statusTop(H) + 1, 1);
     clearLine();
     if (!content.empty()) {
-        std::string display = content;
-        if (textWidth(display) > W - 2) {
-            while (textWidth(display) > W - 2) display.pop_back();
-            display += "...";
-        }
+        std::string display = truncateToWidth(content, W - 5);
+        if (display != content) display += "...";
         std::cout << "  ⎿ " << gray(display) << std::flush;
     }
 }
@@ -352,8 +361,8 @@ void CLFTerminal::drawModeArea(const std::string& mode) {
     int pad = W - kPrefixWidth - textWidth(line) - textWidth(hint);
     if (pad < 0) pad = 0;
     std::string display = line + std::string(pad, ' ') + hint;
-    // 防超宽折行（截断尾部）
-    while (textWidth(display) > W - kPrefixWidth) display.pop_back();
+    // 防超宽折行（按完整 UTF-8 字符截断尾部）
+    display = truncateToWidth(display, W - kPrefixWidth);
     std::cout << gray("▍ ") << display << std::flush;
 }
 
