@@ -213,33 +213,11 @@ void CLFTerminal::initLayout(const std::string& modeLabel) {
     moveCursor(scrollBottom(H), 1);
 }
 
-void CLFTerminal::setScrollCollapsed(bool collapsed) {
-    if (s_scrollCollapsed == collapsed) return;
-    s_scrollCollapsed = collapsed;
-    // 重绘滚动区可见部分
-    int H = getTerminalHeight();
-    if (H <= 0) return;
-    int lines = scrollVisibleLines(H, s_scrollCollapsed);
-    size_t start = (s_scrollBuffer.size() > static_cast<size_t>(lines))
-                 ? s_scrollBuffer.size() - lines : 0;
-    for (int i = 0; i < lines; ++i) {
-        int row = scrollBottom(H) - lines + 1 + i;
-        moveCursor(row, 1);
-        clearLine();
-        size_t idx = start + i;
-        if (idx < s_scrollBuffer.size()) {
-            std::cout << s_scrollBuffer[idx] << std::flush;
-        }
-    }
-    // 重绘固定区
-    drawStatusArea(s_statusTitle, s_statusContent);
-    drawInputArea(s_inputText, s_inputCursor);
-    drawModeArea(s_modeLabel);
-}
-
-bool CLFTerminal::isScrollCollapsed() {
-    return s_scrollCollapsed;
-}
+// [折叠功能暂缓] 滚动区固定显示折叠态（最后 3 行），Ctrl+O 展开/折叠待后续恢复
+// void CLFTerminal::setScrollCollapsed(bool collapsed) { ... }
+// bool CLFTerminal::isScrollCollapsed() { ... }
+void CLFTerminal::setScrollCollapsed(bool) {} // 保留接口，无操作
+bool CLFTerminal::isScrollCollapsed() { return true; } // 固定折叠态
 
 void CLFTerminal::scrollPrint(const std::string& text) {
     // 按行拆分追加到缓冲
@@ -359,7 +337,7 @@ void CLFTerminal::drawModeArea(const std::string& mode) {
     clearLine();
     std::string line = "模式: " + mode;
     // 右侧提示快捷键（总宽 ≤ W，含 "▍ " 前缀 2 宽）
-    std::string hint = "Ctrl+N 切换 | Ctrl+O 折叠 | /help";
+    std::string hint = "Ctrl+N 切换 | /help";
     constexpr int kPrefixWidth = 2; // "▍ "
     int pad = W - kPrefixWidth - textWidth(line) - textWidth(hint);
     if (pad < 0) pad = 0;
