@@ -36,11 +36,13 @@ constexpr int kInputRows = 1;   // 区域3
 constexpr int kModeRows  = 1;   // 区域4
 constexpr int kConfirmRows = 2; // 区域5：确认时显示
 
-int statusTop(int H)    { return H - 6; }   // 状态区标题行
-int inputTop(int H)     { return H - 4; }   // 输入区
+int statusTop(int H)    { return H - 8; }   // 状态区标题行
+int inputLineTop(int H) { return H - 6; }   // 输入区上线（浅蓝分割线）
+int inputTop(int H)     { return H - 5; }   // 输入行
+int inputLineBottom(int H) { return H - 4; } // 输入区下线（浅蓝分割线）
 int modeTop(int H)      { return H - 3; }   // 模式区
 int confirmTop(int H)   { return H - 2; }   // 确认区（2 行）
-int scrollBottom(int H) { return H - 7; }   // 滚动区底部（固定区之上）
+int scrollBottom(int H) { return H - 9; }   // 滚动区底部（固定区之上）
 
 // 滚动区可见行数（折叠功能暂缓：始终完整显示全部可见行）
 int scrollVisibleLines(int H, bool /*collapsed*/) {
@@ -305,16 +307,27 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
 
     int H = getTerminalHeight();
     if (H < 10 || !s_ansiEnabled) {
-        std::cout << "\r> " << text << "\033[K" << std::flush;
+        std::cout << "\r❯ " << text << "\033[K" << std::flush;
         return;
     }
 
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
+    // 上线（浅蓝分割线）
+    moveCursor(inputLineTop(H), 1);
+    clearLine();
+    std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
+
+    // 输入行（❯ 提示符，Claude Code 风格）
     moveCursor(inputTop(H), 1);
     clearLine();
-    std::cout << "> " << text << std::flush;
+    std::cout << "❯ " << text << std::flush;
+
+    // 下线（浅蓝分割线）
+    moveCursor(inputLineBottom(H), 1);
+    clearLine();
+    std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
 
     // 光标定位到输入位置（text 中 cursorPos 字符索引 → 列）
     std::string prefix = text.substr(0, static_cast<size_t>(s_inputCursor));

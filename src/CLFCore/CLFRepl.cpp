@@ -3,6 +3,7 @@
 #include "CLFCore/CLFRepl.hpp"
 
 #include <algorithm>
+#include <ctime>
 #include <iostream>
 
 #include "CLFCore/CLFConfigLoader.hpp"
@@ -31,9 +32,18 @@ CLFRepl::CLFRepl(CLFAgentLoop& agent, const std::string& historyDir)
     m_agent.setConfirmCallback(
         [this](const std::string& prompt) { return confirmDialog(prompt); });
 
-    // 工具执行状态 → 区域 2 状态区
+    // 工具执行状态 → 区域 2 状态区（标题带时间）
     m_agent.setStatusCallback([](const std::string& title, const std::string& content) {
-        CLFTerminal::drawStatusArea(title, content);
+        std::time_t now = std::time(nullptr);
+        std::tm tm{};
+#ifdef _WIN32
+        localtime_s(&tm, &now);
+#else
+        localtime_r(&now, &tm);
+#endif
+        char buf[16];
+        std::strftime(buf, sizeof(buf), "%H:%M", &tm);
+        CLFTerminal::drawStatusArea("[" + std::string(buf) + " " + title + "]", content);
     });
 }
 
