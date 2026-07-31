@@ -27,6 +27,7 @@ std::string CLFTerminal::s_statusContent;
 std::string CLFTerminal::s_inputText;
 std::string CLFTerminal::s_modeLabel;
 int  CLFTerminal::s_inputCursor = 0;
+bool CLFTerminal::s_inputDrawn = false;
 
 namespace {
 
@@ -63,6 +64,20 @@ std::string truncateToWidth(const std::string& text, int maxWidth) {
         result.erase(result.size() - len);
     }
     return result;
+}
+
+// 输出模式行（无标志检查，供首绘与模式区绘制共用）
+void drawModeLine(const std::string& mode) {
+    int W = CLFTerminal::getTerminalWidth();
+    if (W <= 0) W = 80;
+
+    std::string line = "模式: " + mode;
+    std::string hint = "Ctrl+N 切换 | /help";
+    constexpr int kPrefixWidth = 2; // "▍ "
+    int pad = W - kPrefixWidth - CLFTerminal::textWidth(line) - CLFTerminal::textWidth(hint);
+    if (pad < 0) pad = 0;
+    std::string display = truncateToWidth(line + std::string(pad, ' ') + hint, W - kPrefixWidth);
+    std::cout << CLFTerminal::gray("▍ ") << display << "\n" << std::flush;
 }
 
 } // anonymous namespace
@@ -211,21 +226,12 @@ void CLFTerminal::initLayout(const std::string& modeLabel) {
     s_modeLabel = modeLabel;
     s_inputText.clear();
     s_inputCursor = 0;
+    s_inputDrawn = false;
 
-    int H = getTerminalHeight();
-    if (H <= 0) return;
-
-    // 清屏
+    // 只清屏（固定区由 drawInputArea 在交互时顺序绘制，不依赖绝对定位）
     if (s_ansiEnabled) {
-        std::cout << "\033[2J" << std::flush;
+        std::cout << "\033[2J\033[H" << std::flush;
     }
-
-    // 绘制固定区
-    drawStatusArea("", "");
-    drawInputArea("");
-    drawModeArea(modeLabel);
-    // 滚动区空（无内容），光标停到滚动区底部
-    moveCursor(scrollBottom(H), 1);
 }
 
 // [折叠功能暂缓] 滚动区始终完整显示，Ctrl+O 展开/折叠待后续恢复
@@ -258,25 +264,17 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
     s_statusTitle = title;
     s_statusContent = content;
 
-    int H = getTerminalHeight();
-    if (H < 10 || !s_ansiEnabled) return; // 降级：不显示状态区
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
-    // 标题行（浅蓝 + 时间风格），防超宽折行
-    moveCursor(statusTop(H), 1);
-    clearLine();
+    // 顺序输出到内容区末尾（状态区信息流）
     if (!title.empty()) {
-        std::string display = truncateToWidth(title, W - 3);
-        std::cout << lightBlue("▍ ") << bold(display) << std::flush;
+        std::cout << lightBlue("▍ ") << bold(truncateToWidth(title, W - 3)) << "\n" << std::flush;
     }
-    // 内容行
-    moveCursor(statusTop(H) + 1, 1);
-    clearLine();
     if (!content.empty()) {
         std::string display = truncateToWidth(content, W - 5);
         if (display != content) display += "...";
-        std::cout << "  ⎿ " << gray(display) << std::flush;
+        std::cout << "  ⎿ " << gray(display) << "\n" << std::flush;
     }
 }
 
@@ -284,72 +282,42 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
     s_inputText = text;
     s_inputCursor = (cursorPos < 0) ? static_cast<int>(text.size()) : cursorPos;
 
-    int H = getTerminalHeight();
-    if (H < 10 || !s_ansiEnabled) {
-        std::cout << "\r❯ " << text << "\033[K" << std::flush;
-        return;
-    }
-
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
-    // 上线（浅蓝分割线）
-    moveCursor(inputLineTop(H), 1);
-    clearLine();
-    std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
+    if (!s_inputDrawn) {
+        // 首次绘制：让位 2 行 + 上线 + 输入行 + 下线 + 模式行
+        std::cout << "\n\n" << std::flush;
+        std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
+        std::cout << "❯ " << text << "\n" << std::flush;
+        std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
+        drawModeLine(s_modeLabel); // 模式行（内部输出，无标志检查）
+        s_inputDrawn = true;
+    } else {
+        // 更新：光标已在输入行，\r 回行首重写（不增加空行）
+        std::cout << "\r❯ " << text << "\033[K" << std::flush;
+    }
 
-    // 输入行（❯ 提示符，Claude Code 风格）
-    moveCursor(inputTop(H), 1);
-    clearLine();
-    std::cout << "❯ " << text << std::flush;
-
-    // 下线（浅蓝分割线）
-    moveCursor(inputLineBottom(H), 1);
-    clearLine();
-    std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
-
-    // 光标定位到输入位置（text 中 cursorPos 字符索引 → 列）
-    std::string prefix = text.substr(0, static_cast<size_t>(s_inputCursor));
-    moveCursor(inputTop(H), 3 + textWidth(prefix));
+    // 光标定位输入位置（\r 已在输入行行首，水平定位）
+    if (s_ansiEnabled) {
+        std::string prefix = text.substr(0, static_cast<size_t>(s_inputCursor));
+        int col = 3 + textWidth(prefix);
+        std::cout << "\033[" << col << "G" << std::flush;
+    }
 }
 
 void CLFTerminal::drawModeArea(const std::string& mode) {
     s_modeLabel = mode;
 
-    int H = getTerminalHeight();
-    if (H < 10 || !s_ansiEnabled) return; // 降级：不显示模式区（避免刷屏）
-
-    int W = getTerminalWidth();
-    if (W <= 0) W = 80;
-
-    moveCursor(modeTop(H), 1);
-    clearLine();
-    std::string line = "模式: " + mode;
-    // 右侧提示快捷键（总宽 ≤ W，含 "▍ " 前缀 2 宽）
-    std::string hint = "Ctrl+N 切换 | /help";
-    constexpr int kPrefixWidth = 2; // "▍ "
-    int pad = W - kPrefixWidth - textWidth(line) - textWidth(hint);
-    if (pad < 0) pad = 0;
-    std::string display = line + std::string(pad, ' ') + hint;
-    // 防超宽折行（按完整 UTF-8 字符截断尾部）
-    display = truncateToWidth(display, W - kPrefixWidth);
-    std::cout << gray("▍ ") << display << std::flush;
+    // 输入区已绘制时跳过（模式行已在首绘时输出；模式切换提示走滚动区）
+    if (s_inputDrawn) return;
+    drawModeLine(mode);
 }
 
 void CLFTerminal::drawConfirmArea(const std::vector<std::string>& options, int selected) {
-    int H = getTerminalHeight();
-    if (H <= 0) return;
-    int W = getTerminalWidth();
-    if (W <= 0) W = 80;
+    // 顺序输出到内容区末尾（确认区信息流，上下两行）
+    std::cout << "\n" << yellow("⚠ ") << "请确认操作：" << "\n" << std::flush;
 
-    // 第一行：问题提示
-    moveCursor(confirmTop(H), 1);
-    clearLine();
-    std::cout << yellow("⚠ ") << "请确认操作：" << std::flush;
-
-    // 第二行：选项（上下键选择，选中高亮）
-    moveCursor(confirmTop(H) + 1, 1);
-    clearLine();
     std::string display;
     for (size_t i = 0; i < options.size(); ++i) {
         if (i > 0) display += "    ";
@@ -363,12 +331,7 @@ void CLFTerminal::drawConfirmArea(const std::vector<std::string>& options, int s
 }
 
 void CLFTerminal::clearConfirmArea() {
-    int H = getTerminalHeight();
-    if (H <= 0) return;
-    for (int i = 0; i < kConfirmRows; ++i) {
-        moveCursor(confirmTop(H) + i, 1);
-        clearLine();
-    }
+    // 顺序模型：确认框已被后续内容自然覆盖，无需清除
 }
 
 void CLFTerminal::scrollAppend(const std::string& text) {
@@ -376,19 +339,8 @@ void CLFTerminal::scrollAppend(const std::string& text) {
 }
 
 void CLFTerminal::toContentArea() {
-    int H = getTerminalHeight();
-    if (H < 10 || !s_ansiEnabled) return;
-
-    // 清除输入区 3 行（上线/输入行/下线）
-    moveCursor(inputLineTop(H), 1);
-    clearLine();
-    moveCursor(inputTop(H), 1);
-    clearLine();
-    moveCursor(inputLineBottom(H), 1);
-    clearLine();
-
-    // 光标到上线位置（内容区输出起点），后续输出自然向下滚动
-    moveCursor(inputLineTop(H), 1);
+    // 提交后输入区被内容覆盖，标记为未绘制（下次交互重新绘制完整输入区）
+    s_inputDrawn = false;
 }
 
 std::string CLFTerminal::diagnosticInfo() {

@@ -99,6 +99,7 @@ private:
     static std::string s_inputText;     // 输入区文本
     static std::string s_modeLabel;     // 模式区标签
     static int  s_inputCursor;          // 输入光标位置（UTF-8 字符索引）
+    static bool s_inputDrawn;           // 输入区是否已绘制（更新时只重写输入行）
 };
 
 } // namespace CLF::CLFCore
