@@ -380,26 +380,9 @@ void CLFTerminal::clearConfirmArea() {
 }
 
 void CLFTerminal::scrollAppend(const std::string& text) {
-    // 追加到缓冲最后一行（无换行）
-    if (s_scrollBuffer.empty()) {
-        s_scrollBuffer.push_back(text);
-    } else {
-        s_scrollBuffer.back() += text;
-    }
-
-    int H = getTerminalHeight();
-    if (H < 10 || !s_ansiEnabled) {
-        std::cout << text << std::flush;
-        return;
-    }
-
-    // 只重绘滚动区最后一行（流式输出优化）
-    int lines = scrollVisibleLines(H, s_scrollCollapsed);
-    if (lines <= 0) return;
-    int lastRow = scrollBottom(H);
-    moveCursor(lastRow, 1);
-    clearLine();
-    std::cout << s_scrollBuffer.back() << std::flush;
+    // 与 scrollPrint 相同（完整重绘，正确处理换行/超宽截断）
+    // 保留接口兼容，流式输出统一走完整重绘
+    scrollPrint(text);
 }
 
 std::string CLFTerminal::diagnosticInfo() {
