@@ -30,3 +30,6 @@ doc/debug/
 # 会话历史（运行时自动生成）
 doc/contextHistory/*
 !doc/contextHistory/README.md
+
+# 本地个人待办（用户自用，不入库）
+todo.md
