@@ -339,7 +339,9 @@ void CLFTerminal::scrollAppend(const std::string& text) {
 }
 
 void CLFTerminal::toContentArea() {
-    // 提交后输入区被内容覆盖，标记为未绘制（下次交互重新绘制完整输入区）
+    // 清除输入行（\r 回行首 + 清行），换行进入内容区
+    // （下线/模式行随后被内容滚动覆盖，下次交互重新绘制完整输入区）
+    std::cout << "\r\033[K\n" << std::flush;
     s_inputDrawn = false;
 }
 
