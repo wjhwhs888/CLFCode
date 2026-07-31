@@ -235,7 +235,7 @@ void CLFTerminal::setScrollCollapsed(bool) {} // 保留接口，无操作
 bool CLFTerminal::isScrollCollapsed() { return false; } // 不折叠
 
 void CLFTerminal::scrollPrint(const std::string& text) {
-    // 按行拆分追加到缓冲
+    // 按行拆分追加到缓冲（供状态查询；显示走增量输出）
     std::string line;
     for (char c : text) {
         if (c == '\n') {
@@ -249,39 +249,9 @@ void CLFTerminal::scrollPrint(const std::string& text) {
         s_scrollBuffer.push_back(line);
     }
 
-    int H = getTerminalHeight();
-    if (H < 10 || !s_ansiEnabled) {
-        // 无法获取高度 / 窗口过小（非交互终端如 CLion Run 面板）/ ANSI 无效：直接输出（降级）
-        std::cout << text << std::flush;
-        return;
-    }
-
-    // 重绘滚动区可见部分
-    int lines = scrollVisibleLines(H, s_scrollCollapsed);
-    size_t start = (s_scrollBuffer.size() > static_cast<size_t>(lines))
-                 ? s_scrollBuffer.size() - lines : 0;
-    for (int i = 0; i < lines; ++i) {
-        int row = scrollBottom(H) - lines + 1 + i;
-        moveCursor(row, 1);
-        clearLine();
-        size_t idx = start + i;
-        if (idx < s_scrollBuffer.size()) {
-            // 截断超宽行（按完整 UTF-8 字符）
-            int W = getTerminalWidth();
-            std::string display = (W > 0)
-                ? truncateToWidth(s_scrollBuffer[idx], W - 1)
-                : s_scrollBuffer[idx];
-            std::cout << display << std::flush;
-        }
-    }
-
-    // 重绘固定区（2-5 不被覆盖）
-    drawStatusArea(s_statusTitle, s_statusContent);
-    drawInputArea(s_inputText, s_inputCursor);
-    drawModeArea(s_modeLabel);
-
-    // 光标停在滚动区最后一行
-    moveCursor(scrollBottom(H), 1);
+    // 增量输出：从光标当前位置顺序打印（终端自然滚动）
+    // 固定区（2-5）在每轮交互时重绘，不在流式输出中反复重绘（避免闪烁/错乱）
+    std::cout << text << std::flush;
 }
 
 void CLFTerminal::drawStatusArea(const std::string& title, const std::string& content) {
@@ -402,9 +372,23 @@ void CLFTerminal::clearConfirmArea() {
 }
 
 void CLFTerminal::scrollAppend(const std::string& text) {
-    // 与 scrollPrint 相同（完整重绘，正确处理换行/超宽截断）
-    // 保留接口兼容，流式输出统一走完整重绘
     scrollPrint(text);
+}
+
+void CLFTerminal::toContentArea() {
+    int H = getTerminalHeight();
+    if (H < 10 || !s_ansiEnabled) return;
+
+    // 清除输入区 3 行（上线/输入行/下线）
+    moveCursor(inputLineTop(H), 1);
+    clearLine();
+    moveCursor(inputTop(H), 1);
+    clearLine();
+    moveCursor(inputLineBottom(H), 1);
+    clearLine();
+
+    // 光标到上线位置（内容区输出起点），后续输出自然向下滚动
+    moveCursor(inputLineTop(H), 1);
 }
 
 std::string CLFTerminal::diagnosticInfo() {

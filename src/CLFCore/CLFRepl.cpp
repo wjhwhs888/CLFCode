@@ -171,6 +171,8 @@ void CLFRepl::checkIncompleteSession() {
 }
 
 void CLFRepl::submit(const std::string& input) {
+    // 清除输入区，光标回内容区输出位置
+    CLFTerminal::toContentArea();
 
     // 回显输入 + 回复前缀
     CLFTerminal::scrollPrint("> " + CLFTerminal::bold(input) + "\n");

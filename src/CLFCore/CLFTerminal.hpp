@@ -70,9 +70,12 @@ public:
     // 返回后光标停在滚动区输出位置
     static void scrollPrint(const std::string& text);
 
-    // 轻量追加：只更新滚动区最后一行（流式输出用，减少重绘闪烁）
-    // 结束后需调用 scrollPrint("") 或重绘固定区
+    // 轻量追加：与 scrollPrint 相同（保留接口兼容）
     static void scrollAppend(const std::string& text);
+
+    // 清除输入区（上线/输入行/下线），光标到内容区输出位置
+    // 提交输入前调用，内容从这里顺序输出
+    static void toContentArea();
 
     // 终端诊断信息（启动时显示，排查布局问题）
     static std::string diagnosticInfo();
