@@ -2,6 +2,7 @@
 
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFSessionManager.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -177,6 +178,25 @@ const char* CLFAgentLoop::getSecurityModeName() const {
 
 void CLFAgentLoop::setConfirmCallback(std::function<bool(const std::string&)> callback) {
     m_confirmCallback = std::move(callback);
+}
+
+std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool incomplete) const {
+    return CLFSessionManager::save(m_context.getMessages(), dirPath, incomplete);
+}
+
+bool CLFAgentLoop::restoreSession(const std::string& filePath) {
+    std::vector<CLFMessage> messages;
+    if (!CLFSessionManager::load(filePath, messages)) {
+        return false;
+    }
+
+    m_context.clear();
+    for (const auto& msg : messages) {
+        if (msg.m_role == "system") continue; // 身份由 injectSystemPrompt 重新注入
+        m_context.appendMessage(msg); // 保留全部字段（tool_calls 等）
+    }
+    injectSystemPrompt();
+    return true;
 }
 
 // ============================================================================

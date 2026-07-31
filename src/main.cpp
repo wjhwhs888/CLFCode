@@ -8,6 +8,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
@@ -75,6 +76,30 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
     std::cout << "Security mode: " << agent.getSecurityModeName() << std::endl;
 
+    // 会话目录（崩溃恢复 + 历史）
+    std::string historyDir = projectRoot + "/doc/contextHistory";
+    CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30); // 30 天自动清理
+
+    // 崩溃恢复检测：存在未完成会话 → 询问是否恢复
+    std::string incompletePath = CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir);
+    if (!incompletePath.empty()) {
+        std::cout << "[提示] 检测到上次会话未正常结束。" << std::endl;
+        std::cout << "是否恢复该会话？(y/n): " << std::flush;
+        std::string answer;
+        std::getline(std::cin, answer);
+        if (answer == "y" || answer == "Y" || answer == "yes") {
+            if (agent.restoreSession(incompletePath)) {
+                std::cout << "会话已恢复。" << std::endl;
+            } else {
+                std::cout << "会话恢复失败（文件损坏？）。" << std::endl;
+            }
+            CLF::CLFCore::CLFSessionManager::promote(incompletePath); // 转正
+        } else {
+            CLF::CLFCore::CLFSessionManager::remove(incompletePath);
+            std::cout << "未完成的会话已丢弃。" << std::endl;
+        }
+    }
+
     // 加载知识库（Skills）
     std::string skillDir = projectRoot + "/data/skills";
     int skillCount = CLF::CLFCore::CLFSkillLoader::loadFromDir(skillDir);
@@ -98,16 +123,35 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         if (input.empty()) continue;
 
         if (input == "/exit") {
+            // 保存正式会话 + 清理 incomplete
+            agent.saveSession(historyDir, false);
+            CLF::CLFCore::CLFSessionManager::remove(
+                CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir));
+            std::cout << "会话已保存。" << std::endl;
             std::cout << "Goodbye." << std::endl;
             break;
         }
         if (input == "/help") {
             std::cout << "Commands:" << std::endl
-                      << "  /exit   - quit" << std::endl
-                      << "  /help   - show this help" << std::endl
-                      << "  /clear  - clear context" << std::endl
-                      << "  /skill  - list or load skills" << std::endl
-                      << "  /mode   - switch security mode (auto/analyze/edit/manual)" << std::endl;
+                      << "  /exit    - quit (save session)" << std::endl
+                      << "  /help    - show this help" << std::endl
+                      << "  /clear   - clear context" << std::endl
+                      << "  /skill   - list or load skills" << std::endl
+                      << "  /mode    - switch security mode (auto/analyze/edit/manual)" << std::endl
+                      << "  /history - list recent sessions" << std::endl;
+            continue;
+        }
+
+        if (input == "/history") {
+            auto sessions = CLF::CLFCore::CLFSessionManager::list(historyDir, 10);
+            if (sessions.empty()) {
+                std::cout << "No saved sessions yet." << std::endl;
+            } else {
+                std::cout << "Recent sessions:" << std::endl;
+                for (const auto& s : sessions) {
+                    std::cout << "  " << s.m_savedAt << " | " << s.m_title << std::endl;
+                }
+            }
             continue;
         }
 
@@ -168,6 +212,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             CLF::CLFCore::CLFLogger::instance().error(std::string("Fatal: ") + e.what());
             agent.clearContext();
         }
+
+        // 每轮对话后自动存盘（incomplete 状态，崩溃可恢复）
+        agent.saveSession(historyDir, true);
         std::cout << std::endl;
     }
 

@@ -4,6 +4,10 @@
 #include <algorithm>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
 namespace CLF::CLFCore {
 
 namespace {
@@ -78,6 +82,10 @@ void CLFContext::addToolResult(const std::string& toolCallId,
     m_messages.push_back(std::move(msg));
 }
 
+void CLFContext::appendMessage(const CLFMessage& msg) {
+    m_messages.push_back(msg);
+}
+
 std::vector<CLFMessage> CLFContext::getMessages() const {
     std::vector<CLFMessage> result;
     std::vector<CLFMessage> nonSystem;
@@ -119,6 +127,83 @@ int CLFContext::estimateTokens() const {
         total += estimateTokensForMessage(msg);
     }
     return total;
+}
+
+std::string CLFContext::serialize() const {
+    json data;
+    data["version"]   = 1;
+    data["messageCount"] = static_cast<int>(m_messages.size());
+
+    json msgs = json::array();
+    for (const auto& msg : m_messages) {
+        json m;
+        m["role"]    = msg.m_role;
+        m["content"] = msg.m_content;
+
+        if (!msg.m_toolCalls.empty()) {
+            json tcs = json::array();
+            for (const auto& tc : msg.m_toolCalls) {
+                json tcJson;
+                tcJson["id"]        = tc.m_id;
+                tcJson["name"]      = tc.m_name;
+                tcJson["arguments"] = tc.m_arguments;
+                tcs.push_back(std::move(tcJson));
+            }
+            m["tool_calls"] = std::move(tcs);
+        }
+        if (!msg.m_toolCallId.empty()) {
+            m["tool_call_id"] = msg.m_toolCallId;
+        }
+        if (!msg.m_name.empty()) {
+            m["name"] = msg.m_name;
+        }
+        msgs.push_back(std::move(m));
+    }
+    data["messages"] = std::move(msgs);
+
+    return data.dump();
+}
+
+bool CLFContext::restore(const std::string& jsonData) {
+    try {
+        json data = json::parse(jsonData);
+        if (!data.contains("messages") || !data["messages"].is_array()) {
+            return false;
+        }
+
+        m_messages.clear();
+        for (const auto& m : data["messages"]) {
+            if (!m.contains("role") || !m.contains("content")) {
+                continue;
+            }
+            std::string role = m["role"].get<std::string>();
+            // 跳过 system（身份由 Agent 重新注入）
+            if (role == "system") continue;
+
+            CLFMessage msg;
+            msg.m_role    = role;
+            msg.m_content = m["content"].get<std::string>();
+            if (m.contains("tool_call_id") && m["tool_call_id"].is_string()) {
+                msg.m_toolCallId = m["tool_call_id"].get<std::string>();
+            }
+            if (m.contains("name") && m["name"].is_string()) {
+                msg.m_name = m["name"].get<std::string>();
+            }
+            if (m.contains("tool_calls") && m["tool_calls"].is_array()) {
+                for (const auto& tc : m["tool_calls"]) {
+                    CLFToolCall call;
+                    call.m_id        = tc.value("id", "");
+                    call.m_name      = tc.value("name", "");
+                    call.m_arguments = tc.value("arguments", "");
+                    msg.m_toolCalls.push_back(std::move(call));
+                }
+            }
+            m_messages.push_back(std::move(msg));
+        }
+        return !m_messages.empty();
+    } catch (const json::exception&) {
+        return false;
+    }
 }
 
 } // namespace CLF::CLFCore

@@ -57,4 +57,8 @@
   - CLFTool 风险分级（Read/Write/Command）
   - executeTools 安全检查 + 确认回调
   - /mode 命令切换 + security_mode 配置
-- [ ] 会话持久化（分析已定，代码未写）
+- [x] **会话持久化** — ✅ 完成
+  - CLFSessionManager：保存/加载/列表/清理（doc/contextHistory/）
+  - 崩溃恢复：每轮自动存盘 + 启动检测询问
+  - /history 列表 + 30 天自动清理
+  - CLFContext serialize/restore（tool_calls 全字段）

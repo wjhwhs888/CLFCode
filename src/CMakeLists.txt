@@ -5,6 +5,7 @@ add_library(clf_core STATIC
     CLFCore/CLFLogger.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFSecurityPolicy.cpp
+    CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSkillLoader.cpp
 )
 

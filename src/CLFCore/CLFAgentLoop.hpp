@@ -79,6 +79,15 @@ public:
     // 回调参数为提示文本（含工具名和参数）
     void setConfirmCallback(std::function<bool(const std::string&)> callback);
 
+    // —— 会话持久化 ——
+
+    // 保存当前会话到文件（incomplete=true 存为未完成状态）
+    // 返回文件路径，失败返回空串
+    std::string saveSession(const std::string& dirPath, bool incomplete) const;
+
+    // 从会话文件恢复（跳过 system 消息，身份重新注入）
+    bool restoreSession(const std::string& filePath);
+
 private:
     // 执行工具调用并收集结果
     std::vector<CLFToolResult> executeTools(const std::vector<CLFToolCall>& calls);
