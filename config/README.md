@@ -73,6 +73,7 @@ CLFCode 自身的运行行为参数，**不传给 API**。
 | `context_compression` | bool | `false` | 是否启用上下文压缩。`true`：当上下文接近窗口上限时，调用 `sub_model` 对历史消息进行摘要压缩（**功能待实现**） |
 | `max_response_delay_sec` | int | `300` | 单次 API 请求最大等待时间（秒）。300 = 5 分钟。超时后返回错误信息 |
 | `interaction_language` | string | `zh-CN` | 默认交互语言。用于 system prompt 中的语言指令，指导模型用目标语言回复 |
+| `security_mode` | string | `edit` | 安全模式：`auto`（全放行）/ `analyze`（写/命令阻断）/ `edit`（写/命令确认）/ `manual`（每步确认）。运行时可用 `/mode` 切换 |
 
 ---
 
@@ -124,7 +125,8 @@ CLFCode 自身的运行行为参数，**不传给 API**。
         "max_tool_call_iterations": 16,
         "context_compression": false,
         "max_response_delay_sec": 300,
-        "interaction_language": "zh-CN"
+        "interaction_language": "zh-CN",
+        "security_mode": "edit"
     },
     "logging": {
         "level": "info",

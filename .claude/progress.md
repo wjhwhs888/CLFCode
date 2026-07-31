@@ -52,5 +52,9 @@
   - SSE 跨 chunk 行缓冲（流式丢数据）
   - max_response_delay_sec 接通 HTTP 超时
   - 流式 tool_calls 提前 finalize（不依赖 [DONE]）
-- [ ] 安全策略实现（分析已定，代码未写）
+- [x] **安全策略实现** — ✅ 完成（四模式）
+  - CLFSecurityPolicy：auto 放行 / analyze 阻断 / edit+manual 确认
+  - CLFTool 风险分级（Read/Write/Command）
+  - executeTools 安全检查 + 确认回调
+  - /mode 命令切换 + security_mode 配置
 - [ ] 会话持久化（分析已定，代码未写）

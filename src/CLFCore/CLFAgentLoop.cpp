@@ -16,7 +16,8 @@ namespace CLF::CLFCore {
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config)
     : m_config(config)
     , m_context(config.m_maxContextWindow)
-    , m_httpClient(config.m_apiBaseUrl, config.m_apiKey) {
+    , m_httpClient(config.m_apiBaseUrl, config.m_apiKey)
+    , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode)) {
     // 应用回复超时配置（默认 300 秒）
     m_httpClient.setTimeout(config.m_maxResponseDelaySec);
     injectSystemPrompt();
@@ -162,6 +163,22 @@ void CLFAgentLoop::injectSkillToContext(const std::string& skillName, const std:
     m_context.addMessage("system", msg);
 }
 
+void CLFAgentLoop::setSecurityMode(CLFSecurityMode mode) {
+    m_securityPolicy.setMode(mode);
+}
+
+CLFSecurityMode CLFAgentLoop::getSecurityMode() const {
+    return m_securityPolicy.getMode();
+}
+
+const char* CLFAgentLoop::getSecurityModeName() const {
+    return m_securityPolicy.getModeName();
+}
+
+void CLFAgentLoop::setConfirmCallback(std::function<bool(const std::string&)> callback) {
+    m_confirmCallback = std::move(callback);
+}
+
 // ============================================================================
 // 私有方法
 // ============================================================================
@@ -206,6 +223,27 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
             [&](const CLFTool& t) { return t.m_name == call.m_name; });
 
         if (it != m_tools.end()) {
+            // 安全策略检查
+            bool needConfirm = false;
+            if (!m_securityPolicy.isAllowed(it->m_risk, needConfirm)) {
+                result.m_content = std::string("[Blocked by security policy (mode: ")
+                                 + m_securityPolicy.getModeName()
+                                 + ")] 当前模式禁止执行该操作（仅读操作允许）。";
+                results.push_back(std::move(result));
+                continue;
+            }
+
+            // 需用户确认
+            if (needConfirm && m_confirmCallback) {
+                std::string prompt = "工具 [" + call.m_name + "] 需要执行高风险操作。\n"
+                                   + "参数: " + call.m_arguments;
+                if (!m_confirmCallback(prompt)) {
+                    result.m_content = "[Denied by user] 用户拒绝了该操作。";
+                    results.push_back(std::move(result));
+                    continue;
+                }
+            }
+
             try {
                 result.m_content = it->m_handler(call.m_arguments);
             } catch (const std::exception& e) {

@@ -147,6 +147,9 @@ bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig
             if (agent.contains("interaction_language") && agent["interaction_language"].is_string()) {
                 outConfig.m_interactionLanguage = agent["interaction_language"].get<std::string>();
             }
+            if (agent.contains("security_mode") && agent["security_mode"].is_string()) {
+                outConfig.m_securityMode = agent["security_mode"].get<std::string>();
+            }
         }
 
         // —— logging（日志配置）——

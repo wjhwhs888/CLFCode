@@ -139,6 +139,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     CLFTool writeFileTool;
     writeFileTool.m_name        = "write_file";
     writeFileTool.m_description = "将内容写入指定路径的文件（覆盖模式）";
+    writeFileTool.m_risk        = CLF::CLFCore::CLFToolRisk::Write;
     writeFileTool.m_parametersSchema = R"({
         "type": "object",
         "properties": {
@@ -167,6 +168,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     CLFTool execCmdTool;
     execCmdTool.m_name        = "execute_command";
     execCmdTool.m_description = "执行 Shell 命令并返回输出";
+    execCmdTool.m_risk        = CLF::CLFCore::CLFToolRisk::Command;
     execCmdTool.m_parametersSchema = R"({
         "type": "object",
         "properties": {

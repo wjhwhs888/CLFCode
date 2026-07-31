@@ -21,7 +21,8 @@
         "max_tool_call_iterations": 16,
         "context_compression": false,
         "max_response_delay_sec": 300,
-        "interaction_language": "zh-CN"
+        "interaction_language": "zh-CN",
+        "security_mode": "edit"
     },
     "logging": {
         "level": "info",

@@ -64,6 +64,17 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     CLF::CLFCore::CLFAgentLoop agent(config);
     CLF::CLFTools::registerBuiltinTools(agent);
 
+    // 注入高风险工具确认回调（终端 y/n 交互）
+    agent.setConfirmCallback([](const std::string& prompt) {
+        std::cout << std::endl << "[安全确认] " << prompt << std::endl;
+        std::cout << "允许执行该操作？(y/n): " << std::flush;
+        std::string answer;
+        std::getline(std::cin, answer);
+        return answer == "y" || answer == "Y" || answer == "yes";
+    });
+
+    std::cout << "Security mode: " << agent.getSecurityModeName() << std::endl;
+
     // 加载知识库（Skills）
     std::string skillDir = projectRoot + "/data/skills";
     int skillCount = CLF::CLFCore::CLFSkillLoader::loadFromDir(skillDir);
@@ -95,7 +106,26 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
                       << "  /exit   - quit" << std::endl
                       << "  /help   - show this help" << std::endl
                       << "  /clear  - clear context" << std::endl
-                      << "  /skill  - list or load skills" << std::endl;
+                      << "  /skill  - list or load skills" << std::endl
+                      << "  /mode   - switch security mode (auto/analyze/edit/manual)" << std::endl;
+            continue;
+        }
+
+        if (input.rfind("/mode", 0) == 0) {
+            std::string arg = input.size() > 6 ? input.substr(6) : "";
+            while (!arg.empty() && arg.front() == ' ') arg.erase(0, 1);
+
+            if (arg.empty()) {
+                std::cout << "Current security mode: " << agent.getSecurityModeName() << std::endl;
+                std::cout << "Usage: /mode <auto|analyze|edit|manual>" << std::endl;
+            } else {
+                auto mode = CLF::CLFCore::CLFSecurityPolicy::modeFromString(arg);
+                agent.setSecurityMode(mode);
+                std::cout << "Security mode switched to: " << agent.getSecurityModeName() << std::endl;
+                if (mode == CLF::CLFCore::CLFSecurityMode::Analyze) {
+                    std::cout << "  (写操作和命令执行将被阻断)" << std::endl;
+                }
+            }
             continue;
         }
 
