@@ -61,7 +61,15 @@ int CLFRepl::run() {
     atexit(CLFConsole::exitRawMode);
 
     // 按键主循环
+    int lastHeight = -1;
     while (true) {
+        // 窗口缩放检测：高度变化 → 清屏重绘（输入区吸底）
+        int currentHeight = CLFTerminal::getTerminalHeight();
+        if (lastHeight > 0 && currentHeight != lastHeight && currentHeight >= 10) {
+            CLFTerminal::redrawAll();
+        }
+        lastHeight = currentHeight;
+
         CLFTerminal::drawInputArea(m_input);
         CLFTerminal::drawModeArea(m_modeName);
 

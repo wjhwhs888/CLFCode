@@ -77,6 +77,9 @@ public:
     // 提交输入前调用，内容从这里顺序输出
     static void toContentArea();
 
+    // 清屏重绘（窗口缩放时调用）：缓冲内容 + 输入区吸底
+    static void redrawAll();
+
     // 终端诊断信息（启动时显示，排查布局问题）
     static std::string diagnosticInfo();
 

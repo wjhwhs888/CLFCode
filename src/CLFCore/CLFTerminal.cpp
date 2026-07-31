@@ -66,6 +66,27 @@ std::string truncateToWidth(const std::string& text, int maxWidth) {
     return result;
 }
 
+// 去除 ANSI 转义序列（重绘时按纯文本计算宽度）
+std::string stripAnsi(const std::string& text) {
+    std::string result;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\033') {
+            ++i;
+            if (i < text.size() && text[i] == '[') {
+                ++i;
+                while (i < text.size()
+                       && !((text[i] >= 'a' && text[i] <= 'z')
+                            || (text[i] >= 'A' && text[i] <= 'Z'))) {
+                    ++i;
+                }
+            }
+        } else {
+            result += text[i];
+        }
+    }
+    return result;
+}
+
 // 输出模式行（无标志检查，供首绘与模式区绘制共用）
 void drawModeLine(const std::string& mode) {
     int W = CLFTerminal::getTerminalWidth();
@@ -291,14 +312,17 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
         std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
         std::cout << "❯ " << text << "\n" << std::flush;
         std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
-        drawModeLine(s_modeLabel); // 模式行（内部输出，无标志检查）
+        drawModeLine(s_modeLabel); // 模式行
         s_inputDrawn = true;
+
+        // 光标回到输入行（模式行上方 2 行：下线、输入行）
+        std::cout << "\033[2A\r" << std::flush;
     } else {
         // 更新：光标已在输入行，\r 回行首重写（不增加空行）
         std::cout << "\r❯ " << text << "\033[K" << std::flush;
     }
 
-    // 光标定位输入位置（\r 已在输入行行首，水平定位）
+    // 水平定位到输入位置
     if (s_ansiEnabled) {
         std::string prefix = text.substr(0, static_cast<size_t>(s_inputCursor));
         int col = 3 + textWidth(prefix);
@@ -343,6 +367,37 @@ void CLFTerminal::toContentArea() {
     // （下线/模式行随后被内容滚动覆盖，下次交互重新绘制完整输入区）
     std::cout << "\r\033[K\n" << std::flush;
     s_inputDrawn = false;
+}
+
+void CLFTerminal::redrawAll() {
+    // 清屏
+    if (s_ansiEnabled) {
+        std::cout << "\033[2J\033[H" << std::flush;
+    }
+    s_inputDrawn = false;
+
+    int H = getTerminalHeight();
+    int W = getTerminalWidth();
+    if (W <= 0) W = 80;
+
+    if (H < 10) {
+        // 小窗口：全部缓冲顺序输出
+        for (const auto& line : s_scrollBuffer) {
+            std::cout << line << "\n" << std::flush;
+        }
+        return;
+    }
+
+    // 输出缓冲最后可见行（固定区约 5 行：输入区 3 + 模式 1 + 让位 1）
+    size_t visible = static_cast<size_t>(H - 5);
+    size_t start = (s_scrollBuffer.size() > visible) ? s_scrollBuffer.size() - visible : 0;
+    for (size_t i = start; i < s_scrollBuffer.size(); ++i) {
+        // 去 ANSI 后按纯文本宽度截断，重新输出（颜色在重绘后丢失，可接受）
+        std::cout << truncateToWidth(stripAnsi(s_scrollBuffer[i]), W - 1) << "\n" << std::flush;
+    }
+
+    // 输入区重新首绘（吸底）
+    drawInputArea(s_inputText, s_inputCursor);
 }
 
 std::string CLFTerminal::diagnosticInfo() {
