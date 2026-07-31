@@ -257,8 +257,8 @@ void CLFTerminal::scrollPrint(const std::string& text) {
     }
 
     int H = getTerminalHeight();
-    if (H <= 0 || !s_ansiEnabled) {
-        // 无法获取高度或 ANSI 无效：直接输出（降级模式）
+    if (H < 10 || !s_ansiEnabled) {
+        // 无法获取高度 / 窗口过小（非交互终端如 CLion Run 面板）/ ANSI 无效：直接输出（降级）
         std::cout << text << std::flush;
         return;
     }
@@ -299,7 +299,7 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
     s_statusContent = content;
 
     int H = getTerminalHeight();
-    if (H <= 0 || !s_ansiEnabled) return; // 降级：不显示状态区
+    if (H < 10 || !s_ansiEnabled) return; // 降级：不显示状态区
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
@@ -329,7 +329,7 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
     s_inputCursor = (cursorPos < 0) ? static_cast<int>(text.size()) : cursorPos;
 
     int H = getTerminalHeight();
-    if (H <= 0 || !s_ansiEnabled) {
+    if (H < 10 || !s_ansiEnabled) {
         std::cout << "\r> " << text << "\033[K" << std::flush;
         return;
     }
@@ -350,7 +350,7 @@ void CLFTerminal::drawModeArea(const std::string& mode) {
     s_modeLabel = mode;
 
     int H = getTerminalHeight();
-    if (H <= 0 || !s_ansiEnabled) return; // 降级：不显示模式区（避免刷屏）
+    if (H < 10 || !s_ansiEnabled) return; // 降级：不显示模式区（避免刷屏）
 
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
@@ -413,7 +413,7 @@ void CLFTerminal::scrollAppend(const std::string& text) {
     }
 
     int H = getTerminalHeight();
-    if (H <= 0 || !s_ansiEnabled) {
+    if (H < 10 || !s_ansiEnabled) {
         std::cout << text << std::flush;
         return;
     }
