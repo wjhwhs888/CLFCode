@@ -64,7 +64,9 @@ bool verifyAnsi() {
     DWORD inMode = 0;
     if (!GetConsoleMode(hIn, &inMode)) return false;
     // 临时原始模式（读响应序列）
-    DWORD rawInMode = inMode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+    // 关键：加 ENABLE_VIRTUAL_TERMINAL_INPUT，DSR 响应（ESC [ x;yR）才能以按键事件到达
+    DWORD rawInMode = (inMode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT))
+                    | ENABLE_VIRTUAL_TERMINAL_INPUT;
     if (!SetConsoleMode(hIn, rawInMode)) return false;
 
     std::cout << "\033[6n" << std::flush;
