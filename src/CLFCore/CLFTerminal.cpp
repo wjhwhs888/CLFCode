@@ -91,6 +91,16 @@ bool verifyAnsi() {
     }
 
     SetConsoleMode(hIn, inMode);
+
+    if (!ok) {
+        // 自检失败：清空输入缓冲（DSR 响应可能延迟到达，防止残留泄漏到界面）
+        DWORD avail = 0;
+        while (PeekConsoleInput(hIn, nullptr, 0, &avail) && avail > 0) {
+            INPUT_RECORD rec;
+            DWORD n = 0;
+            if (!ReadConsoleInput(hIn, &rec, 1, &n)) break;
+        }
+    }
     return ok;
 #else
     return true;
