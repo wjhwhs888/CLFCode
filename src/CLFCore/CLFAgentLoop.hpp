@@ -82,6 +82,10 @@ public:
     // 回调参数为提示文本（含工具名和参数）
     void setConfirmCallback(std::function<bool(const std::string&)> callback);
 
+    // 设置工作状态回调（main.cpp 注入，更新状态区显示）
+    // 参数：标题（时间+任务名）、内容（正在执行的操作）
+    void setStatusCallback(std::function<void(const std::string&, const std::string&)> callback);
+
     // —— 会话持久化 ——
 
     // 保存当前会话到文件（incomplete=true 存为未完成状态）
@@ -112,6 +116,7 @@ private:
     CLFProtocolAdapter                m_protocolAdapter;
     CLFSecurityPolicy                 m_securityPolicy;
     std::function<bool(const std::string&)> m_confirmCallback;
+    std::function<void(const std::string&, const std::string&)> m_statusCallback;
     std::vector<CLFTool>              m_tools;
     std::vector<std::string>          m_loadedSkills;
 };

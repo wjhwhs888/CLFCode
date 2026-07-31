@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace CLF::CLFCore {
 
@@ -54,24 +55,40 @@ public:
     // 清空当前行光标右侧
     static void clearLine();
 
-    // 分屏初始化：设置内容区滚动区域（DECSTBM）+ 绘制底部输入框
-    // 顶线 + 输入行 + 底线（右侧显示 modeLabel，如当前安全模式）
-    // 光标停在输入位置。extraLines = 输入折行数（折行时输入区上移）
-    static void setupSplitScreen(int extraLines = 1, const std::string& modeLabel = "");
+    // ============ 5 区布局 ============
+    // 1 滚动显示区（折叠/展开）  2 工作状态区  3 提示词输入区
+    // 4 工作模式区              5 交互确认区（确认时显示）
 
-    // 清除输入框区域（顶线/输入行/底线），光标到内容区底部，后续输出自然滚动
-    static void toContentArea();
+    // 初始化布局（清屏 + 绘制固定区）
+    static void initLayout(const std::string& modeLabel);
 
-    // 在输入框位置进行 y/n 确认（问题显示在输入行，输入框样式）
-    // 返回用户是否允许（y/Y/yes = true）
-    static bool confirmInput(const std::string& question, const std::string& modeLabel = "");
+    // 滚动区折叠/展开（Ctrl+O 切换）
+    static void setScrollCollapsed(bool collapsed);
+    static bool isScrollCollapsed();
+
+    // 输出到滚动区（输出后自动重绘固定区，保证 2-5 不被覆盖）
+    // 返回后光标停在滚动区输出位置
+    static void scrollPrint(const std::string& text);
+
+    // 各区域绘制（重绘前自动刷新区域行号，缩放自适应）
+    static void drawStatusArea(const std::string& title, const std::string& content);
+    static void drawInputArea(const std::string& text, int cursorPos = -1);
+    static void drawModeArea(const std::string& mode);
+    static void drawConfirmArea(const std::vector<std::string>& options, int selected);
+    static void clearConfirmArea();
 
     // 恢复终端状态并清屏（退出时调用）
     static void restoreScrollRegion();
 
 private:
     static bool s_ansiEnabled;
-    static int  s_contentBottomRow; // 滚动区最后一行（setupSplitScreen 记录）
+    static bool s_scrollCollapsed;      // 滚动区折叠状态
+    static std::vector<std::string> s_scrollBuffer; // 滚动区内容缓冲
+    static std::string s_statusTitle;   // 状态区标题
+    static std::string s_statusContent; // 状态区内容
+    static std::string s_inputText;     // 输入区文本
+    static std::string s_modeLabel;     // 模式区标签
+    static int  s_inputCursor;          // 输入光标位置（UTF-8 字符索引）
 };
 
 } // namespace CLF::CLFCore

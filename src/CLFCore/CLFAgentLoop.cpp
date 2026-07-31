@@ -75,7 +75,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                                     if (choice.contains("delta")) {
                                         std::string chunk = acc.feedDelta(choice["delta"]);
                                         if (!chunk.empty()) {
-                                            std::cout << chunk << std::flush;
+                                            CLFTerminal::scrollPrint(chunk);
                                         }
                                     }
                                     // finish_reason 也可能在 choices[0] 中
@@ -193,6 +193,11 @@ void CLFAgentLoop::setConfirmCallback(std::function<bool(const std::string&)> ca
     m_confirmCallback = std::move(callback);
 }
 
+void CLFAgentLoop::setStatusCallback(
+    std::function<void(const std::string&, const std::string&)> callback) {
+    m_statusCallback = std::move(callback);
+}
+
 std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool incomplete) const {
     return CLFSessionManager::save(m_context.getMessages(), dirPath, incomplete);
 }
@@ -252,13 +257,18 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
         result.m_toolCallId = call.m_id;
         result.m_name       = call.m_name;
 
-        // 工具调用过程显示
-        CLFTerminal::item("执行工具: " + CLFTerminal::cyan(call.m_name));
+        // 工具调用过程显示（滚动区）
+        CLFTerminal::scrollPrint("\n● 执行工具: " + CLFTerminal::cyan(call.m_name) + "\n");
         std::string argsDisplay = call.m_arguments;
         if (argsDisplay.size() > 200) {
             argsDisplay = argsDisplay.substr(0, 197) + "...";
         }
-        CLFTerminal::sub("参数: " + CLFTerminal::gray(argsDisplay));
+        CLFTerminal::scrollPrint("  ⎿ 参数: " + CLFTerminal::gray(argsDisplay) + "\n");
+
+        // 状态区回调（区域 2）
+        if (m_statusCallback) {
+            m_statusCallback("[执行工具]", call.m_name);
+        }
 
         auto it = std::find_if(m_tools.begin(), m_tools.end(),
             [&](const CLFTool& t) { return t.m_name == call.m_name; });
@@ -270,7 +280,7 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
                 result.m_content = std::string("[Blocked by security policy (mode: ")
                                  + m_securityPolicy.getModeName()
                                  + ")] 当前模式禁止执行该操作（仅读操作允许）。";
-                CLFTerminal::sub(CLFTerminal::red("✗ 被安全策略阻断"));
+                CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::red("✗ 被安全策略阻断") + "\n");
                 results.push_back(std::move(result));
                 continue;
             }
@@ -281,7 +291,7 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
                                    + "参数: " + call.m_arguments;
                 if (!m_confirmCallback(prompt)) {
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
-                    CLFTerminal::sub(CLFTerminal::yellow("✗ 用户拒绝"));
+                    CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::yellow("✗ 用户拒绝") + "\n");
                     results.push_back(std::move(result));
                     continue;
                 }
@@ -289,15 +299,18 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
 
             try {
                 result.m_content = it->m_handler(call.m_arguments);
-                CLFTerminal::sub(CLFTerminal::green("✓ 执行完成 (")
-                                 + std::to_string(result.m_content.size()) + " 字符)");
+                CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::green("✓ 执行完成 (")
+                                         + std::to_string(result.m_content.size())
+                                         + " 字符)" + "\n");
             } catch (const std::exception& e) {
                 result.m_content = std::string("Tool execution error: ") + e.what();
-                CLFTerminal::sub(CLFTerminal::red("✗ 执行异常: ") + e.what());
+                CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::red("✗ 执行异常: ")
+                                         + e.what() + "\n");
             }
         } else {
             result.m_content = std::string("Tool not found: ") + call.m_name;
-            CLFTerminal::sub(CLFTerminal::red("✗ 工具未注册: ") + call.m_name);
+            CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::red("✗ 工具未注册: ")
+                                     + call.m_name + "\n");
         }
 
         results.push_back(std::move(result));
