@@ -73,14 +73,19 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     agent.setConfirmCallback([](const std::string& prompt) {
         std::cout << std::endl;
         CLFTerminal::info("高风险操作确认");
-        // 拆分提示文本（工具 + 参数）
-        std::string text = prompt;
-        size_t pos = text.find("\n参数: ");
+        // 拆分提示文本（工具描述 + 参数），按 \n 切分避免 UTF-8 字节错位
+        size_t pos = prompt.find('\n');
         if (pos != std::string::npos) {
-            CLFTerminal::sub("工具: " + CLFTerminal::cyan(text.substr(0, pos)));
-            CLFTerminal::sub("参数: " + CLFTerminal::gray(text.substr(pos + 4)));
+            CLFTerminal::sub(CLFTerminal::cyan(prompt.substr(0, pos))); // 工具描述
+            std::string args = prompt.substr(pos + 1);
+            // 去掉 "参数: " 前缀（下方已加标签）
+            const std::string argPrefix = "参数: ";
+            if (args.rfind(argPrefix, 0) == 0) {
+                args = args.substr(argPrefix.size());
+            }
+            CLFTerminal::sub("参数: " + CLFTerminal::gray(args));
         } else {
-            CLFTerminal::sub(text);
+            CLFTerminal::sub(prompt);
         }
         std::cout << "允许执行该操作？" << CLFTerminal::green("(y/n)") << ": " << std::flush;
         std::string answer;
@@ -127,32 +132,30 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     }
     std::cout << std::endl;
 
-    // REPL（底部悬浮输入框）
+    // REPL（分屏：内容滚动区 + 底部固定输入框）
     std::string input;
     while (true) {
-        // 绘制输入框，光标停在输入位置
-        int boxLines = 1; // 输入折行数（提交后按实际重算）
-        CLFTerminal::drawPromptBox(boxLines);
+        // 初始化分屏（底线显示当前安全模式），光标停在输入位置
+        CLFTerminal::setupSplitScreen(1, agent.getSecurityModeName());
 
         if (!std::getline(std::cin, input)) {
-            CLFTerminal::clearPromptBox(boxLines);
+            CLFTerminal::restoreScrollRegion();
             break;
         }
 
-        // 按实际折行数清除输入框（长文本自动换行后框要上移）
-        int actualLines = CLFTerminal::wrappedLines(input);
-        if (actualLines > boxLines) {
-            boxLines = actualLines;
-        }
-        CLFTerminal::clearPromptBox(boxLines);
-
         if (input.empty()) continue;
 
+        // 光标移到内容区（滚动区最后一行），回复内容全部显示在分割线之上
+        CLFTerminal::toContentArea();
+
+        // 回显用户输入（内容区）
+        std::cout << "> " << CLFTerminal::bold(input) << std::endl;
+
         if (input == "/exit") {
-            // 保存正式会话 + 清理 incomplete
+            // 保存正式会话 + 清理全部 incomplete
             agent.saveSession(historyDir, false);
-            CLF::CLFCore::CLFSessionManager::remove(
-                CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir));
+            CLF::CLFCore::CLFSessionManager::removeAllIncomplete(historyDir);
+            CLFTerminal::restoreScrollRegion();
             CLFTerminal::ok("会话已保存");
             CLFTerminal::item(CLFTerminal::bold("再见") + CLFTerminal::gray(" — CLFCode"));
             break;
@@ -303,12 +306,14 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         if (input == "/clear") {
             // 先保存当前会话为正式会话，再开始新会话
             agent.saveSession(historyDir, false);
-            CLF::CLFCore::CLFSessionManager::remove(
-                CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir));
+            CLF::CLFCore::CLFSessionManager::removeAllIncomplete(historyDir);
             agent.clearContext();
             CLFTerminal::ok("会话已保存，新会话开始");
             continue;
         }
+
+        // 回复前缀（流式内容紧随其后）
+        std::cout << "● " << CLFTerminal::cyan("CLFCode") << ": " << std::flush;
 
         try {
             std::string response = agent.runTurn(input);

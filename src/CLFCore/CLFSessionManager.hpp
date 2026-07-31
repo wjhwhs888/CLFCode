@@ -42,6 +42,9 @@ public:
     // 查找未完成会话（*_incomplete.json），返回路径（无则空串）
     static std::string findIncomplete(const std::string& dirPath);
 
+    // 删除全部未完成会话文件，返回删除数量
+    static int removeAllIncomplete(const std::string& dirPath);
+
     // 删除会话文件
     static bool remove(const std::string& filePath);
 

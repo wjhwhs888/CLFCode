@@ -217,6 +217,25 @@ std::string CLFSessionManager::findIncomplete(const std::string& dirPath) {
     return newest;
 }
 
+int CLFSessionManager::removeAllIncomplete(const std::string& dirPath) {
+    std::error_code ec;
+    if (!fs::exists(dirPath, ec) || !fs::is_directory(dirPath, ec)) {
+        return 0;
+    }
+
+    int removed = 0;
+    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
+        if (!entry.is_regular_file()) continue;
+        std::string name = entry.path().filename().string();
+        if (name.find("_incomplete.json") != std::string::npos) {
+            if (fs::remove(entry.path(), ec)) {
+                ++removed;
+            }
+        }
+    }
+    return removed;
+}
+
 bool CLFSessionManager::remove(const std::string& filePath) {
     std::error_code ec;
     return fs::remove(filePath, ec);

@@ -14,6 +14,7 @@
 namespace CLF::CLFCore {
 
 bool CLFTerminal::s_ansiEnabled = false;
+int  CLFTerminal::s_contentBottomRow = -1;
 
 void CLFTerminal::enableAnsi() {
 #ifdef _WIN32
@@ -150,49 +151,75 @@ void CLFTerminal::clearLine() {
     std::cout << "\033[K" << std::flush;
 }
 
-int CLFTerminal::drawPromptBox(int extraLines) {
+void CLFTerminal::setupSplitScreen(int extraLines, const std::string& modeLabel) {
     int H = getTerminalHeight();
     if (H <= 0) {
         // 无法获取高度：退化为普通提示符
         std::cout << "> " << std::flush;
-        return 0;
+        return;
     }
 
-    // 布局（从底往上）：
-    //   H-2     空行（底部留白）
-    //   H-3     输入行 > ...
-    //   H-4     分隔线（浅蓝，ASCII 横线）
-    //   extraLines>1 时整体上移 (extraLines-1) 行
-    int shift = extraLines - 1;
-    int topRow    = H - 4 - shift;
-    int inputRow  = H - 3 - shift;
-
-    // 分隔线（浅蓝 ASCII 横线，避免框线字符乱码）
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
-    moveCursor(topRow, 1);
+
+    int shift = extraLines - 1;
+
+    // 1. 重置滚动区域（允许在输入区绘制）
+    std::cout << "\033[r" << std::flush;
+
+    // 2. 清除输入区（含折行）
+    for (int i = 0; i < 3 + shift; ++i) {
+        moveCursor(H - 4 - shift + i, 1);
+        clearLine();
+    }
+
+    // 3. 画输入框
+    //    H-4-shift  顶线（浅蓝 ASCII 横线）
+    //    H-3-shift  输入行 > ...
+    //    H-2-shift  底线（右侧显示 modeLabel）
+    moveCursor(H - 4 - shift, 1);
     clearLine();
     std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
 
-    // 输入行
-    moveCursor(inputRow, 1);
+    moveCursor(H - 3 - shift, 1);
     clearLine();
     std::cout << "> " << std::flush;
 
-    // 光标回到输入位置
-    moveCursor(inputRow, 3);
-    return inputRow;
+    moveCursor(H - 2 - shift, 1);
+    clearLine();
+    std::string bottom = std::string(W - 1, '-');
+    if (!modeLabel.empty()) {
+        std::string label = " [" + modeLabel + "]";
+        int labelWidth = textWidth(label);
+        if (labelWidth < W) {
+            bottom = bottom.substr(0, W - 1 - labelWidth) + label;
+        }
+    }
+    std::cout << lightBlue(bottom) << std::flush;
+
+    // 4. 光标回到输入位置（必须在设置滚动区之前——滚动区外的定位会被忽略）
+    moveCursor(H - 3 - shift, 3);
+
+    // 5. 设置滚动区域：内容区 = 1 .. H-5-shift（输入区不参与滚动）
+    //    DECSTBM 不移动光标，输入位置保留
+    s_contentBottomRow = H - 5 - shift;
+    if (s_ansiEnabled) {
+        std::cout << "\033[1;" << s_contentBottomRow << "r" << std::flush;
+    }
 }
 
-void CLFTerminal::clearPromptBox(int extraLines) {
-    int H = getTerminalHeight();
-    if (H <= 0) return;
+void CLFTerminal::toContentArea() {
+    if (s_contentBottomRow <= 0) {
+        int H = getTerminalHeight();
+        s_contentBottomRow = (H > 0) ? H - 5 : 1;
+    }
+    moveCursor(s_contentBottomRow, 1); // 滚动区最后一行
+}
 
-    int shift = extraLines - 1;
-    for (int i = 0; i < 2 + shift; ++i) {
-        int row = H - 4 - shift + i;
-        moveCursor(row, 1);
-        clearLine();
+void CLFTerminal::restoreScrollRegion() {
+    if (s_ansiEnabled) {
+        std::cout << "\033[r" << std::flush; // 重置滚动区域
+        std::cout << "\033[2J\033[H" << std::flush; // 清屏 + 光标回原点
     }
 }
 

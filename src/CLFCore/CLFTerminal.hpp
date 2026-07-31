@@ -54,16 +54,21 @@ public:
     // 清空当前行光标右侧
     static void clearLine();
 
-    // 绘制底部输入框。extraLines = 输入折行数（默认 1，折行时框上移）
-    // 顶线/底线之间留输入行，光标停在输入位置
-    // 返回输入行行号（供读取输入后重绘）
-    static int drawPromptBox(int extraLines = 1);
+    // 分屏初始化：设置内容区滚动区域（DECSTBM）+ 绘制底部输入框
+    // 顶线 + 输入行 + 底线（右侧显示 modeLabel，如当前安全模式）
+    // 光标停在输入位置。extraLines = 输入折行数（折行时输入区上移）
+    static void setupSplitScreen(int extraLines = 1, const std::string& modeLabel = "");
 
-    // 清除输入框区域（含 extraLines 折行），恢复内容区
-    static void clearPromptBox(int extraLines = 1);
+    // 光标移到内容区（滚动区最后一行），内容输出从这里开始、自动滚动
+    // 输入区固定不动
+    static void toContentArea();
+
+    // 恢复滚动区域并清屏（退出时调用）
+    static void restoreScrollRegion();
 
 private:
     static bool s_ansiEnabled;
+    static int  s_contentBottomRow; // 滚动区最后一行（setupSplitScreen 记录）
 };
 
 } // namespace CLF::CLFCore
