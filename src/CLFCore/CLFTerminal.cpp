@@ -42,11 +42,8 @@ int modeTop(int H)      { return H - 3; }   // 模式区
 int confirmTop(int H)   { return H - 2; }   // 确认区（2 行）
 int scrollBottom(int H) { return H - 7; }   // 滚动区底部（固定区之上）
 
-// 滚动区可见行数（collapsed 由调用方传入——自由函数无法访问类私有成员）
-int scrollVisibleLines(int H, bool collapsed) {
-    if (collapsed) {
-        return std::min(3, scrollBottom(H));
-    }
+// 滚动区可见行数（折叠功能暂缓：始终完整显示全部可见行）
+int scrollVisibleLines(int H, bool /*collapsed*/) {
     return scrollBottom(H);
 }
 
@@ -213,11 +210,11 @@ void CLFTerminal::initLayout(const std::string& modeLabel) {
     moveCursor(scrollBottom(H), 1);
 }
 
-// [折叠功能暂缓] 滚动区固定显示折叠态（最后 3 行），Ctrl+O 展开/折叠待后续恢复
+// [折叠功能暂缓] 滚动区始终完整显示，Ctrl+O 展开/折叠待后续恢复
 // void CLFTerminal::setScrollCollapsed(bool collapsed) { ... }
 // bool CLFTerminal::isScrollCollapsed() { ... }
 void CLFTerminal::setScrollCollapsed(bool) {} // 保留接口，无操作
-bool CLFTerminal::isScrollCollapsed() { return true; } // 固定折叠态
+bool CLFTerminal::isScrollCollapsed() { return false; } // 不折叠
 
 void CLFTerminal::scrollPrint(const std::string& text) {
     // 按行拆分追加到缓冲
