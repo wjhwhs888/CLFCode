@@ -74,10 +74,11 @@ bool verifyAnsi() {
     // 轮询读取响应（最多 1500ms——conhost 的 DSR 响应可能偏慢）
     const auto start = std::chrono::steady_clock::now();
     bool ok = false;
+    INPUT_RECORD rec{};
     while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
-        DWORD avail = 0;
-        if (PeekConsoleInput(hIn, nullptr, 0, &avail) && avail > 0) {
-            INPUT_RECORD rec;
+        DWORD events = 0;
+        // 注意：PeekConsoleInput 需要有效缓冲区，不能传 nullptr
+        if (PeekConsoleInput(hIn, &rec, 1, &events) && events > 0) {
             DWORD n = 0;
             if (ReadConsoleInput(hIn, &rec, 1, &n) && n == 1
                 && rec.EventType == KEY_EVENT && rec.Event.KeyEvent.bKeyDown) {
@@ -96,9 +97,8 @@ bool verifyAnsi() {
 
     if (!ok) {
         // 自检失败：清空输入缓冲（DSR 响应可能延迟到达，防止残留泄漏到界面）
-        DWORD avail = 0;
-        while (PeekConsoleInput(hIn, nullptr, 0, &avail) && avail > 0) {
-            INPUT_RECORD rec;
+        DWORD events = 0;
+        while (PeekConsoleInput(hIn, &rec, 1, &events) && events > 0) {
             DWORD n = 0;
             if (!ReadConsoleInput(hIn, &rec, 1, &n)) break;
         }
