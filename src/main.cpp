@@ -69,8 +69,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     CLF::CLFCore::CLFAgentLoop agent(config);
     CLF::CLFTools::registerBuiltinTools(agent);
 
-    // 注入高风险工具确认回调（终端 y/n 交互）
-    agent.setConfirmCallback([](const std::string& prompt) {
+    // 注入高风险工具确认回调（终端 y/n 交互，在输入框位置进行）
+    agent.setConfirmCallback([&](const std::string& prompt) {
         std::cout << std::endl;
         CLFTerminal::info("高风险操作确认");
         // 拆分提示文本（工具描述 + 参数），按 \n 切分避免 UTF-8 字节错位
@@ -87,10 +87,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         } else {
             CLFTerminal::sub(prompt);
         }
-        std::cout << "允许执行该操作？" << CLFTerminal::green("(y/n)") << ": " << std::flush;
-        std::string answer;
-        std::getline(std::cin, answer);
-        return answer == "y" || answer == "Y" || answer == "yes";
+        return CLFTerminal::confirmInput("允许执行该操作？(y/n): ", agent.getSecurityModeName());
     });
 
     CLFTerminal::sub("安全模式: " + CLFTerminal::cyan(std::string(agent.getSecurityModeName())));

@@ -59,11 +59,14 @@ public:
     // 光标停在输入位置。extraLines = 输入折行数（折行时输入区上移）
     static void setupSplitScreen(int extraLines = 1, const std::string& modeLabel = "");
 
-    // 光标移到内容区（滚动区最后一行），内容输出从这里开始、自动滚动
-    // 输入区固定不动
+    // 清除输入框区域（顶线/输入行/底线），光标到内容区底部，后续输出自然滚动
     static void toContentArea();
 
-    // 恢复滚动区域并清屏（退出时调用）
+    // 在输入框位置进行 y/n 确认（问题显示在输入行，输入框样式）
+    // 返回用户是否允许（y/Y/yes = true）
+    static bool confirmInput(const std::string& question, const std::string& modeLabel = "");
+
+    // 恢复终端状态并清屏（退出时调用）
     static void restoreScrollRegion();
 
 private:
