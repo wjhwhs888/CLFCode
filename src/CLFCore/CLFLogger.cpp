@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -96,6 +97,13 @@ void CLFLogger::log(CLFLogLevel msgLevel, const std::string& msg) {
 
     // 文件输出（失败静默降级）
     if (!m_filePath.empty()) {
+        // 确保父目录存在（如 log/）
+        std::filesystem::path logPath(m_filePath);
+        if (logPath.has_parent_path()) {
+            std::error_code ec;
+            std::filesystem::create_directories(logPath.parent_path(), ec);
+        }
+
         std::ofstream file(m_filePath, std::ios::app);
         if (file.is_open()) {
             file << line;
