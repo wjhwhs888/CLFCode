@@ -7,6 +7,7 @@
 
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
@@ -35,16 +36,23 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         if (loaded) configPath = defaultPath;
     }
 
+    // 初始化日志系统（基于配置的 logging 段）
+    CLF::CLFCore::CLFLogger::instance().init(
+        CLF::CLFCore::CLFLogger::levelFromString(config.m_logLevel),
+        projectRoot + "/" + config.m_logFile,
+        config.m_logConsole
+    );
+    CLF::CLFCore::CLFLogger::instance().info("CLFCode starting, project root: " + projectRoot);
+
     if (loaded) {
         std::cout << "Config loaded: " << configPath << std::endl;
     } else {
-        std::cerr << "[Warning] No config file found, using defaults." << std::endl;
+        CLF::CLFCore::CLFLogger::instance().warn("No config file found, using defaults.");
     }
 
     if (config.m_apiKey.empty()) {
-        std::cerr << "[Error] API Key is required." << std::endl
-                  << "  Set CLF_API_KEY environment variable," << std::endl
-                  << "  or create config/agent_settings.local.json with your api_key" << std::endl;
+        CLF::CLFCore::CLFLogger::instance().error(
+            "API Key is required. Set CLF_API_KEY or create config/agent_settings.local.json");
         return 1;
     }
 
@@ -127,7 +135,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
                 std::cout << response << std::endl;
             }
         } catch (const std::exception& e) {
-            std::cerr << "[Fatal] " << e.what() << std::endl;
+            CLF::CLFCore::CLFLogger::instance().error(std::string("Fatal: ") + e.what());
             agent.clearContext();
         }
         std::cout << std::endl;

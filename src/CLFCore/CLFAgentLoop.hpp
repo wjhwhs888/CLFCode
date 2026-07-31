@@ -37,6 +37,11 @@ struct CLFAgentConfig {
     bool        m_contextCompression    = false;     // 上下文压缩
     int         m_maxResponseDelaySec   = 300;       // 回复最大延迟（秒）
     std::string m_interactionLanguage   = "zh-CN";   // 默认交互语言
+
+    // —— logging（日志配置）——
+    std::string m_logLevel   = "info";              // debug|info|warn|error
+    std::string m_logFile    = "clf_agent.log";     // 日志文件路径（相对项目根）
+    bool        m_logConsole = false;               // 同时输出到控制台
 };
 
 struct CLFTool {

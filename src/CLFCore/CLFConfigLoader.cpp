@@ -1,6 +1,7 @@
 // CLFConfigLoader.cpp — Agent 配置加载器实现
 
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFLogger.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -148,9 +149,23 @@ bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig
             }
         }
 
+        // —— logging（日志配置）——
+        if (cfg.contains("logging")) {
+            const auto& logging = cfg["logging"];
+            if (logging.contains("level") && logging["level"].is_string()) {
+                outConfig.m_logLevel = logging["level"].get<std::string>();
+            }
+            if (logging.contains("file") && logging["file"].is_string()) {
+                outConfig.m_logFile = logging["file"].get<std::string>();
+            }
+            if (logging.contains("console") && logging["console"].is_boolean()) {
+                outConfig.m_logConsole = logging["console"].get<bool>();
+            }
+        }
+
         return true;
     } catch (const json::exception& e) {
-        std::cerr << "[ConfigLoader] JSON parse error: " << e.what() << std::endl;
+        CLFLogger::instance().error(std::string("ConfigLoader JSON parse error: ") + e.what());
         return false;
     }
 }

@@ -2,6 +2,7 @@ add_library(clf_core STATIC
     CLFCore/CLFAgentLoop.cpp
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
+    CLFCore/CLFLogger.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFSkillLoader.cpp
 )

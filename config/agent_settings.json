@@ -25,6 +25,7 @@
     },
     "logging": {
         "level": "info",
-        "file": "clf_agent.log"
+        "file": "clf_agent.log",
+        "console": false
     }
 }

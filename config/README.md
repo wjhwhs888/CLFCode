@@ -80,8 +80,9 @@ CLFCode 自身的运行行为参数，**不传给 API**。
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `level` | string | `info` | 日志级别：`debug` / `info` / `warn` / `error`。`debug` 包含完整请求/响应内容 |
-| `file` | string | `clf_agent.log` | 日志文件路径。相对路径基于工作目录，建议用绝对路径 |
+| `level` | string | `info` | 日志级别：`debug` / `info` / `warn` / `error`。低于该级别的日志被丢弃 |
+| `file` | string | `clf_agent.log` | 日志文件路径。相对路径基于项目根目录（如 `log/clf_agent.log`） |
+| `console` | bool | `false` | 是否同时输出到控制台。默认 `false`（避免干扰 REPL 交互） |
 
 ---
 
@@ -127,7 +128,8 @@ CLFCode 自身的运行行为参数，**不传给 API**。
     },
     "logging": {
         "level": "info",
-        "file": "clf_agent.log"
+        "file": "clf_agent.log",
+        "console": false
     }
 }
 ```
