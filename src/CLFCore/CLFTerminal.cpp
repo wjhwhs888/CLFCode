@@ -303,11 +303,13 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
-    // 标题行（浅蓝 + 时间风格）
+    // 标题行（浅蓝 + 时间风格），防超宽折行
     moveCursor(statusTop(H), 1);
     clearLine();
     if (!title.empty()) {
-        std::cout << lightBlue("▍ ") << bold(title) << std::flush;
+        std::string display = bold(title);
+        while (textWidth(display) > W - 3) display.pop_back();
+        std::cout << lightBlue("▍ ") << display << std::flush;
     }
     // 内容行
     moveCursor(statusTop(H) + 1, 1);
@@ -356,12 +358,14 @@ void CLFTerminal::drawModeArea(const std::string& mode) {
     moveCursor(modeTop(H), 1);
     clearLine();
     std::string line = "模式: " + mode;
-    // 右侧提示快捷键
+    // 右侧提示快捷键（总宽 ≤ W，含 "▍ " 前缀 2 宽）
     std::string hint = "Ctrl+N 切换 | Ctrl+O 折叠 | /help";
-    int pad = W - textWidth(line) - textWidth(hint);
-    std::string display = line;
-    if (pad > 0) display += std::string(pad, ' ');
-    display += hint;
+    constexpr int kPrefixWidth = 2; // "▍ "
+    int pad = W - kPrefixWidth - textWidth(line) - textWidth(hint);
+    if (pad < 0) pad = 0;
+    std::string display = line + std::string(pad, ' ') + hint;
+    // 防超宽折行（截断尾部）
+    while (textWidth(display) > W - kPrefixWidth) display.pop_back();
     std::cout << gray("▍ ") << display << std::flush;
 }
 
