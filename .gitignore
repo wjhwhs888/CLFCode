@@ -26,3 +26,7 @@ doc/log/
 # 崩溃调试
 doc/debug/
 !doc/debug/README.md
+
+# 会话历史（运行时自动生成）
+doc/contextHistory/*
+!doc/contextHistory/README.md
