@@ -164,7 +164,12 @@ void CLFTerminal::setupSplitScreen(int extraLines, const std::string& modeLabel)
 
     int shift = extraLines - 1;
 
-    // 1. 清除输入区（含折行）
+    // 1. 滚动让位：光标到底部输出空行，内容区上滚，底部腾出干净区域
+    //    （避免直接清 H-4..H-2 覆盖内容末尾）
+    moveCursor(H, 1);
+    std::cout << "\n\n\n" << std::flush;
+
+    // 2. 清除输入区（含折行）
     for (int i = 0; i < 3 + shift; ++i) {
         moveCursor(H - 4 - shift + i, 1);
         clearLine();
@@ -224,7 +229,11 @@ bool CLFTerminal::confirmInput(const std::string& question, const std::string& m
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
-    // 1. 清除输入区 + 画确认框（顶线/问题行/底线）
+    // 1. 滚动让位：内容区上滚，底部腾出干净区域
+    moveCursor(H, 1);
+    std::cout << "\n\n\n" << std::flush;
+
+    // 2. 清除输入区 + 画确认框（顶线/问题行/底线）
     for (int i = 0; i < 3; ++i) {
         moveCursor(H - 4 + i, 1);
         clearLine();
