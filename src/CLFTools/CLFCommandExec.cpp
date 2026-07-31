@@ -9,21 +9,43 @@
 #include <unistd.h>
 #endif
 
-#include <cstdio>
 #include <chrono>
+#include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <thread>
 
 namespace CLF::CLFTools {
+
+namespace {
+
+// 读取文件全部内容到字符串
+std::string readFileContent(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) return "";
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    return oss.str();
+}
+
+} // anonymous namespace
 
 CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) {
     CLFCommandResult result;
     std::string cmdWithRedirect;
 
 #ifdef _WIN32
-    // Windows: 使用临时文件捕获输出
-    cmdWithRedirect = "cmd /c \"" + command + "\" > %TEMP%\\clf_cmd_stdout.txt 2> %TEMP%\\clf_cmd_stderr.txt";
+    // Windows: 使用唯一临时文件捕获输出（含进程 ID 防并发冲突）
+    std::string pidStr = std::to_string(static_cast<long long>(GetCurrentProcessId()));
+    std::string stdoutFile = "clf_cmd_stdout_" + pidStr + ".txt";
+    std::string stderrFile = "clf_cmd_stderr_" + pidStr + ".txt";
+    cmdWithRedirect = "cmd /c \"" + command + "\" > \"" + stdoutFile
+                    + "\" 2> \"" + stderrFile + "\"";
 #else
-    cmdWithRedirect = command + " > /tmp/clf_cmd_stdout.txt 2> /tmp/clf_cmd_stderr.txt";
+    std::string pidStr = std::to_string(static_cast<long long>(getpid()));
+    std::string stdoutFile = "/tmp/clf_cmd_stdout_" + pidStr + ".txt";
+    std::string stderrFile = "/tmp/clf_cmd_stderr_" + pidStr + ".txt";
+    cmdWithRedirect = command + " > " + stdoutFile + " 2> " + stderrFile;
 #endif
 
     auto startTime = std::chrono::steady_clock::now();
@@ -36,32 +58,17 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
     result.m_exitCode = exitCode;
     result.m_timedOut = (elapsedSeconds >= timeoutSeconds);
 
+    // 读取输出文件
+    result.m_stdout = readFileContent(stdoutFile);
+    result.m_stderr = readFileContent(stderrFile);
+
+    // 清理临时文件
 #ifdef _WIN32
-    // 读取 Windows 临时文件
-    FILE* stdoutFile = nullptr;
-    FILE* stderrFile = nullptr;
-    errno_t err;
-
-    // ... 读取文件内容到 result.m_stdout / result.m_stderr
+    DeleteFileA(stdoutFile.c_str());
+    DeleteFileA(stderrFile.c_str());
 #else
-    // 读取 Unix 临时文件
-    FILE* stdoutFile = fopen("/tmp/clf_cmd_stdout.txt", "r");
-    if (stdoutFile) {
-        char buffer[4096];
-        while (fgets(buffer, sizeof(buffer), stdoutFile)) {
-            result.m_stdout += buffer;
-        }
-        fclose(stdoutFile);
-    }
-
-    FILE* stderrFile = fopen("/tmp/clf_cmd_stderr.txt", "r");
-    if (stderrFile) {
-        char buffer[4096];
-        while (fgets(buffer, sizeof(buffer), stderrFile)) {
-            result.m_stderr += buffer;
-        }
-        fclose(stderrFile);
-    }
+    std::remove(stdoutFile.c_str());
+    std::remove(stderrFile.c_str());
 #endif
 
     return result;

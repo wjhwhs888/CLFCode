@@ -92,6 +92,11 @@ inline std::string CLFStreamAccumulator::feedDelta(const nlohmann::json& delta) 
     // 提取 finish_reason
     if (delta.contains("finish_reason") && delta["finish_reason"].is_string()) {
         m_finishReason = delta["finish_reason"].get<std::string>();
+        // 收到 finish_reason 即视为流结束：立即 finalize tool_calls
+        // 不依赖 [DONE]，防止网络中断时工具调用丢失
+        if (!m_parts.empty() && !m_toolCallsFinalized) {
+            finalizeToolCalls();
+        }
     }
 
     return contentDelta;

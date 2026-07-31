@@ -47,5 +47,10 @@
   - logging.level / file / console 配置驱动
   - 诊断输出统一走 logger（main / ConfigLoader）
 - [ ] 单元测试
+- [x] **全量体检修复 4 个 bug**
+  - Windows 命令 stdout/stderr 读取（原为 TODO）
+  - SSE 跨 chunk 行缓冲（流式丢数据）
+  - max_response_delay_sec 接通 HTTP 超时
+  - 流式 tool_calls 提前 finalize（不依赖 [DONE]）
 - [ ] 安全策略实现（分析已定，代码未写）
 - [ ] 会话持久化（分析已定，代码未写）

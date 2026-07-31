@@ -17,6 +17,8 @@ CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config)
     : m_config(config)
     , m_context(config.m_maxContextWindow)
     , m_httpClient(config.m_apiBaseUrl, config.m_apiKey) {
+    // 应用回复超时配置（默认 300 秒）
+    m_httpClient.setTimeout(config.m_maxResponseDelaySec);
     injectSystemPrompt();
 }
 

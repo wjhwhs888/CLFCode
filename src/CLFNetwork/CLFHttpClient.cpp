@@ -57,29 +57,50 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
         {"Content-Type", "application/json"}
     };
 
+    // SSE 行缓冲：网络 chunk 边界可能切开一行数据，需缓冲尾部跨块拼接
+    std::string lineBuffer;
+
     auto res = cli.Post(
         path, headers, jsonBody, "application/json",
         [&](const char* data, size_t dataLen) {
-            // SSE 分行处理
-            std::string chunk(data, dataLen);
+            lineBuffer.append(data, dataLen);
+
             size_t pos = 0;
-            while (pos < chunk.size()) {
-                size_t end = chunk.find('\n', pos);
+            while (true) {
+                size_t end = lineBuffer.find('\n', pos);
                 if (end == std::string::npos) {
-                    end = chunk.size();
+                    break; // 剩余部分是不完整行，留在缓冲等待下一个 chunk
                 }
-                std::string line = chunk.substr(pos, end - pos);
+                std::string line = lineBuffer.substr(pos, end - pos);
+                pos = end + 1;
+
                 if (!line.empty() && line.back() == '\r') {
                     line.pop_back();
                 }
                 if (!line.empty()) {
                     onLine(line);
                 }
-                pos = end + 1;
+            }
+
+            // 消费掉完整行，保留尾部残行
+            if (pos > 0) {
+                lineBuffer.erase(0, pos);
             }
             return true;
         }
     );
+
+    // 流结束后，冲刷缓冲中的最后一行（无 \n 结尾的最终数据）
+    if (!lineBuffer.empty()) {
+        std::string last = lineBuffer;
+        if (!last.empty() && last.back() == '\r') {
+            last.pop_back();
+        }
+        if (!last.empty()) {
+            onLine(last);
+        }
+        lineBuffer.clear();
+    }
 
     if (!res) {
         result.m_error = "Stream connection failed: " + httplib::to_string(res.error());
