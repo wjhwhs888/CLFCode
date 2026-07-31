@@ -75,7 +75,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                                     if (choice.contains("delta")) {
                                         std::string chunk = acc.feedDelta(choice["delta"]);
                                         if (!chunk.empty()) {
-                                            CLFTerminal::scrollPrint(chunk);
+                                            CLFTerminal::scrollAppend(chunk);
                                         }
                                     }
                                     // finish_reason 也可能在 choices[0] 中

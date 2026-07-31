@@ -395,6 +395,36 @@ void CLFTerminal::clearConfirmArea() {
     }
 }
 
+void CLFTerminal::scrollAppend(const std::string& text) {
+    // 追加到缓冲最后一行（无换行）
+    if (s_scrollBuffer.empty()) {
+        s_scrollBuffer.push_back(text);
+    } else {
+        s_scrollBuffer.back() += text;
+    }
+
+    int H = getTerminalHeight();
+    if (H <= 0) {
+        std::cout << text << std::flush;
+        return;
+    }
+
+    // 只重绘滚动区最后一行（流式输出优化）
+    int lines = scrollVisibleLines(H, s_scrollCollapsed);
+    if (lines <= 0) return;
+    int lastRow = scrollBottom(H);
+    moveCursor(lastRow, 1);
+    clearLine();
+    std::cout << s_scrollBuffer.back() << std::flush;
+}
+
+std::string CLFTerminal::diagnosticInfo() {
+    int H = getTerminalHeight();
+    int W = getTerminalWidth();
+    return "终端: 高" + std::to_string(H) + " x 宽" + std::to_string(W)
+         + ", ANSI: " + (s_ansiEnabled ? "开" : "关");
+}
+
 void CLFTerminal::restoreScrollRegion() {
     if (s_ansiEnabled) {
         std::cout << "\033[2J\033[H" << std::flush;

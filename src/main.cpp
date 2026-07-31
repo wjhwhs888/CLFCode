@@ -149,6 +149,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     // 启动横幅（滚动区）
     CLFTerminal::initLayout(g_modeName);
     CLFTerminal::scrollPrint(CLFTerminal::bold("● CLFCode") + " — CLI Agent Framework for Code\n");
+    CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::gray(CLFTerminal::diagnosticInfo()) + "\n");
     CLFTerminal::scrollPrint("  ⎿ 项目根: " + CLFTerminal::cyan(projectRoot) + "\n");
     if (loaded) {
         CLFTerminal::scrollPrint("  ⎿ 配置: " + CLFTerminal::cyan(configPath) + "\n");
