@@ -1,39 +1,48 @@
 # CLFCode 任务进度
 
 ## 已完成
-- [x] 项目工程结构搭建
-- [x] CLAUDE.md 规范约定（CLF 前缀、m_ 成员、CLF::CLFCore 命名空间）
-- [x] ProjectSetting.md 设计文档
-- [x] CMake 构建骨架（C++17 + OpenSSL + Ninja）
-- [x] 源码模块骨架（CLFCore / CLFNetwork / CLFTools）
-- [x] 3rdparty 库就位（httplib v0.44.0 + nlohmann/json v3.12.0）
-- [x] 编译通过（MSVC + OpenSSL 4.0.1）
-- [x] `.claude/plans/` 规划设计目录建立
-- [x] 五大核心问题识别并归档
 
-## 进行中
-- [x] **架构设计讨论** — 总体方案草案
-  - [x] CLI 方向 — 纯终端
-  - [x] Context 持久化 — JSON 按日期存 `doc/contextHistory/`
-  - [x] 安全策略 — 四模式：自动/分析/编辑/手动
-  - [x] 会话管理 — 崩溃恢复 + 历史列表 + 自动清理
-  - [x] 配置体系 — 启动加载 JSON，不覆盖环境变量
-  - [x] 测试策略 — L1 单元 + L2 Mock + L3 E2E
+### 工程基础
+- [x] 项目工程结构搭建 + CMake 构建（C++17 + Ninja）
+- [x] 3rdparty 库就位（httplib + nlohmann/json）
+- [x] CLAUDE.md / ProjectSetting.md 规范文档
+- [x] `.claude/plans/` 规划目录 + 分组体系（分析/设计/归档/测试）
+
+### 架构设计（全部已定）
+- [x] CLI 方向 / Context 持久化 / 安全四模式 / 会话管理 / 配置体系 / 测试策略
+
+### 问题1：API协议适配 ✅
+- [x] CLFMessage 扩展（m_toolCalls / m_toolCallId / m_name）
+- [x] CLFProtocolAdapter（请求构建 + 响应解析）
+- [x] CLFAgentLoop runTurn() tool-calling 循环
+- [x] executeTools() 实现 + 异常处理
+- [x] CLFConfigLoader（JSON 文件 + 环境变量覆盖）
+- [x] 配置对齐 DeepSeek API（100% 参数覆盖）
+- [x] 配置安全策略（.local.json 不提交 Git）
+- [x] 模型升级 deepseek-v4-pro / v4-flash
+- [x] Release 崩溃修复（UTF-8 控制台 + 异常保护）
+- [x] 身份提示词注入（自称 CLFCode，不混淆品牌）
+
+### 问题2：工具调用闭环 ✅
+- [x] CLFBuiltinTools 模块（6 个内置工具 + 统一注册）
+- [x] 真实工具接入：read_file / write_file / list_directory / execute_command / get_current_time / echo
+- [x] main.cpp 模块化拆分（230 行 → 80 行）
+- [x] CLFConfigLoader::resolveConfigPath() 多路径查找
+
+### 问题3：流式响应 ✅
+- [x] CLFStreamAccumulator（SSE delta 累积 + tool_calls 合并）
+- [x] runTurn 流式/同步双模式
+- [x] 终端实时打字机输出（std::cout << flush）
+- [x] 配置 `stream: true` 默认开启
 
 ## 待做
 
-### 当前阶段：五大核心问题详细设计
-- [ ] 问题-API协议适配 — 设计方案
-- [ ] 问题-工具调用闭环 — 设计方案
-- [ ] 问题-流式响应 — 设计方案
-- [ ] 问题-知识库加载 — 设计方案
-- [ ] 问题-上下文管理 — 设计方案
-
-### 下一阶段：开发
-- [ ] 各问题实现
+### 剩余核心问题
+- [ ] **问题4：知识库加载** — skills 注入 system prompt
+- [ ] **问题5：上下文管理** — 智能截断 + 持久化 + token 计数优化
 
 ### 基础设施
-- [ ] 配置加载器（agent_settings.json → CLFAgentConfig）
-- [ ] 日志系统
+- [ ] 日志系统（logging 配置已有）
 - [ ] 单元测试
-- [ ] 异常处理与重试逻辑
+- [ ] 安全策略实现（分析已定，代码未写）
+- [ ] 会话持久化（分析已定，代码未写）

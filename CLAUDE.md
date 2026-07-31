@@ -38,6 +38,13 @@
 
 ---
 
+## 模块化原则
+
+- **main.cpp 只做入口编排**：加载配置、组装依赖、启动 REPL。具体实现（handler、adapter、注册逻辑）必须归属到对应功能模块
+- **工具 handler** 实现在 `CLFTools/` 中，通过 `registerBuiltinTools()` 统一注册
+- **配置解析** 归属 `CLFConfigLoader`，不放 main.cpp
+- 模块间依赖：`clf_tools` → `clf_core`；`clf_network` 独立；`main` 组装三者
+
 ## 构建说明
 
 - **Ninja 路径**：`D:\Program Files\JetBrains\CLion 2026.1.1\bin\ninja`

@@ -1,42 +1,144 @@
-// CLFAgentLoop.cpp — Agent 主循环实现
+// CLFAgentLoop.cpp — Agent 主循环实现（含 tool-calling 循环 + 流式响应）
 
 #include "CLFCore/CLFAgentLoop.hpp"
 
+#include <algorithm>
+#include <iostream>
 
-#include <nlohmann/json.hpp>
-
-using json = nlohmann::json;
+#include "CLFCore/CLFStreamAccumulator.hpp"
 
 namespace CLF::CLFCore {
 
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config)
     : m_config(config)
-    , m_context(config.m_maxTokens)
+    , m_context(config.m_maxContextWindow)
     , m_httpClient(config.m_apiBaseUrl, config.m_apiKey) {
+    injectSystemPrompt();
 }
 
 std::string CLFAgentLoop::runTurn(const std::string& userInput) {
-    // 将用户输入加入上下文
     m_context.addMessage("user", userInput);
 
-    // 构建请求
-    std::string body = buildRequestBody(m_context.getMessages(), false);
+    std::string finalContent;
 
-    // 发送 API 请求
-    CLF::CLFNetwork::CLFHttpResponse response = m_httpClient.postJson("/v1/chat/completions", body);
+    for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
+        try {
+            std::string body = m_protocolAdapter.buildChatRequest(
+                m_context.getMessages(), m_tools, m_config);
 
-    if (!response.m_error.empty()) {
-        return std::string("[Error] ") + response.m_error;
+            CLFAssistantResponse parsed;
+
+            if (m_config.m_stream) {
+                // ====== 流式路径 ======
+                CLFStreamAccumulator acc;
+                bool hadError = false;
+                std::string errorMsg;
+
+                CLF::CLFNetwork::CLFHttpResponse response =
+                    m_httpClient.postJsonStream(
+                        "/v1/chat/completions", body,
+                        [&](const std::string& line) {
+                            if (hadError) return;
+
+                            // SSE data 行: "data: <json>"
+                            if (line.rfind("data: ", 0) != 0) return;
+                            std::string payload = line.substr(6);
+
+                            if (payload == "[DONE]") {
+                                acc.markDone();
+                                return;
+                            }
+
+                            try {
+                                auto delta = nlohmann::json::parse(payload);
+                                // 检查是否为错误响应（非流式错误可能包裹在 delta 中）
+                                if (delta.contains("error")) {
+                                    hadError = true;
+                                    errorMsg = delta["error"].dump();
+                                    return;
+                                }
+                                // 提取 choices[0].delta
+                                if (delta.contains("choices") && !delta["choices"].empty()) {
+                                    const auto& choice = delta["choices"][0];
+                                    if (choice.contains("delta")) {
+                                        std::string chunk = acc.feedDelta(choice["delta"]);
+                                        if (!chunk.empty()) {
+                                            std::cout << chunk << std::flush;
+                                        }
+                                    }
+                                    // finish_reason 也可能在 choices[0] 中
+                                    if (choice.contains("finish_reason")) {
+                                        acc.feedDelta(choice);
+                                    }
+                                }
+                            } catch (const nlohmann::json::exception&) {
+                                // 忽略无法解析的 SSE 行
+                            }
+                        });
+
+                if (hadError) {
+                    return std::string("[Error] Stream error: ") + errorMsg;
+                }
+                if (!response.m_error.empty()) {
+                    return std::string("[Error] ") + response.m_error;
+                }
+
+                // 构造与非流式相同的 CLFAssistantResponse
+                parsed.m_content      = acc.getContent();
+                parsed.m_toolCalls    = acc.getToolCalls();
+                parsed.m_finishReason = acc.getFinishReason();
+
+            } else {
+                // ====== 同步路径 ======
+                CLF::CLFNetwork::CLFHttpResponse response =
+                    m_httpClient.postJson("/v1/chat/completions", body);
+
+                if (!response.m_error.empty()) {
+                    return std::string("[Error] ") + response.m_error;
+                }
+
+                parsed = m_protocolAdapter.parseAssistantResponse(response.m_body);
+            }
+
+            // 检查 finish_reason
+            if (!CLFProtocolAdapter::isValidFinish(parsed)) {
+                return std::string("[Error] Unexpected finish_reason: ")
+                       + parsed.m_finishReason;
+            }
+
+            // 累积文本内容
+            if (!parsed.m_content.empty()) {
+                if (!finalContent.empty()) {
+                    finalContent += "\n";
+                }
+                finalContent += parsed.m_content;
+            }
+
+            // tool_calls → 执行并继续循环
+            if (CLFProtocolAdapter::hasToolCalls(parsed)) {
+                m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
+
+                std::vector<CLFToolResult> results = executeTools(parsed.m_toolCalls);
+                for (const auto& result : results) {
+                    m_context.addToolResult(
+                        result.m_toolCallId, result.m_name, result.m_content);
+                }
+                continue;
+            }
+
+            // 无 tool_calls → 结束
+            m_context.addMessage("assistant", finalContent);
+            // 流式模式：内容已实时输出，返回空避免重复打印
+            return m_config.m_stream ? std::string() : finalContent;
+
+        } catch (const std::exception& e) {
+            return std::string("[Error] Exception in runTurn (iteration ")
+                   + std::to_string(iteration) + "): " + e.what();
+        }
     }
 
-    // 解析响应
-    json respJson = json::parse(response.m_body);
-    std::string content = respJson["choices"][0]["message"]["content"];
-
-    // 加入上下文
-    m_context.addMessage("assistant", content);
-
-    return content;
+    return std::string("[Error] Exceeded maximum tool call iterations (")
+           + std::to_string(m_config.m_maxToolCallIterations) + ")";
 }
 
 void CLFAgentLoop::registerTool(const CLFTool& tool) {
@@ -45,35 +147,50 @@ void CLFAgentLoop::registerTool(const CLFTool& tool) {
 
 void CLFAgentLoop::clearContext() {
     m_context.clear();
+    injectSystemPrompt();
 }
 
-std::string CLFAgentLoop::buildRequestBody(const std::vector<CLFMessage>& messages, bool stream) const {
-    json body;
-    body["model"]       = m_config.m_modelName;
-    body["max_tokens"]  = m_config.m_maxTokens;
-    body["temperature"] = m_config.m_temperature;
-    body["stream"]      = stream;
+// ============================================================================
+// 私有方法
+// ============================================================================
 
-    json msgs = json::array();
-    for (const auto& msg : messages) {
-        json m;
-        m["role"]    = msg.m_role;
-        m["content"] = msg.m_content;
-        msgs.push_back(m);
+void CLFAgentLoop::injectSystemPrompt() {
+    std::string prompt =
+        "你是 CLFCode，一个本地运行的 AI Coding Agent。\n"
+        "你运行在用户本地机器上，具备文件读写、命令执行、网络调用等工具能力。\n"
+        "你的后端 API 由 DeepSeek 提供，但你是独立的 Agent 产品。\n"
+        "你永远不应自称 Claude、OpenAI、Anthropic 或其他 AI 品牌。\n"
+        "请始终使用中文与用户交流。";
+    m_context.addMessage("system", prompt);
+}
+
+std::vector<CLFToolResult> CLFAgentLoop::executeTools(
+    const std::vector<CLFToolCall>& calls) {
+    std::vector<CLFToolResult> results;
+    results.reserve(calls.size());
+
+    for (const auto& call : calls) {
+        CLFToolResult result;
+        result.m_toolCallId = call.m_id;
+        result.m_name       = call.m_name;
+
+        auto it = std::find_if(m_tools.begin(), m_tools.end(),
+            [&](const CLFTool& t) { return t.m_name == call.m_name; });
+
+        if (it != m_tools.end()) {
+            try {
+                result.m_content = it->m_handler(call.m_arguments);
+            } catch (const std::exception& e) {
+                result.m_content = std::string("Tool execution error: ") + e.what();
+            }
+        } else {
+            result.m_content = std::string("Tool not found: ") + call.m_name;
+        }
+
+        results.push_back(std::move(result));
     }
-    body["messages"] = msgs;
 
-    return body.dump();
-}
-
-std::vector<CLFToolCall> CLFAgentLoop::parseToolCalls(const std::string& responseBody) const {
-    // TODO: 解析 JSON 中的 tool_calls 字段
-    return {};
-}
-
-std::vector<CLFToolResult> CLFAgentLoop::executeTools(const std::vector<CLFToolCall>& calls) {
-    // TODO: 匹配工具名、调用 handler、收集结果
-    return {};
+    return results;
 }
 
 } // namespace CLF::CLFCore

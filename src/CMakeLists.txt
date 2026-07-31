@@ -1,6 +1,8 @@
 add_library(clf_core STATIC
     CLFCore/CLFAgentLoop.cpp
+    CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
+    CLFCore/CLFProtocolAdapter.cpp
 )
 
 add_library(clf_network STATIC
@@ -8,9 +10,11 @@ add_library(clf_network STATIC
 )
 
 add_library(clf_tools STATIC
+    CLFTools/CLFBuiltinTools.cpp
     CLFTools/CLFFileOps.cpp
     CLFTools/CLFCommandExec.cpp
 )
+target_link_libraries(clf_tools PUBLIC clf_core)
 
 # 主程序
 add_executable(CLFCode main.cpp)
