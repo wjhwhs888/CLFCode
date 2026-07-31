@@ -46,12 +46,14 @@
   - CLFLogger 单例：级别过滤 + 时间戳 + 文件输出 + 可选控制台
   - logging.level / file / console 配置驱动
   - 诊断输出统一走 logger（main / ConfigLoader）
-- [x] **测试策略** — ✅ 完成
+- [x] **测试策略** — ✅ 完成，5 个测试全部通过
   - Boost.UT 引入（3rdparty/boost-ut，C++20 仅测试目标）
   - ICLFHttpClient 抽象接口（DIP，支持 Mock 注入）
   - L1 单元测试 ×4：CLFContext / CLFProtocolAdapter / CLFSecurityPolicy / CLFSessionManager
   - L2 集成测试 ×1：CLFAgentLoop（Mock HTTP：tool-calling 循环 / 安全阻断 / 流式累积）
   - CMake：enable_testing + 5 个 add_test
+  - 验证：5 个测试目标全绿（qa_CLFSessionManager 20 asserts / 6 tests）
+  - 测试发现并修复：Boost.UT 缺 main、测试漏链 OpenSSL、同秒会话文件覆盖（真实数据丢失风险）
 - [x] **全量体检修复 4 个 bug**
   - Windows 命令 stdout/stderr 读取（原为 TODO）
   - SSE 跨 chunk 行缓冲（流式丢数据）

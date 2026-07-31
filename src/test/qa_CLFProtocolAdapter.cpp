@@ -158,3 +158,8 @@ const boost::ut::suite<"CLFProtocolAdapter"> tests = [] {
         expect(body["tools"][0]["function"]["parameters"].is_object());
     };
 };
+
+// Boost.UT：测试在静态初始化时注册，cfg 析构时自动运行并输出报告
+int main() {
+    return 0;
+}

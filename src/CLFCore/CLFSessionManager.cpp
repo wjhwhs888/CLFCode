@@ -89,8 +89,13 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
     std::error_code ec;
     fs::create_directories(dirPath, ec);
 
-    std::string fileName = timestampStr() + (incomplete ? "_incomplete.json" : ".json");
-    std::string filePath = dirPath + "/" + fileName;
+    // 文件名含秒级时间戳；同秒多次保存追加序号（-2、-3...）防覆盖
+    std::string suffix = incomplete ? "_incomplete.json" : ".json";
+    std::string baseName = timestampStr();
+    std::string filePath = dirPath + "/" + baseName + suffix;
+    for (int n = 2; fs::exists(filePath, ec); ++n) {
+        filePath = dirPath + "/" + baseName + "-" + std::to_string(n) + suffix;
+    }
 
     nlohmann::json data;
     data["version"]   = 1;

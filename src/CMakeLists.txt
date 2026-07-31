@@ -54,7 +54,8 @@ target_link_libraries(qa_CLFSessionManager PRIVATE clf_core)
 add_test(NAME qa_CLFSessionManager COMMAND qa_CLFSessionManager)
 
 add_executable(qa_CLFAgentLoop test/qa_CLFAgentLoop.cpp)
-target_link_libraries(qa_CLFAgentLoop PRIVATE clf_core clf_network)
+# 需要 OpenSSL：clf_network 启用 HTTPS（CPPHTTPLIB_OPENSSL_SUPPORT）
+target_link_libraries(qa_CLFAgentLoop PRIVATE clf_core clf_network ${CLF_OPENSSL_LIBS})
 add_test(NAME qa_CLFAgentLoop COMMAND qa_CLFAgentLoop)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)

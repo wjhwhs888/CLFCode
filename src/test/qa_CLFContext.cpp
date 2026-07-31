@@ -79,3 +79,8 @@ const boost::ut::suite<"CLFContext"> tests = [] {
         expect(!ctx.restore("not valid json{{"));
     };
 };
+
+// Boost.UT：测试在静态初始化时注册，cfg 析构时自动运行并输出报告
+int main() {
+    return 0;
+}
