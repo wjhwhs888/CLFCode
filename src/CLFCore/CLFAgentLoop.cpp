@@ -169,6 +169,11 @@ void CLFAgentLoop::injectSkillToContext(const std::string& skillName, const std:
     std::string msg = "[Knowledge: " + skillName + "]\n\n" + content
                     + "\n\n请遵循以上规则。";
     m_context.addMessage("system", msg);
+    m_loadedSkills.push_back(skillName);
+}
+
+std::vector<std::string> CLFAgentLoop::getLoadedSkills() const {
+    return m_loadedSkills;
 }
 
 void CLFAgentLoop::setSecurityMode(CLFSecurityMode mode) {

@@ -91,6 +91,14 @@ public:
     // 从会话文件恢复（跳过 system 消息，身份重新注入）
     bool restoreSession(const std::string& filePath);
 
+    // —— 查询 ——
+
+    // 获取当前配置（/config 命令用）
+    const CLFAgentConfig& getConfig() const { return m_config; }
+
+    // 已注入上下文的 skill 名称列表（/skill 状态显示用）
+    std::vector<std::string> getLoadedSkills() const;
+
 private:
     // 执行工具调用并收集结果
     std::vector<CLFToolResult> executeTools(const std::vector<CLFToolCall>& calls);
@@ -105,6 +113,7 @@ private:
     CLFSecurityPolicy                 m_securityPolicy;
     std::function<bool(const std::string&)> m_confirmCallback;
     std::vector<CLFTool>              m_tools;
+    std::vector<std::string>          m_loadedSkills;
 };
 
 } // namespace CLF::CLFCore

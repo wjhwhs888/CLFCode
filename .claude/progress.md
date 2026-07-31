@@ -58,6 +58,12 @@
   - 环境变量方式启动（任意目录运行）
   - 流式 finish_reason 兜底修复（postJsonStream 返回后强制 markDone）
   - 首个真实任务：五子棋游戏（HTML），工具调用 + 文件写入全流程成功
+- [x] **REPL 命令使用优化** — ✅ 完成（todo.md 5 项）
+  - /model 查看当前模型 + 可用列表
+  - /clear 先保存会话再开新会话
+  - /resume <n> 运行时恢复最近会话（list 带序号）
+  - /skill list 显示 [已加载] / [常驻] 状态
+  - /config 显示全部配置信息
 - [x] **全量体检修复 4 个 bug**
   - Windows 命令 stdout/stderr 读取（原为 TODO）
   - SSE 跨 chunk 行缓冲（流式丢数据）

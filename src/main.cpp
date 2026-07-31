@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <string>
 
@@ -135,10 +136,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             std::cout << "Commands:" << std::endl
                       << "  /exit    - quit (save session)" << std::endl
                       << "  /help    - show this help" << std::endl
-                      << "  /clear   - clear context" << std::endl
-                      << "  /skill   - list or load skills" << std::endl
+                      << "  /clear   - save session & start new" << std::endl
+                      << "  /skill   - list skills (with load status) or load one" << std::endl
                       << "  /mode    - switch security mode (auto/analyze/edit/manual)" << std::endl
-                      << "  /history - list recent sessions" << std::endl;
+                      << "  /history - list recent sessions" << std::endl
+                      << "  /resume  - resume a session (/resume list | /resume <n>)" << std::endl
+                      << "  /model   - show current model" << std::endl
+                      << "  /config  - show current config" << std::endl;
             continue;
         }
 
@@ -150,6 +154,72 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
                 std::cout << "Recent sessions:" << std::endl;
                 for (const auto& s : sessions) {
                     std::cout << "  " << s.m_savedAt << " | " << s.m_title << std::endl;
+                }
+            }
+            continue;
+        }
+
+        if (input == "/model") {
+            const auto& cfg = agent.getConfig();
+            std::cout << "Current model:   " << cfg.m_modelName << std::endl;
+            std::cout << "Sub model:       " << cfg.m_subModel << std::endl;
+            std::cout << std::endl;
+            std::cout << "Available models (edit config/agent_settings.json):" << std::endl;
+            std::cout << "  deepseek-v4-flash  - 主模型（Agent 能力最强）" << std::endl;
+            std::cout << "  deepseek-v4-pro    - Pro（正式版待发布）" << std::endl;
+            continue;
+        }
+
+        if (input == "/config") {
+            const auto& cfg = agent.getConfig();
+            std::cout << "── 配置信息 ─────────────────────────────" << std::endl;
+            std::cout << "连接:    " << cfg.m_apiBaseUrl << std::endl;
+            std::cout << "模型:    " << cfg.m_modelName
+                      << " (副: " << cfg.m_subModel << ")" << std::endl;
+            std::cout << "参数:    temperature=" << cfg.m_temperature
+                      << " top_p=" << cfg.m_topP
+                      << " max_tokens=" << cfg.m_maxTokens << std::endl;
+            std::cout << "流式:    " << (cfg.m_stream ? "开" : "关") << std::endl;
+            std::cout << "安全模式: " << agent.getSecurityModeName() << std::endl;
+            std::cout << "上下文:  " << cfg.m_maxContextWindow
+                      << " tokens (压缩: " << (cfg.m_contextCompression ? "开" : "关") << ")"
+                      << std::endl;
+            std::cout << "语言:    " << cfg.m_interactionLanguage << std::endl;
+            std::cout << "日志:    " << cfg.m_logFile << std::endl;
+            continue;
+        }
+
+        if (input.rfind("/resume", 0) == 0) {
+            auto sessions = CLF::CLFCore::CLFSessionManager::list(historyDir, 10);
+            if (sessions.empty()) {
+                std::cout << "No saved sessions." << std::endl;
+                continue;
+            }
+
+            std::string arg = input.size() > 8 ? input.substr(8) : "";
+            while (!arg.empty() && arg.front() == ' ') arg.erase(0, 1);
+
+            if (arg.empty()) {
+                // 无参数：列出带序号的会话
+                std::cout << "Sessions:" << std::endl;
+                for (size_t i = 0; i < sessions.size(); ++i) {
+                    std::cout << "  [" << i + 1 << "] " << sessions[i].m_savedAt
+                              << " | " << sessions[i].m_title << std::endl;
+                }
+                std::cout << "Usage: /resume <n>  (恢复第 n 条会话)" << std::endl;
+            } else {
+                // 按序号恢复
+                int idx = 0;
+                try { idx = std::stoi(arg); } catch (...) {}
+                if (idx < 1 || idx > static_cast<int>(sessions.size())) {
+                    std::cout << "Invalid session number: " << arg << std::endl;
+                } else {
+                    const auto& s = sessions[idx - 1];
+                    if (agent.restoreSession(s.m_path)) {
+                        std::cout << "会话已恢复: " << s.m_title << std::endl;
+                    } else {
+                        std::cout << "会话恢复失败（文件损坏？）。" << std::endl;
+                    }
                 }
             }
             continue;
@@ -180,10 +250,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
             if (arg.empty() || arg == "list") {
                 auto names = CLF::CLFCore::CLFSkillLoader::listNames();
+                auto loaded = agent.getLoadedSkills();
                 std::cout << "Available skills:" << std::endl;
                 for (const auto& n : names) {
-                    std::cout << "  " << n << std::endl;
+                    bool isLoaded = std::find(loaded.begin(), loaded.end(), n) != loaded.end();
+                    std::cout << "  " << n << (isLoaded ? "  [已加载]" : "") << std::endl;
                 }
+                std::cout << "  constitution  [常驻]  (L1 编码宪法，始终注入)" << std::endl;
                 std::cout << "Usage: /skill <name>" << std::endl;
             } else {
                 std::string content = CLF::CLFCore::CLFSkillLoader::getContent(arg);
@@ -198,8 +271,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             continue;
         }
         if (input == "/clear") {
+            // 先保存当前会话为正式会话，再开始新会话
+            agent.saveSession(historyDir, false);
+            CLF::CLFCore::CLFSessionManager::remove(
+                CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir));
             agent.clearContext();
-            std::cout << "Context cleared." << std::endl;
+            std::cout << "会话已保存，新会话开始。" << std::endl;
             continue;
         }
 
