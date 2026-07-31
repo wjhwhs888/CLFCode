@@ -11,6 +11,7 @@
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
+#include "CLFCore/CLFTerminal.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
@@ -18,11 +19,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
 #endif
+    using CLF::CLFCore::CLFTerminal;
+    CLFTerminal::enableAnsi();
 
     // 确定项目根目录（从 exe 向上找 CMakeLists.txt）
     std::string projectRoot = CLF::CLFCore::CLFConfigLoader::findProjectRoot();
-    std::cout << "CLFCode — CLI Agent Framework for Code" << std::endl;
-    std::cout << "Project root: " << projectRoot << std::endl;
+    CLFTerminal::item(CLFTerminal::bold("CLFCode") + " — CLI Agent Framework for Code");
+    CLFTerminal::sub("项目根: " + CLFTerminal::cyan(projectRoot));
 
     // 加载配置（优先 .local.json → 环境变量 → agent_settings.json）
     CLF::CLFCore::CLFAgentConfig config;
@@ -47,9 +50,10 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     CLF::CLFCore::CLFLogger::instance().info("CLFCode starting, project root: " + projectRoot);
 
     if (loaded) {
-        std::cout << "Config loaded: " << configPath << std::endl;
+        CLFTerminal::sub("配置: " + CLFTerminal::cyan(configPath));
     } else {
         CLF::CLFCore::CLFLogger::instance().warn("No config file found, using defaults.");
+        CLFTerminal::sub(CLFTerminal::yellow("配置: 未找到，使用默认值"));
     }
 
     if (config.m_apiKey.empty()) {
@@ -58,9 +62,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         return 1;
     }
 
-    std::cout << "Model: " << config.m_modelName << std::endl;
-    std::cout << "Type /exit to quit, /help for commands" << std::endl;
-    std::cout << std::endl;
+    CLFTerminal::sub("模型: " + CLFTerminal::cyan(config.m_modelName));
+    CLFTerminal::sub(CLFTerminal::gray("输入 /help 查看命令，/exit 退出"));
 
     // 创建 Agent 并注册全部内置工具
     CLF::CLFCore::CLFAgentLoop agent(config);
@@ -68,14 +71,24 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
     // 注入高风险工具确认回调（终端 y/n 交互）
     agent.setConfirmCallback([](const std::string& prompt) {
-        std::cout << std::endl << "[安全确认] " << prompt << std::endl;
-        std::cout << "允许执行该操作？(y/n): " << std::flush;
+        std::cout << std::endl;
+        CLFTerminal::info("高风险操作确认");
+        // 拆分提示文本（工具 + 参数）
+        std::string text = prompt;
+        size_t pos = text.find("\n参数: ");
+        if (pos != std::string::npos) {
+            CLFTerminal::sub("工具: " + CLFTerminal::cyan(text.substr(0, pos)));
+            CLFTerminal::sub("参数: " + CLFTerminal::gray(text.substr(pos + 4)));
+        } else {
+            CLFTerminal::sub(text);
+        }
+        std::cout << "允许执行该操作？" << CLFTerminal::green("(y/n)") << ": " << std::flush;
         std::string answer;
         std::getline(std::cin, answer);
         return answer == "y" || answer == "Y" || answer == "yes";
     });
 
-    std::cout << "Security mode: " << agent.getSecurityModeName() << std::endl;
+    CLFTerminal::sub("安全模式: " + CLFTerminal::cyan(std::string(agent.getSecurityModeName())));
 
     // 会话目录（崩溃恢复 + 历史）
     std::string historyDir = projectRoot + "/doc/contextHistory";
@@ -85,19 +98,19 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     std::string incompletePath = CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir);
     if (!incompletePath.empty()) {
         std::cout << "[提示] 检测到上次会话未正常结束。" << std::endl;
-        std::cout << "是否恢复该会话？(y/n): " << std::flush;
+        std::cout << "是否恢复该会话？" << CLFTerminal::green("(y/n)") << ": " << std::flush;
         std::string answer;
         std::getline(std::cin, answer);
         if (answer == "y" || answer == "Y" || answer == "yes") {
             if (agent.restoreSession(incompletePath)) {
-                std::cout << "会话已恢复。" << std::endl;
+                CLFTerminal::ok("会话已恢复");
             } else {
-                std::cout << "会话恢复失败（文件损坏？）。" << std::endl;
+                CLFTerminal::fail("会话恢复失败（文件损坏？）");
             }
             CLF::CLFCore::CLFSessionManager::promote(incompletePath); // 转正
         } else {
             CLF::CLFCore::CLFSessionManager::remove(incompletePath);
-            std::cout << "未完成的会话已丢弃。" << std::endl;
+            CLFTerminal::sub(CLFTerminal::gray("未完成的会话已丢弃"));
         }
     }
 
@@ -105,21 +118,33 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     std::string skillDir = projectRoot + "/data/skills";
     int skillCount = CLF::CLFCore::CLFSkillLoader::loadFromDir(skillDir);
     if (skillCount > 0) {
-        std::cout << "Skills loaded: " << skillCount << std::endl;
+        CLFTerminal::item("知识库: " + CLFTerminal::cyan(std::to_string(skillCount)) + " skills");
         auto names = CLF::CLFCore::CLFSkillLoader::listNames();
         for (const auto& n : names) {
-            std::cout << "  - " << n << std::endl;
+            std::string extra = (n == "constitution") ? "  [常驻注入]" : "";
+            CLFTerminal::sub(n + CLFTerminal::gray(" (L1 常驻)" + extra));
         }
     }
     std::cout << std::endl;
 
-    // REPL
+    // REPL（底部悬浮输入框）
     std::string input;
     while (true) {
-        std::cout << "> ";
+        // 绘制输入框，光标停在输入位置
+        int boxLines = 1; // 输入折行数（提交后按实际重算）
+        CLFTerminal::drawPromptBox(boxLines);
+
         if (!std::getline(std::cin, input)) {
+            CLFTerminal::clearPromptBox(boxLines);
             break;
         }
+
+        // 按实际折行数清除输入框（长文本自动换行后框要上移）
+        int actualLines = CLFTerminal::wrappedLines(input);
+        if (actualLines > boxLines) {
+            boxLines = actualLines;
+        }
+        CLFTerminal::clearPromptBox(boxLines);
 
         if (input.empty()) continue;
 
@@ -128,32 +153,32 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             agent.saveSession(historyDir, false);
             CLF::CLFCore::CLFSessionManager::remove(
                 CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir));
-            std::cout << "会话已保存。" << std::endl;
-            std::cout << "Goodbye." << std::endl;
+            CLFTerminal::ok("会话已保存");
+            CLFTerminal::item(CLFTerminal::bold("再见") + CLFTerminal::gray(" — CLFCode"));
             break;
         }
         if (input == "/help") {
-            std::cout << "Commands:" << std::endl
-                      << "  /exit    - quit (save session)" << std::endl
-                      << "  /help    - show this help" << std::endl
-                      << "  /clear   - save session & start new" << std::endl
-                      << "  /skill   - list skills (with load status) or load one" << std::endl
-                      << "  /mode    - switch security mode (auto/analyze/edit/manual)" << std::endl
-                      << "  /history - list recent sessions" << std::endl
-                      << "  /resume  - resume a session (/resume list | /resume <n>)" << std::endl
-                      << "  /model   - show current model" << std::endl
-                      << "  /config  - show current config" << std::endl;
+            CLFTerminal::item("命令列表");
+            CLFTerminal::sub(CLFTerminal::bold("/exit")    + CLFTerminal::gray("    - 退出（保存会话）"));
+            CLFTerminal::sub(CLFTerminal::bold("/help")    + CLFTerminal::gray("    - 显示帮助"));
+            CLFTerminal::sub(CLFTerminal::bold("/clear")   + CLFTerminal::gray("   - 保存会话并开始新会话"));
+            CLFTerminal::sub(CLFTerminal::bold("/skill")   + CLFTerminal::gray("   - 查看/加载知识库"));
+            CLFTerminal::sub(CLFTerminal::bold("/mode")    + CLFTerminal::gray("    - 切换安全模式"));
+            CLFTerminal::sub(CLFTerminal::bold("/history") + CLFTerminal::gray(" - 会话列表"));
+            CLFTerminal::sub(CLFTerminal::bold("/resume")  + CLFTerminal::gray("  - 恢复会话 (/resume <n>)"));
+            CLFTerminal::sub(CLFTerminal::bold("/model")   + CLFTerminal::gray("   - 查看模型"));
+            CLFTerminal::sub(CLFTerminal::bold("/config")  + CLFTerminal::gray("   - 查看配置"));
             continue;
         }
 
         if (input == "/history") {
             auto sessions = CLF::CLFCore::CLFSessionManager::list(historyDir, 10);
             if (sessions.empty()) {
-                std::cout << "No saved sessions yet." << std::endl;
+                CLFTerminal::sub(CLFTerminal::gray("暂无已保存的会话"));
             } else {
-                std::cout << "Recent sessions:" << std::endl;
+                CLFTerminal::item("会话列表");
                 for (const auto& s : sessions) {
-                    std::cout << "  " << s.m_savedAt << " | " << s.m_title << std::endl;
+                    CLFTerminal::sub(CLFTerminal::cyan(s.m_savedAt) + "  " + s.m_title);
                 }
             }
             continue;
@@ -161,38 +186,40 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
         if (input == "/model") {
             const auto& cfg = agent.getConfig();
-            std::cout << "Current model:   " << cfg.m_modelName << std::endl;
-            std::cout << "Sub model:       " << cfg.m_subModel << std::endl;
-            std::cout << std::endl;
-            std::cout << "Available models (edit config/agent_settings.json):" << std::endl;
-            std::cout << "  deepseek-v4-flash  - 主模型（Agent 能力最强）" << std::endl;
-            std::cout << "  deepseek-v4-pro    - Pro（正式版待发布）" << std::endl;
+            CLFTerminal::item("当前模型");
+            CLFTerminal::sub("主模型: " + CLFTerminal::cyan(cfg.m_modelName));
+            CLFTerminal::sub("副模型: " + CLFTerminal::cyan(cfg.m_subModel));
+            CLFTerminal::sub(CLFTerminal::gray("可用模型（修改 config/agent_settings.json）:"));
+            CLFTerminal::sub2("deepseek-v4-flash  - 主模型（Agent 能力最强）");
+            CLFTerminal::sub2("deepseek-v4-pro    - Pro（正式版待发布）");
             continue;
         }
 
         if (input == "/config") {
             const auto& cfg = agent.getConfig();
-            std::cout << "── 配置信息 ─────────────────────────────" << std::endl;
-            std::cout << "连接:    " << cfg.m_apiBaseUrl << std::endl;
-            std::cout << "模型:    " << cfg.m_modelName
-                      << " (副: " << cfg.m_subModel << ")" << std::endl;
-            std::cout << "参数:    temperature=" << cfg.m_temperature
-                      << " top_p=" << cfg.m_topP
-                      << " max_tokens=" << cfg.m_maxTokens << std::endl;
-            std::cout << "流式:    " << (cfg.m_stream ? "开" : "关") << std::endl;
-            std::cout << "安全模式: " << agent.getSecurityModeName() << std::endl;
-            std::cout << "上下文:  " << cfg.m_maxContextWindow
-                      << " tokens (压缩: " << (cfg.m_contextCompression ? "开" : "关") << ")"
-                      << std::endl;
-            std::cout << "语言:    " << cfg.m_interactionLanguage << std::endl;
-            std::cout << "日志:    " << cfg.m_logFile << std::endl;
+            CLFTerminal::item("配置信息");
+            CLFTerminal::sub(CLFTerminal::bold("连接") + ":   " + CLFTerminal::cyan(cfg.m_apiBaseUrl));
+            CLFTerminal::sub(CLFTerminal::bold("模型") + ":   " + CLFTerminal::cyan(cfg.m_modelName)
+                + CLFTerminal::gray(" (副: ") + cfg.m_subModel + CLFTerminal::gray(")"));
+            CLFTerminal::sub(CLFTerminal::bold("参数") + ":   temperature="
+                + std::to_string(cfg.m_temperature) + " top_p="
+                + std::to_string(cfg.m_topP) + " max_tokens="
+                + std::to_string(cfg.m_maxTokens));
+            CLFTerminal::sub(CLFTerminal::bold("流式") + ":   "
+                + (cfg.m_stream ? CLFTerminal::green("开") : CLFTerminal::gray("关")));
+            CLFTerminal::sub(CLFTerminal::bold("安全") + ":   " + CLFTerminal::cyan(agent.getSecurityModeName()));
+            CLFTerminal::sub(CLFTerminal::bold("上下文") + ": " + std::to_string(cfg.m_maxContextWindow)
+                + " tokens" + CLFTerminal::gray(" (压缩: ")
+                + (cfg.m_contextCompression ? "开" : "关") + CLFTerminal::gray(")"));
+            CLFTerminal::sub(CLFTerminal::bold("语言") + ":   " + cfg.m_interactionLanguage);
+            CLFTerminal::sub(CLFTerminal::bold("日志") + ":   " + CLFTerminal::gray(cfg.m_logFile));
             continue;
         }
 
         if (input.rfind("/resume", 0) == 0) {
             auto sessions = CLF::CLFCore::CLFSessionManager::list(historyDir, 10);
             if (sessions.empty()) {
-                std::cout << "No saved sessions." << std::endl;
+                CLFTerminal::sub(CLFTerminal::gray("暂无已保存的会话"));
                 continue;
             }
 
@@ -201,24 +228,25 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
             if (arg.empty()) {
                 // 无参数：列出带序号的会话
-                std::cout << "Sessions:" << std::endl;
+                CLFTerminal::item("会话列表");
                 for (size_t i = 0; i < sessions.size(); ++i) {
-                    std::cout << "  [" << i + 1 << "] " << sessions[i].m_savedAt
-                              << " | " << sessions[i].m_title << std::endl;
+                    CLFTerminal::sub(CLFTerminal::cyan("[" + std::to_string(i + 1) + "]")
+                        + " " + CLFTerminal::gray(sessions[i].m_savedAt)
+                        + "  " + sessions[i].m_title);
                 }
-                std::cout << "Usage: /resume <n>  (恢复第 n 条会话)" << std::endl;
+                CLFTerminal::sub(CLFTerminal::gray("用法: /resume <n> 恢复第 n 条会话"));
             } else {
                 // 按序号恢复
                 int idx = 0;
                 try { idx = std::stoi(arg); } catch (...) {}
                 if (idx < 1 || idx > static_cast<int>(sessions.size())) {
-                    std::cout << "Invalid session number: " << arg << std::endl;
+                    CLFTerminal::fail("无效的会话序号: " + arg);
                 } else {
                     const auto& s = sessions[idx - 1];
                     if (agent.restoreSession(s.m_path)) {
-                        std::cout << "会话已恢复: " << s.m_title << std::endl;
+                        CLFTerminal::ok("会话已恢复: " + s.m_title);
                     } else {
-                        std::cout << "会话恢复失败（文件损坏？）。" << std::endl;
+                        CLFTerminal::fail("会话恢复失败（文件损坏？）");
                     }
                 }
             }
@@ -230,14 +258,14 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             while (!arg.empty() && arg.front() == ' ') arg.erase(0, 1);
 
             if (arg.empty()) {
-                std::cout << "Current security mode: " << agent.getSecurityModeName() << std::endl;
-                std::cout << "Usage: /mode <auto|analyze|edit|manual>" << std::endl;
+                CLFTerminal::item("当前安全模式: " + CLFTerminal::cyan(agent.getSecurityModeName()));
+                CLFTerminal::sub(CLFTerminal::gray("用法: /mode <auto|analyze|edit|manual>"));
             } else {
                 auto mode = CLF::CLFCore::CLFSecurityPolicy::modeFromString(arg);
                 agent.setSecurityMode(mode);
-                std::cout << "Security mode switched to: " << agent.getSecurityModeName() << std::endl;
+                CLFTerminal::ok("安全模式: " + CLFTerminal::cyan(agent.getSecurityModeName()));
                 if (mode == CLF::CLFCore::CLFSecurityMode::Analyze) {
-                    std::cout << "  (写操作和命令执行将被阻断)" << std::endl;
+                    CLFTerminal::sub(CLFTerminal::yellow("⚠ 写操作和命令执行将被阻断"));
                 }
             }
             continue;
@@ -251,21 +279,23 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             if (arg.empty() || arg == "list") {
                 auto names = CLF::CLFCore::CLFSkillLoader::listNames();
                 auto loaded = agent.getLoadedSkills();
-                std::cout << "Available skills:" << std::endl;
+                CLFTerminal::item("知识库");
                 for (const auto& n : names) {
                     bool isLoaded = std::find(loaded.begin(), loaded.end(), n) != loaded.end();
-                    std::cout << "  " << n << (isLoaded ? "  [已加载]" : "") << std::endl;
+                    CLFTerminal::sub(n + (isLoaded
+                        ? CLFTerminal::green("  [已加载]")
+                        : CLFTerminal::gray("  [未加载]")));
                 }
-                std::cout << "  constitution  [常驻]  (L1 编码宪法，始终注入)" << std::endl;
-                std::cout << "Usage: /skill <name>" << std::endl;
+                CLFTerminal::sub(CLFTerminal::gray("constitution  [常驻]  (L1 编码宪法，始终注入)"));
+                CLFTerminal::sub(CLFTerminal::gray("用法: /skill <name>"));
             } else {
                 std::string content = CLF::CLFCore::CLFSkillLoader::getContent(arg);
                 if (content.empty()) {
-                    std::cout << "Skill not found: " << arg << std::endl;
-                    std::cout << "Use /skill list to see available skills." << std::endl;
+                    CLFTerminal::fail("知识库未找到: " + arg);
+                    CLFTerminal::sub(CLFTerminal::gray("用法: /skill list 查看可用项"));
                 } else {
                     agent.injectSkillToContext(arg, content);
-                    std::cout << "Skill loaded: " << arg << std::endl;
+                    CLFTerminal::ok("知识库已加载: " + CLFTerminal::cyan(arg));
                 }
             }
             continue;
@@ -276,7 +306,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
             CLF::CLFCore::CLFSessionManager::remove(
                 CLF::CLFCore::CLFSessionManager::findIncomplete(historyDir));
             agent.clearContext();
-            std::cout << "会话已保存，新会话开始。" << std::endl;
+            CLFTerminal::ok("会话已保存，新会话开始");
             continue;
         }
 

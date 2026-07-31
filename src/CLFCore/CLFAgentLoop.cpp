@@ -3,6 +3,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
+#include "CLFCore/CLFTerminal.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -251,6 +252,14 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
         result.m_toolCallId = call.m_id;
         result.m_name       = call.m_name;
 
+        // 工具调用过程显示
+        CLFTerminal::item("执行工具: " + CLFTerminal::cyan(call.m_name));
+        std::string argsDisplay = call.m_arguments;
+        if (argsDisplay.size() > 200) {
+            argsDisplay = argsDisplay.substr(0, 197) + "...";
+        }
+        CLFTerminal::sub("参数: " + CLFTerminal::gray(argsDisplay));
+
         auto it = std::find_if(m_tools.begin(), m_tools.end(),
             [&](const CLFTool& t) { return t.m_name == call.m_name; });
 
@@ -261,6 +270,7 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
                 result.m_content = std::string("[Blocked by security policy (mode: ")
                                  + m_securityPolicy.getModeName()
                                  + ")] 当前模式禁止执行该操作（仅读操作允许）。";
+                CLFTerminal::sub(CLFTerminal::red("✗ 被安全策略阻断"));
                 results.push_back(std::move(result));
                 continue;
             }
@@ -271,6 +281,7 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
                                    + "参数: " + call.m_arguments;
                 if (!m_confirmCallback(prompt)) {
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
+                    CLFTerminal::sub(CLFTerminal::yellow("✗ 用户拒绝"));
                     results.push_back(std::move(result));
                     continue;
                 }
@@ -278,11 +289,15 @@ std::vector<CLFToolResult> CLFAgentLoop::executeTools(
 
             try {
                 result.m_content = it->m_handler(call.m_arguments);
+                CLFTerminal::sub(CLFTerminal::green("✓ 执行完成 (")
+                                 + std::to_string(result.m_content.size()) + " 字符)");
             } catch (const std::exception& e) {
                 result.m_content = std::string("Tool execution error: ") + e.what();
+                CLFTerminal::sub(CLFTerminal::red("✗ 执行异常: ") + e.what());
             }
         } else {
             result.m_content = std::string("Tool not found: ") + call.m_name;
+            CLFTerminal::sub(CLFTerminal::red("✗ 工具未注册: ") + call.m_name);
         }
 
         results.push_back(std::move(result));

@@ -64,6 +64,11 @@
   - /resume <n> 运行时恢复最近会话（list 带序号）
   - /skill list 显示 [已加载] / [常驻] 状态
   - /config 显示全部配置信息
+- [x] **终端 UI 美化** — ✅ 完成（Claude Code 风格）
+  - CLFTerminal 工具类：ANSI 颜色 + 树状符号（● ⎿ ✓ ✗ ⚠）
+  - 启动横幅 / 全部命令输出 / 工具调用过程 / 安全确认 树状化
+  - 仅安全字符（Windows 终端无 emoji 乱码）
+  - **底部悬浮输入框**：浅蓝分隔线（H-4 行）+ 输入行，长输入折行分隔线上移，提交后清除恢复内容区
 - [x] **全量体检修复 4 个 bug**
   - Windows 命令 stdout/stderr 读取（原为 TODO）
   - SSE 跨 chunk 行缓冲（流式丢数据）

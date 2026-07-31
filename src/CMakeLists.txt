@@ -7,6 +7,7 @@ add_library(clf_core STATIC
     CLFCore/CLFSecurityPolicy.cpp
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSkillLoader.cpp
+    CLFCore/CLFTerminal.cpp
 )
 
 add_library(clf_network STATIC
