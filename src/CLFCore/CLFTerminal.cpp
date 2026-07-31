@@ -71,10 +71,10 @@ bool verifyAnsi() {
 
     std::cout << "\033[6n" << std::flush;
 
-    // 轮询读取响应（最多 500ms）
+    // 轮询读取响应（最多 1500ms——conhost 的 DSR 响应可能偏慢）
     const auto start = std::chrono::steady_clock::now();
     bool ok = false;
-    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500)) {
         DWORD avail = 0;
         if (PeekConsoleInput(hIn, nullptr, 0, &avail) && avail > 0) {
             INPUT_RECORD rec;
