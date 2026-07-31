@@ -3,7 +3,9 @@
 #include "CLFCore/CLFTerminal.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <iostream>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -50,6 +52,53 @@ int scrollVisibleLines(int H, bool collapsed) {
 
 } // anonymous namespace
 
+namespace {
+
+// ANSI 自检：DSR 查询光标位置（\033[6n），终端支持 VT 时会响应 ESC [ x;yR
+// 读不到响应 = VT 序列无效（旧 conhost / 不支持环境）→ 需降级
+bool verifyAnsi() {
+#ifdef _WIN32
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    if (hIn == INVALID_HANDLE_VALUE) return false;
+
+    DWORD inMode = 0;
+    if (!GetConsoleMode(hIn, &inMode)) return false;
+    // 临时原始模式（读响应序列）
+    DWORD rawInMode = inMode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+    if (!SetConsoleMode(hIn, rawInMode)) return false;
+
+    std::cout << "\033[6n" << std::flush;
+
+    // 轮询读取响应（最多 500ms）
+    const auto start = std::chrono::steady_clock::now();
+    bool ok = false;
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+        DWORD avail = 0;
+        if (PeekConsoleInput(hIn, nullptr, 0, &avail) && avail > 0) {
+            INPUT_RECORD rec;
+            DWORD n = 0;
+            if (ReadConsoleInput(hIn, &rec, 1, &n) && n == 1
+                && rec.EventType == KEY_EVENT && rec.Event.KeyEvent.bKeyDown) {
+                char c = static_cast<char>(rec.Event.KeyEvent.uChar.AsciiChar);
+                if (c == 0x1B) { // ESC 开头 → VT 响应
+                    ok = true;
+                    break;
+                }
+            }
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    }
+
+    SetConsoleMode(hIn, inMode);
+    return ok;
+#else
+    return true;
+#endif
+}
+
+} // anonymous namespace
+
 void CLFTerminal::enableAnsi() {
 #ifdef _WIN32
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -57,7 +106,7 @@ void CLFTerminal::enableAnsi() {
         DWORD mode = 0;
         if (GetConsoleMode(hOut, &mode)) {
             if (SetConsoleMode(hOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
-                s_ansiEnabled = true;
+                s_ansiEnabled = verifyAnsi(); // 自检：VT 序列真的生效才启用
             }
         }
     }
@@ -253,8 +302,8 @@ void CLFTerminal::scrollPrint(const std::string& text) {
     }
 
     int H = getTerminalHeight();
-    if (H <= 0) {
-        // 无法获取高度：直接输出
+    if (H <= 0 || !s_ansiEnabled) {
+        // 无法获取高度或 ANSI 无效：直接输出（降级模式）
         std::cout << text << std::flush;
         return;
     }
@@ -295,7 +344,7 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
     s_statusContent = content;
 
     int H = getTerminalHeight();
-    if (H <= 0) return;
+    if (H <= 0 || !s_ansiEnabled) return; // 降级：不显示状态区
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
@@ -323,8 +372,8 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
     s_inputCursor = (cursorPos < 0) ? static_cast<int>(text.size()) : cursorPos;
 
     int H = getTerminalHeight();
-    if (H <= 0) {
-        std::cout << "> " << text << std::flush;
+    if (H <= 0 || !s_ansiEnabled) {
+        std::cout << "\r> " << text << "\033[K" << std::flush;
         return;
     }
 
@@ -344,7 +393,8 @@ void CLFTerminal::drawModeArea(const std::string& mode) {
     s_modeLabel = mode;
 
     int H = getTerminalHeight();
-    if (H <= 0) return;
+    if (H <= 0 || !s_ansiEnabled) return; // 降级：不显示模式区（避免刷屏）
+
     int W = getTerminalWidth();
     if (W <= 0) W = 80;
 
@@ -404,7 +454,7 @@ void CLFTerminal::scrollAppend(const std::string& text) {
     }
 
     int H = getTerminalHeight();
-    if (H <= 0) {
+    if (H <= 0 || !s_ansiEnabled) {
         std::cout << text << std::flush;
         return;
     }
