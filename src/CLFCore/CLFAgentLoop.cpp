@@ -14,13 +14,16 @@
 
 namespace CLF::CLFCore {
 
-CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config)
+CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
+                           std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient)
     : m_config(config)
     , m_context(config.m_maxContextWindow)
-    , m_httpClient(config.m_apiBaseUrl, config.m_apiKey)
+    , m_httpClient(httpClient ? httpClient
+                              : std::make_shared<CLF::CLFNetwork::CLFHttpClient>(
+                                    config.m_apiBaseUrl, config.m_apiKey))
     , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode)) {
     // 应用回复超时配置（默认 300 秒）
-    m_httpClient.setTimeout(config.m_maxResponseDelaySec);
+    m_httpClient->setTimeout(config.m_maxResponseDelaySec);
     injectSystemPrompt();
 }
 
@@ -43,7 +46,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 std::string errorMsg;
 
                 CLF::CLFNetwork::CLFHttpResponse response =
-                    m_httpClient.postJsonStream(
+                    m_httpClient->postJsonStream(
                         "/v1/chat/completions", body,
                         [&](const std::string& line) {
                             if (hadError) return;
@@ -99,7 +102,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             } else {
                 // ====== 同步路径 ======
                 CLF::CLFNetwork::CLFHttpResponse response =
-                    m_httpClient.postJson("/v1/chat/completions", body);
+                    m_httpClient->postJson("/v1/chat/completions", body);
 
                 if (!response.m_error.empty()) {
                     return std::string("[Error] ") + response.m_error;

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -56,7 +57,9 @@ struct CLFTool {
 
 class CLFAgentLoop {
 public:
-    explicit CLFAgentLoop(const CLFAgentConfig& config);
+    // httpClient 可注入 Mock（测试用）；nullptr 时创建真实实例
+    explicit CLFAgentLoop(const CLFAgentConfig& config,
+                          std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient = nullptr);
 
     // 执行一轮对话（含 tool-calling 循环）
     std::string runTurn(const std::string& userInput);
@@ -97,7 +100,7 @@ private:
 
     CLFAgentConfig                    m_config;
     CLFContext                        m_context;
-    CLF::CLFNetwork::CLFHttpClient    m_httpClient;
+    std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> m_httpClient;
     CLFProtocolAdapter                m_protocolAdapter;
     CLFSecurityPolicy                 m_securityPolicy;
     std::function<bool(const std::string&)> m_confirmCallback;

@@ -6,6 +6,7 @@
 |----|----------|-----------|------|
 | cpp-httplib | v0.18.4 | `httplib/httplib.h` | https://github.com/yhirose/cpp-httplib |
 | nlohmann/json | v3.11.3 | `nlohmann/json.hpp` | https://github.com/nlohmann/json |
+| Boost.UT | 2.x | `boost-ut/ut.hpp` | https://github.com/boost-ext/ut |
 
 ## 下载
 
@@ -15,4 +16,7 @@ curl -L -o 3rdparty/httplib/httplib.h https://raw.githubusercontent.com/yhirose/
 
 # nlohmann/json
 curl -L -o 3rdparty/nlohmann/json.hpp https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp
+
+# Boost.UT
+curl -L -o 3rdparty/boost-ut/ut.hpp https://raw.githubusercontent.com/boost-ext/ut/master/include/boost/ut.hpp
 ```

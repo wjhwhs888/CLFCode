@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(CLFCode VERSION 1.0.0 LANGUAGES CXX)
 
+# 测试支持（顶层启用，src/ 下 add_test 注册）
+enable_testing()
+
 # C++17 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +19,7 @@ endif()
 # 第三方头文件路径
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/httplib)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty)
+include_directories(${CMAKE_SOURCE_DIR}/3rdparty/boost-ut)
 
 # OpenSSL 检测（HTTPS 支持）
 find_package(OpenSSL QUIET)
