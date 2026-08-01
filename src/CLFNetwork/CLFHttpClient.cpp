@@ -14,17 +14,25 @@ CLFHttpClient::CLFHttpClient(const std::string& baseUrl, const std::string& apiK
 CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::string& jsonBody) {
     CLFHttpResponse result;
 
-    // 解析 base URL
-    httplib::Client cli(m_baseUrl);
-    cli.set_connection_timeout(m_timeoutSec, 0);
-    cli.set_read_timeout(m_timeoutSec, 0);
+    auto cli = std::make_shared<httplib::Client>(m_baseUrl);
+    cli->set_connection_timeout(10, 0);
+    cli->set_read_timeout(m_timeoutSec, 0);
+    {
+        std::lock_guard<std::mutex> lock(m_cliMutex);
+        m_activeCli = cli;
+    }
 
     httplib::Headers headers = {
         {"Authorization", "Bearer " + m_apiKey},
         {"Content-Type", "application/json"}
     };
 
-    auto res = cli.Post(path, headers, jsonBody, "application/json");
+    auto res = cli->Post(path, headers, jsonBody, "application/json");
+
+    {
+        std::lock_guard<std::mutex> lock(m_cliMutex);
+        m_activeCli.reset();
+    }
 
     if (!res) {
         result.m_error = "Connection failed: " + httplib::to_string(res.error());
@@ -48,9 +56,13 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
 ) {
     CLFHttpResponse result;
 
-    httplib::Client cli(m_baseUrl);
-    cli.set_connection_timeout(m_timeoutSec, 0);
-    cli.set_read_timeout(m_timeoutSec, 0);
+    auto cli = std::make_shared<httplib::Client>(m_baseUrl);
+    cli->set_connection_timeout(10, 0);
+    cli->set_read_timeout(m_timeoutSec, 0);
+    {
+        std::lock_guard<std::mutex> lock(m_cliMutex);
+        m_activeCli = cli;
+    }
 
     httplib::Headers headers = {
         {"Authorization", "Bearer " + m_apiKey},
@@ -60,7 +72,7 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     // SSE 行缓冲：网络 chunk 边界可能切开一行数据，需缓冲尾部跨块拼接
     std::string lineBuffer;
 
-    auto res = cli.Post(
+    auto res = cli->Post(
         path, headers, jsonBody, "application/json",
         [&](const char* data, size_t dataLen) {
             lineBuffer.append(data, dataLen);
@@ -69,7 +81,7 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
             while (true) {
                 size_t end = lineBuffer.find('\n', pos);
                 if (end == std::string::npos) {
-                    break; // 剩余部分是不完整行，留在缓冲等待下一个 chunk
+                    break;
                 }
                 std::string line = lineBuffer.substr(pos, end - pos);
                 pos = end + 1;
@@ -82,7 +94,6 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
                 }
             }
 
-            // 消费掉完整行，保留尾部残行
             if (pos > 0) {
                 lineBuffer.erase(0, pos);
             }
@@ -102,17 +113,32 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
         lineBuffer.clear();
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_cliMutex);
+        m_activeCli.reset();
+    }
+
     if (!res) {
         result.m_error = "Stream connection failed: " + httplib::to_string(res.error());
         return result;
     }
 
     result.m_statusCode = res->status;
+    if (res->status < 200 || res->status >= 300) {
+        result.m_error = "HTTP " + std::to_string(res->status);
+    }
     return result;
 }
 
 void CLFHttpClient::setTimeout(int seconds) {
     m_timeoutSec = seconds;
+}
+
+void CLFHttpClient::abort() {
+    std::lock_guard<std::mutex> lock(m_cliMutex);
+    if (m_activeCli) {
+        m_activeCli->stop();
+    }
 }
 
 } // namespace CLF::CLFNetwork

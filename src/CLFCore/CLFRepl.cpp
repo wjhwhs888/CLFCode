@@ -50,6 +50,16 @@ CLFRepl::CLFRepl(CLFAgentLoop& agent, const std::string& historyDir)
 
 int CLFRepl::run() {
 
+    // 启动清理：上次崩溃可能残留 clf_cmd_*.txt 临时文件
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(".")) {
+            std::string name = entry.path().filename().string();
+            if (name.find("clf_cmd_stdout_") == 0 || name.find("clf_cmd_stderr_") == 0) {
+                std::filesystem::remove(entry.path());
+            }
+        }
+    } catch (...) {}
+
     // 布局初始化 + 横幅
     CLFTerminal::initLayout(m_modeName);
     printBanner();
@@ -142,16 +152,17 @@ int CLFRepl::run() {
 void CLFRepl::printBanner() {
 
     const auto& config = m_agent.getConfig();
-    std::string projectRoot = CLFConfigLoader::getProjectRoot();
+    std::string cwd = CLFConfigLoader::getWorkingDir();
 
     CLFTerminal::scrollPrint(CLFTerminal::bold("● CLFCode") + " — CLI Agent Framework for Code\n");
     CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::gray(CLFTerminal::diagnosticInfo()) + "\n");
-    CLFTerminal::scrollPrint("  ⎿ 项目根: " + CLFTerminal::cyan(projectRoot) + "\n");
+    CLFTerminal::scrollPrint("  ⎿ 工作目录: " + CLFTerminal::cyan(cwd) + "\n");
     CLFTerminal::scrollPrint("  ⎿ 配置: " + CLFTerminal::cyan(m_agent.getConfig().m_apiBaseUrl) + "\n");
     CLFTerminal::scrollPrint("  ⎿ 模型: " + CLFTerminal::cyan(config.m_modelName) + "\n");
 
-    // 知识库
-    int skillCount = CLFSkillLoader::loadFromDir(projectRoot + "/data/skills");
+    // 知识库（加载路径基于 CLFCode 安装目录，非工作目录）
+    int skillCount = CLFSkillLoader::loadFromDir(
+        CLFConfigLoader::resolvePath("data/skills"));
     if (skillCount > 0) {
         CLFTerminal::scrollPrint("  ⎿ 知识库: " + CLFTerminal::cyan(std::to_string(skillCount))
                                  + " skills\n");
@@ -183,14 +194,16 @@ void CLFRepl::submit(const std::string& input) {
     // 清除输入区，光标回内容区输出位置
     CLFTerminal::toContentArea();
 
-    // 回显输入 + 回复前缀
+    // 回显输入
     CLFTerminal::scrollPrint("> " + CLFTerminal::bold(input) + "\n");
-    CLFTerminal::scrollPrint("● " + CLFTerminal::cyan("CLFCode") + ": ");
 
     if (handleCommand(input)) {
         CLFTerminal::drawStatusArea("", "");
         return;
     }
+
+    // 回复前缀（仅普通对话，命令不需要）
+    CLFTerminal::scrollPrint("● " + CLFTerminal::cyan("CLFCode") + ": ");
 
     // 普通对话
     try {
@@ -200,7 +213,9 @@ void CLFRepl::submit(const std::string& input) {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
 
         if (elapsed > 0) {
-            CLFTerminal::thoughtMark(static_cast<int>(elapsed));
+            auto stats = m_agent.getLastToolStats();
+            CLFTerminal::thoughtMark(static_cast<int>(elapsed),
+                                     stats.searchCount, stats.readCount);
         }
         // 中断已在 CLFAgentLoop 中输出 "⏹ 已中断"，不重复打印
         if (!response.empty() && response != "[Interrupted]") {
@@ -212,8 +227,9 @@ void CLFRepl::submit(const std::string& input) {
         m_agent.clearContext();
     }
 
-    // 自动存盘（incomplete）
-    saveSession(true);
+    // 自动存盘（仅工具调用时标记 incomplete，纯对话直接完成）
+    auto stats = m_agent.getLastToolStats();
+    saveSession(stats.totalCalls > 0);
 
     CLFTerminal::drawStatusArea("", "");
     CLFTerminal::scrollPrint("\n");
@@ -230,7 +246,7 @@ bool CLFRepl::handleCommand(const std::string& input) {
     if (input == "/help") {
         CLFTerminal::scrollPrint("\n  ⎿ /exit   退出 | /clear 新会话 | /skill 知识库\n");
         CLFTerminal::scrollPrint("  ⎿ /mode   安全模式 | /history 会话 | /resume <n> 恢复\n");
-        CLFTerminal::scrollPrint("  ⎿ /model  模型 | /config 配置\n");
+        CLFTerminal::scrollPrint("  ⎿ /model  模型 | /config 配置 | /context 用量\n");
         CLFTerminal::scrollPrint("  ⎿ Ctrl+N 切换模式 | Esc 清空输入\n");
         return true;
     }
@@ -238,6 +254,13 @@ bool CLFRepl::handleCommand(const std::string& input) {
         saveSession(false);
         m_agent.clearContext();
         CLFTerminal::scrollPrint(CLFTerminal::green("✓ 会话已保存，新会话开始") + "\n");
+        return true;
+    }
+    if (input == "/model") {
+        const auto& cfg = m_agent.getConfig();
+        CLFTerminal::scrollPrint("\n● 当前模型\n");
+        CLFTerminal::scrollPrint("  ⎿ 主模型: " + CLFTerminal::cyan(cfg.m_modelName) + "\n");
+        CLFTerminal::scrollPrint("  ⎿ 副模型: " + CLFTerminal::cyan(cfg.m_subModel) + "\n");
         return true;
     }
     if (input.rfind("/mode", 0) == 0) {
@@ -249,6 +272,52 @@ bool CLFRepl::handleCommand(const std::string& input) {
             CLFTerminal::drawModeArea(m_modeName);
         }
         CLFTerminal::scrollPrint(CLFTerminal::cyan("● 模式: " + m_modeName) + "\n");
+        return true;
+    }
+    if (input == "/config") {
+        const auto& cfg = m_agent.getConfig();
+        CLFTerminal::scrollPrint("\n● 配置信息\n");
+        CLFTerminal::scrollPrint("  ⎿ 连接: " + CLFTerminal::cyan(cfg.m_apiBaseUrl) + "\n");
+        CLFTerminal::scrollPrint("  ⎿ 模型: " + CLFTerminal::cyan(cfg.m_modelName)
+                                 + " (副: " + cfg.m_subModel + ")\n");
+        CLFTerminal::scrollPrint("  ⎿ 参数: temperature=" + std::to_string(cfg.m_temperature)
+                                 + " top_p=" + std::to_string(cfg.m_topP)
+                                 + " max_tokens=" + std::to_string(cfg.m_maxTokens) + "\n");
+        CLFTerminal::scrollPrint("  ⎿ 流式: " + std::string(cfg.m_stream ? "开" : "关")
+                                 + " | 安全: " + m_modeName + "\n");
+        CLFTerminal::scrollPrint("  ⎿ 上下文: " + std::to_string(cfg.m_maxContextWindow)
+                                 + " tokens\n");
+        return true;
+    }
+    if (input == "/context") {
+        const auto& ctx = m_agent.getContext();
+        const auto& cfg = m_agent.getConfig();
+        int used = ctx.estimateTokens();
+        int max  = cfg.m_maxContextWindow;
+        int pct  = (max > 0) ? (used * 100 / max) : 0;
+
+        // 用量条（20 格）
+        int bars = (max > 0) ? (used * 20 / max) : 0;
+        if (bars > 20) bars = 20;
+        std::string bar;
+        for (int i = 0; i < 20; ++i) {
+            if (i < bars)
+                bar += (pct >= 80) ? CLFTerminal::red("█")
+                     : (pct >= 50) ? CLFTerminal::yellow("█")
+                     :               CLFTerminal::green("█");
+            else
+                bar += CLFTerminal::gray("░");
+        }
+
+        CLFTerminal::scrollPrint("\n● 上下文用量\n");
+        CLFTerminal::scrollPrint("  ⎿ 用量: " + std::to_string(used) + " / "
+                                 + std::to_string(max) + " tokens"
+                                 + " (" + std::to_string(pct) + "%)\n");
+        CLFTerminal::scrollPrint("  ⎿ [" + bar + "]\n");
+        CLFTerminal::scrollPrint("  ⎿ 剩余: ~" + std::to_string(max - used) + " tokens");
+        if (pct >= 80)
+            CLFTerminal::scrollPrint("  " + CLFTerminal::yellow("⚠ 建议 /clear"));
+        CLFTerminal::scrollPrint("\n");
         return true;
     }
     if (input.rfind("/skill", 0) == 0) {
@@ -316,28 +385,6 @@ bool CLFRepl::handleCommand(const std::string& input) {
         } else {
             CLFTerminal::scrollPrint(CLFTerminal::red("✗ 无效序号: " + arg) + "\n");
         }
-        return true;
-    }
-    if (input == "/model") {
-        const auto& cfg = m_agent.getConfig();
-        CLFTerminal::scrollPrint("\n● 当前模型\n");
-        CLFTerminal::scrollPrint("  ⎿ 主模型: " + CLFTerminal::cyan(cfg.m_modelName) + "\n");
-        CLFTerminal::scrollPrint("  ⎿ 副模型: " + CLFTerminal::cyan(cfg.m_subModel) + "\n");
-        return true;
-    }
-    if (input == "/config") {
-        const auto& cfg = m_agent.getConfig();
-        CLFTerminal::scrollPrint("\n● 配置信息\n");
-        CLFTerminal::scrollPrint("  ⎿ 连接: " + CLFTerminal::cyan(cfg.m_apiBaseUrl) + "\n");
-        CLFTerminal::scrollPrint("  ⎿ 模型: " + CLFTerminal::cyan(cfg.m_modelName)
-                                 + " (副: " + cfg.m_subModel + ")\n");
-        CLFTerminal::scrollPrint("  ⎿ 参数: temperature=" + std::to_string(cfg.m_temperature)
-                                 + " top_p=" + std::to_string(cfg.m_topP)
-                                 + " max_tokens=" + std::to_string(cfg.m_maxTokens) + "\n");
-        CLFTerminal::scrollPrint("  ⎿ 流式: " + std::string(cfg.m_stream ? "开" : "关")
-                                 + " | 安全: " + m_modeName + "\n");
-        CLFTerminal::scrollPrint("  ⎿ 上下文: " + std::to_string(cfg.m_maxContextWindow)
-                                 + " tokens\n");
         return true;
     }
     return false; // 非命令

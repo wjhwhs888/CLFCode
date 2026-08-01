@@ -90,3 +90,11 @@
   - 崩溃恢复：每轮自动存盘 + 启动检测询问
   - /history 列表 + 30 天自动清理
   - CLFContext serialize/restore（tool_calls 全字段）
+    - [x] **2026-08-01 全量修复** — ✅ 完成（14 个文件，+609/-124 行）
+      - 工具显示 Claude Code 风格化（● tool(param) + exitCode/stderr + /context 命令）
+      - HTTP 错误处理（postJsonStream 状态码检查 + 致命/可重试分类 + 退避重试）
+      - Windows 编码全面修复（GBK↔UTF-8 + UTF-8 路径→宽字符 + 命令行 ACP 转换）
+      - 命令执行回退 std::system + 后台线程超时（CreateProcess 命令行解析不兼容）
+      - ESC 中断恢复（ThinkingIndicator 后台轮询 + ICLFHttpClient::abort + 互斥锁）
+      - 系统提示增强（Windows 环境声明 + 文件管理规则）
+      - 启动残留清理 + 恢复会话优化 + kFixedLines 调整 + 项目根/工作目录分拆

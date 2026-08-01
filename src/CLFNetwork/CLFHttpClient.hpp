@@ -4,9 +4,14 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
+
+// fwd
+namespace httplib { class Client; }
 
 namespace CLF::CLFNetwork {
 
@@ -32,6 +37,9 @@ public:
 
     // 设置请求超时（秒）
     virtual void setTimeout(int seconds) = 0;
+
+    // 中止正在进行的请求（线程安全，可从其他线程调用）
+    virtual void abort() = 0;
 };
 
 class CLFHttpClient : public ICLFHttpClient {
@@ -46,11 +54,14 @@ public:
         std::function<void(const std::string& line)> onLine) override;
 
     void setTimeout(int seconds) override;
+    void abort() override;
 
 private:
     std::string m_baseUrl;
     std::string m_apiKey;
     int         m_timeoutSec = 30;
+    std::mutex  m_cliMutex;
+    std::shared_ptr<httplib::Client> m_activeCli;
 };
 
 } // namespace CLF::CLFNetwork

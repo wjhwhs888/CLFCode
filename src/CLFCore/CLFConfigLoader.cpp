@@ -67,6 +67,10 @@ std::string CLFConfigLoader::resolvePath(const std::string& relativePath) {
     return s_projectRoot + "/" + relativePath;
 }
 
+std::string CLFConfigLoader::getWorkingDir() {
+    return fs::current_path().string();
+}
+
 bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig& outConfig) {
     std::ifstream file(configPath);
     if (!file.is_open()) {

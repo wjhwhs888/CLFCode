@@ -21,6 +21,7 @@ namespace {
 class MockHttpClient : public ICLFHttpClient {
 public:
     void setTimeout(int) override {}
+    void abort() override {}
 
     // 预设同步响应（顺序消费）
     void pushResponse(const std::string& body, const std::string& error = "") {

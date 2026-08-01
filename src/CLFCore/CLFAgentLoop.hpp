@@ -100,6 +100,17 @@ public:
     // 获取当前配置（/config 命令用）
     const CLFAgentConfig& getConfig() const { return m_config; }
 
+    // 获取上下文（/context 命令用）
+    const CLFContext& getContext() const { return m_context; }
+
+    // 工具调用统计（thoughtMark 使用）
+    struct ToolStats {
+        int searchCount = 0;
+        int readCount   = 0;
+        int totalCalls  = 0;
+    };
+    ToolStats getLastToolStats() const { return m_lastToolStats; }
+
     // 已注入上下文的 skill 名称列表（/skill 状态显示用）
     std::vector<std::string> getLoadedSkills() const;
 
@@ -119,6 +130,7 @@ private:
     std::function<void(const std::string&, const std::string&)> m_statusCallback;
     std::vector<CLFTool>              m_tools;
     std::vector<std::string>          m_loadedSkills;
+    ToolStats                         m_lastToolStats;
 };
 
 } // namespace CLF::CLFCore

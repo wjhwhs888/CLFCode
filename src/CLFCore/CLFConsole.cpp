@@ -4,6 +4,8 @@
 
 #include "CLFCore/CLFConsole.hpp"
 
+#include <mutex>
+
 #ifdef _WIN32
 #include <windows.h>
 #include <conio.h>    // _getch
@@ -164,6 +166,9 @@ CLFKeyEvent CLFConsole::readKey() {
 }
 
 bool CLFConsole::checkEscape() {
+    // 互斥锁：防止 ThinkingIndicator 后台线程与 SSE 回调同时 _getch()
+    static std::mutex s_checkMutex;
+    std::lock_guard<std::mutex> lock(s_checkMutex);
     while (_kbhit()) {
         int c = _getch();
         if (c == 0x1B) return true;           // ESC 按下

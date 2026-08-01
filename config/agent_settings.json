@@ -6,7 +6,7 @@
     "chat_completions": {
         "model": "deepseek-v4-flash",
         "sub_model": "deepseek-v4-pro",
-        "max_tokens": 8192,
+        "max_tokens": 65536,
         "temperature": 0.0,
         "top_p": 1.0,
         "frequency_penalty": 0.0,
@@ -18,7 +18,7 @@
     },
     "agent": {
         "max_context_window": 1048576,
-        "max_tool_call_iterations": 16,
+        "max_tool_call_iterations": 48,
         "context_compression": false,
         "max_response_delay_sec": 300,
         "interaction_language": "zh-CN",

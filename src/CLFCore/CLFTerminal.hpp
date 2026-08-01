@@ -90,9 +90,9 @@ public:
     static void drawConfirmArea(const std::vector<std::string>& options, int selected);
     static void clearConfirmArea();
 
-    // 思考过程标记（每轮对话完成后显示耗时）
-    // 格式：  Thought for {N}s
-    static void thoughtMark(int seconds);
+    // 思考过程标记（每轮对话完成后显示耗时 + 工具统计）
+    // 格式：  Thought for {N}s, searched for X pattern(s), read Y file(s)
+    static void thoughtMark(int seconds, int searchCount = 0, int readCount = 0);
 
     // 恢复终端状态并清屏（退出时调用）
     static void restoreScrollRegion();

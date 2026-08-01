@@ -32,7 +32,9 @@ bool CLFTerminal::s_confirmDrawn = false;
 namespace {
 
 // ============ 布局常量 ============
-constexpr int kFixedLines = 5; // blank + upper-sep + input + lower-sep + mode
+// DECSTBM 滚动区底部留 2 行缓冲：防止自动换行溢出到固定区
+// 布局：滚动区(1~H-7) + 缓冲(H-6~H-5) + 空白 + 上分隔线 + 输入 + 下分隔线 + 模式
+constexpr int kFixedLines = 7;
 int contentBottom(int H) { return H - kFixedLines; }
 int inputRow(int H)      { return H - 2; }
 int modeRow(int H)       { return H; }
@@ -390,10 +392,17 @@ void CLFTerminal::toContentArea() {
         return;
     }
 
-    // 移到内容区底部，空一行开始新内容
-    // 光标在输入行 (H-2)，需要进入滚动区 (1 ~ H-5)
+    // 清除固定区输入行（旧文本残留），恢复下分隔线（防止长输入覆盖）
+    int W = getTerminalWidth();
+    if (W <= 0) W = 80;
+    std::cout << "\033[" << inputRow(H) << ";1H" << std::flush;
+    std::cout << "\r\033[K" << std::flush;
+    std::cout << "\033[" << (H - 1) << ";1H" << std::flush;
+    std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
+
+    // 移到内容区底部，空一行开始新内容（滚动区 1 ~ H-kFixedLines）
     std::cout << "\033[" << contentBottom(H) << ";1H" << std::flush;
-    std::cout << "\n" << std::flush; // 滚动区上滚一行，为新内容腾出空间
+    std::cout << "\n" << std::flush;
     s_confirmDrawn = false;
 }
 
@@ -457,9 +466,14 @@ std::string CLFTerminal::diagnosticInfo() {
          + ", ANSI: " + (s_ansiEnabled ? "开" : "关");
 }
 
-void CLFTerminal::thoughtMark(int seconds) {
+void CLFTerminal::thoughtMark(int seconds, int searchCount, int readCount) {
     if (seconds <= 0) return;
-    scrollPrint("\n" + gray("  Thought for " + std::to_string(seconds) + "s") + "\n");
+    std::string msg = "  Thought for " + std::to_string(seconds) + "s";
+    if (searchCount > 0)
+        msg += ", searched for " + std::to_string(searchCount) + " pattern(s)";
+    if (readCount > 0)
+        msg += ", read " + std::to_string(readCount) + " file(s)";
+    scrollPrint("\n" + gray(msg) + "\n");
 }
 
 void CLFTerminal::restoreScrollRegion() {

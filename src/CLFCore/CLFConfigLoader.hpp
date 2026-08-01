@@ -54,6 +54,9 @@ public:
     // 等价于 getProjectRoot() + "/" + relativePath
     static std::string resolvePath(const std::string& relativePath);
 
+    // 获取当前工作目录（用户启动 CLFCode 的目录，即 user's project root）
+    static std::string getWorkingDir();
+
 private:
     static std::string s_projectRoot;
 };
