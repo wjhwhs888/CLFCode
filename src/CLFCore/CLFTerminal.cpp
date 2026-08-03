@@ -171,8 +171,8 @@ void CLFTerminal::renderFixedArea() {
     int cursorLine,cursorColW;
     cursorVisPos(s_inputText,s_inputCursor,cursorLine,cursorColW);
     cursorLine=std::min(cursorLine,(int)lines.size()-1);
-    int prefixW=(cursorLine==0)?CLFAnsi::textWidth(">"):CLFAnsi::textWidth("  ");
-    int col=prefixW+cursorColW+2;
+    int prefixW=(cursorLine==0)?CLFAnsi::textWidth("> "):CLFAnsi::textWidth("  ");
+    int col=prefixW+cursorColW+1;
     std::cout<<"\033["<<(it+cursorLine)<<";"<<col<<"H"<<std::flush;
 }
 
@@ -210,11 +210,14 @@ void CLFTerminal::thoughtMark(int seconds, int searchCount, int readCount){
 void CLFTerminal::showThinking(int seconds){
     s_statusLine="· Thinking… ("+std::to_string(seconds)+"s)";
     s_statusTree.clear();
-    // 仅更新状态区行（不重绘整个固定区，避免后台线程干扰用户输入显示）
     int H=getTerminalHeight(); if(H<=0)H=30;
     if(!CLFAnsi::isEnabled()||H<10)return;
     int cb=contentBottom();
+    // 写状态行 + 清除旧树形残留(最多10行)
     std::cout<<"\033["<<(cb+1)<<";1H  "<<s_statusLine<<"\033[K"<<std::flush;
+    for(int i=1;i<=10;++i)
+        std::cout<<"\033["<<(cb+1+i)<<";1H\033[K"<<std::flush;
+    std::cout<<std::flush;
 }
 void CLFTerminal::showWorking(const std::string& title){
     s_statusLine=title;
@@ -236,8 +239,8 @@ void CLFTerminal::clearStatus(){
     int H=getTerminalHeight(); if(H<=0)H=30;
     if(!CLFAnsi::isEnabled()||H<10)return;
     int cb=contentBottom();
-    int sl=statusLineCount()+1; // 旧状态可能占多行
-    for(int i=0;i<sl;++i)
+    // 清除基线 + 最多10行旧树形
+    for(int i=0;i<=10;++i)
         std::cout<<"\033["<<(cb+1+i)<<";1H\033[K"<<std::flush;
     std::cout<<std::flush;
 }
@@ -357,8 +360,8 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
         s_statusTree.clear();
         s_statusTree.push_back(content);
     }
-    recomputeLayout();
-    if(!title.empty()||!content.empty()) renderFixedArea();
+    // 不调 recomputeLayout — 避免重置 DECSTBM 打断流式输出
+    renderFixedArea();
 }
 
 void CLFTerminal::toContentArea(){
