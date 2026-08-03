@@ -70,12 +70,15 @@ int CLFRepl::run() {
     int lastHeight = -1;
     while (true) {
         int currentHeight = CLFTerminal::getTerminalHeight();
-        if (lastHeight > 0 && currentHeight != lastHeight && currentHeight >= 10) {
+        bool resized = (lastHeight > 0 && currentHeight != lastHeight && currentHeight >= 10);
+        if (resized) {
             CLFTerminal::redrawAll();
         }
         lastHeight = currentHeight;
 
-        CLFTerminal::drawInputArea(m_input, m_cursorPos);
+        if (!resized) {
+            CLFTerminal::drawInputArea(m_input, m_cursorPos);
+        }
         CLFTerminal::drawModeArea(m_dispatcher->modeName());
 
         auto key = CLFConsole::readKey();

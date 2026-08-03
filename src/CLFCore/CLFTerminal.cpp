@@ -392,6 +392,9 @@ void CLFTerminal::redrawAll() {
     int H = getTerminalHeight(); int W = getTerminalWidth();
     if (H <= 0) H = 30; if (W <= 0) W = 80;
 
+    int iLines = inputLines(s_inputText); if (iLines < 1) iLines = 1;
+    int cb = contentBottom(H, iLines); if (cb < 1) cb = 1;
+
     if (!CLFAnsi::isEnabled() || H < 10) {
         std::cout << "\033[2J\033[H" << std::flush;
         for (const auto& line : s_buffer.lines())
@@ -401,24 +404,20 @@ void CLFTerminal::redrawAll() {
         return;
     }
 
+    // 仅重设滚动区 + 重绘固定区（不重放内容——终端自行处理换行重排）
     std::cout << "\033[2J\033[H" << std::flush;
-    int iLines = inputLines(s_inputText); if (iLines < 1) iLines = 1;
-    int cb = contentBottom(H, iLines); if (cb < 1) cb = 1;
-
     resetScrollRegion();
     setScrollRegion(1, cb);
 
-    // 重放缓冲内容
+    // 重放缓冲（拼接成连续文本，让终端根据当前宽度自行换行）
     const auto& lines = s_buffer.lines();
     size_t visible = static_cast<size_t>(cb - 1);
     size_t start = (lines.size() > visible) ? lines.size() - visible : 0;
     for (size_t i = start; i < lines.size(); ++i) {
-        std::string stripped = stripAnsi(lines[i]);
-        if (textWidth(stripped) <= W - 1)
-            std::cout << lines[i] << "\n" << std::flush;
-        else
-            std::cout << truncateToWidth(stripped, W - 1) << "\n" << std::flush;
+        if (i > start) std::cout << "\n";
+        std::cout << stripAnsi(lines[i]);
     }
+    std::cout << std::flush;
 
     // 重绘固定区
     resetScrollRegion();
