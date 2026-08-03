@@ -163,11 +163,12 @@ int CLFRepl::run() {
                 case EventType::KeyCycleMode:
                     cycleMode(); break;
 
-                // ==== 内容渲染 ====
+                // ==== 内容事件 ====
+                // 注: ContentAppend/ContentNewline 已由 emitContent 直接渲染
+                // 事件仅用于未来解耦(Step3),当前不在此处理
                 case EventType::ContentAppend:
-                    CLFTerminal::scrollPrint(e.text); break;
                 case EventType::ContentNewline:
-                    CLFTerminal::scrollPrint("\n"); break;
+                    break;
                 case EventType::ContentThought:
                     CLFTerminal::thoughtMark(e.i1, e.i2, e.tree.empty() ? 0 : std::stoi(e.tree[0])); break;
 
