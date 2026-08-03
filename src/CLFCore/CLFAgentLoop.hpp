@@ -67,21 +67,12 @@ public:
     // 获取上下文（/context 命令用）
     const CLFContext& getContext() const { return m_context; }
 
-    // 工具调用统计（thoughtMark 使用）
-    struct ToolStats {
-        int searchCount = 0;
-        int readCount   = 0;
-        int totalCalls  = 0;
-    };
     ToolStats getLastToolStats() const { return m_lastToolStats; }
 
     // 已注入上下文的 skill 名称列表（/skill 状态显示用）
     std::vector<std::string> getLoadedSkills() const;
 
 private:
-    // 执行工具调用并收集结果
-    std::vector<CLFToolResult> executeTools(const std::vector<CLFToolCall>& calls);
-
     // 注入系统身份提示词（构造时 + /clear 后调用）
     void injectSystemPrompt();
 

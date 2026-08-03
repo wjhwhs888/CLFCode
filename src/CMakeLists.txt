@@ -6,10 +6,14 @@ add_library(clf_core STATIC
     CLFCore/CLFLogger.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRepl.cpp
+    CLFCore/CLFRetryPolicy.cpp
     CLFCore/CLFSecurityPolicy.cpp
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSkillLoader.cpp
+    CLFCore/CLFStreamProcessor.cpp
     CLFCore/CLFTerminal.cpp
+    CLFCore/CLFThinkingIndicator.cpp
+    CLFCore/CLFToolExecutor.cpp
 )
 
 add_library(clf_network STATIC
