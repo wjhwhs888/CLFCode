@@ -3,9 +3,11 @@ add_library(clf_core STATIC
     CLFCore/CLFAnsi.cpp
     CLFCore/CLFCommandDispatcher.cpp
     CLFCore/CLFConfigLoader.cpp
+    CLFCore/CLFEncoding.cpp
     CLFCore/CLFConsole.cpp
     CLFCore/CLFContext.cpp
     CLFCore/CLFLogger.cpp
+    CLFCore/CLFMessageCodec.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRepl.cpp
     CLFCore/CLFRetryPolicy.cpp

@@ -1,13 +1,15 @@
 // CLFFileOps.cpp — 文件操作工具实现
+// 编码转换 → 委托 CLFEncoding
 
 #include "CLFTools/CLFFileOps.hpp"
+#include "CLFCore/CLFEncoding.hpp"
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 
 #ifdef _WIN32
-#include <windows.h>
+#include <windows.h> // toNativePath 需要 MultiByteToWideChar
 #endif
 
 namespace fs = std::filesystem;
@@ -15,29 +17,6 @@ namespace fs = std::filesystem;
 namespace CLF::CLFTools {
 
 namespace {
-
-// Windows 系统代码页 → UTF-8（用于命令输出/目录列表）
-std::string toUtf8(const std::string& input) {
-    if (input.empty()) return input;
-#ifdef _WIN32
-    int wideLen = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS,
-                                       input.c_str(), static_cast<int>(input.size()),
-                                       nullptr, 0);
-    if (wideLen <= 0) return input;
-    std::wstring wide(wideLen, L'\0');
-    MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()),
-                        wide.data(), wideLen);
-    int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), wideLen,
-                                       nullptr, 0, nullptr, nullptr);
-    if (utf8Len <= 0) return input;
-    std::string utf8(utf8Len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), wideLen,
-                        utf8.data(), utf8Len, nullptr, nullptr);
-    return utf8;
-#else
-    return input;
-#endif
-}
 
 // UTF-8 路径 → 系统原生路径（Windows：宽字符；Linux：原样）
 fs::path toNativePath(const std::string& utf8Path) {
@@ -66,7 +45,7 @@ CLFFileResult readFile(const std::string& path) {
 
     std::ostringstream oss;
     oss << file.rdbuf();
-    result.m_content = toUtf8(oss.str()); // GBK → UTF-8（已是 UTF-8 则原样）
+    result.m_content = CLF::CLFCore::CLFEncoding::toUtf8(oss.str()); // GBK → UTF-8（已是 UTF-8 则原样）
     result.m_success = true;
 
     return result;
@@ -114,7 +93,7 @@ CLFFileResult listDirectory(const std::string& path) {
     std::ostringstream oss;
     for (const auto& entry : fs::directory_iterator(nativePath, ec)) {
         oss << (entry.is_directory() ? "[DIR]  " : "[FILE] ")
-            << toUtf8(entry.path().filename().string())
+            << CLF::CLFCore::CLFEncoding::toUtf8(entry.path().filename().string())
             << '\n';
     }
 

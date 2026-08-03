@@ -1,6 +1,8 @@
 // CLFCommandExec.cpp — 命令执行工具实现
+// 编码转换 → 委托 CLFEncoding
 
 #include "CLFTools/CLFCommandExec.hpp"
+#include "CLFCore/CLFEncoding.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -29,35 +31,6 @@ std::string readFileContent(const std::string& path) {
     return oss.str();
 }
 
-// Windows 下将系统代码页（GBK/CP936）输出转为 UTF-8
-std::string toUtf8(const std::string& input) {
-    if (input.empty()) return input;
-#ifdef _WIN32
-    // ACP → UTF-16
-    int wideLen = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS,
-                                       input.c_str(), static_cast<int>(input.size()),
-                                       nullptr, 0);
-    if (wideLen <= 0) {
-        // 含有非 ACP 字符，尝试原样返回（可能已是 UTF-8）
-        return input;
-    }
-    std::wstring wide(wideLen, L'\0');
-    MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()),
-                        wide.data(), wideLen);
-
-    // UTF-16 → UTF-8
-    int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), wideLen,
-                                       nullptr, 0, nullptr, nullptr);
-    if (utf8Len <= 0) return input;
-    std::string utf8(utf8Len, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), wideLen,
-                        utf8.data(), utf8Len, nullptr, nullptr);
-    return utf8;
-#else
-    return input;
-#endif
-}
-
 } // anonymous namespace
 
 CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) {
@@ -70,21 +43,6 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
 #ifdef _WIN32
     // ==== Windows：CreateProcess + 匿名管道（可靠捕获 stdout/stderr）====
 
-    // 命令中的 UTF-8 中文 → ACP，否则 cmd 乱码
-    auto utf8ToAcp = [](const std::string& utf8) -> std::string {
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
-        if (wlen <= 1) return utf8;
-        std::wstring wide(wlen - 1, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, wide.data(), wlen - 1);
-        int alen = WideCharToMultiByte(CP_ACP, 0, wide.c_str(), wlen - 1,
-                                        nullptr, 0, nullptr, nullptr);
-        if (alen <= 0) return utf8;
-        std::string acp(alen, '\0');
-        WideCharToMultiByte(CP_ACP, 0, wide.c_str(), wlen - 1,
-                            acp.data(), alen, nullptr, nullptr);
-        return acp;
-    };
-
     // 创建匿名管道（可继承句柄）
     HANDLE hOutRead, hOutWrite, hErrRead, hErrWrite;
     SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
@@ -94,7 +52,7 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
     SetHandleInformation(hErrRead, HANDLE_FLAG_INHERIT, 0);
 
     // 匹配 std::system 行为：cmd.exe /s /c "..."
-    std::string cmdLine = "cmd.exe /s /c \"" + utf8ToAcp(command) + "\"";
+    std::string cmdLine = "cmd.exe /s /c \"" + CLF::CLFCore::CLFEncoding::fromUtf8(command) + "\"";
     std::vector<char> cmdBuf(cmdLine.begin(), cmdLine.end());
     cmdBuf.push_back('\0');
 
@@ -187,9 +145,9 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
     CloseHandle(hOutRead);
     CloseHandle(hErrRead);
 
-    result.m_stdout = toUtf8(outBuf);
+    result.m_stdout = CLF::CLFCore::CLFEncoding::toUtf8(outBuf);
     if (result.m_stderr.empty()) {
-        result.m_stderr = toUtf8(errBuf);
+        result.m_stderr = CLF::CLFCore::CLFEncoding::toUtf8(errBuf);
     }
 
 #else
@@ -232,8 +190,8 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
         result.m_stderr = "Fork failed";
     }
 
-    result.m_stdout = toUtf8(readFileContent(stdoutFile));
-    result.m_stderr = toUtf8(readFileContent(stderrFile));
+    result.m_stdout = CLF::CLFCore::CLFEncoding::toUtf8(readFileContent(stdoutFile));
+    result.m_stderr = CLF::CLFCore::CLFEncoding::toUtf8(readFileContent(stderrFile));
 
     auto tryRemove = [](const std::string& path) {
         for (int attempt = 0; attempt < 3; ++attempt) {
