@@ -1,115 +1,74 @@
 // CLFTerminal.hpp — 终端 UI 工具（Claude Code 风格输出）
-// 提供 ANSI 颜色 + 树状层级符号，统一 REPL 显示效果
+// 颜色/尺寸 → 委托 CLFAnsi；滚动缓冲 → 委托 CLFScrollBuffer
 //
 // example:
-//   CLF::CLFCore::CLFTerminal::enableAnsi();
-//   CLF::CLFCore::CLFTerminal::item("CLFCode 启动");
-//   CLF::CLFCore::CLFTerminal::sub("项目根: " + CLFTerminal::cyan(path));
+//   CLFTerminal::enableAnsi();
+//   CLFTerminal::scrollPrint(CLFTerminal::cyan("hello"));
 
 #pragma once
 
-#include <mutex>
 #include <string>
 #include <vector>
 
 namespace CLF::CLFCore {
 
+class CLFScrollBuffer;
+
 class CLFTerminal {
 public:
-    // Windows 启用 ANSI VT 处理（main 启动时调用一次）
     static void enableAnsi();
 
     // —— 颜色 ——
-    static std::string green(const std::string& s);      // 成功/主标题
-    static std::string cyan(const std::string& s);       // 信息/路径
-    static std::string lightBlue(const std::string& s);  // 浅蓝（分隔线等）
-    static std::string yellow(const std::string& s);     // 警告
-    static std::string red(const std::string& s);        // 错误
-    static std::string gray(const std::string& s);       // 次要信息
-    static std::string bold(const std::string& s);       // 加粗
+    static std::string green(const std::string& s);
+    static std::string cyan(const std::string& s);
+    static std::string lightBlue(const std::string& s);
+    static std::string yellow(const std::string& s);
+    static std::string red(const std::string& s);
+    static std::string gray(const std::string& s);
+    static std::string bold(const std::string& s);
 
-    // —— 树状输出（直接打印到 stdout）——
-    static void item(const std::string& text);  // ● text
-    static void sub(const std::string& text);   // ⎿ text
-    static void sub2(const std::string& text);  //   ⎿ text
-    static void ok(const std::string& text);    // ● ✓ text（成功）
-    static void fail(const std::string& text);  // ● ✗ text（失败）
-    static void info(const std::string& text);  // ● ⓘ text（提示）
+    // —— 树状输出 ——
+    static void item(const std::string& text);
+    static void sub(const std::string& text);
+    static void sub2(const std::string& text);
+    static void ok(const std::string& text);
+    static void fail(const std::string& text);
+    static void info(const std::string& text);
 
     // —— 终端控制 ——
-
-    // 获取终端行数（失败返回 -1）
     static int getTerminalHeight();
-
-    // 获取终端列数（失败返回 -1）
     static int getTerminalWidth();
-
-    // 估算文本显示宽度（中文等宽字符按 2 列计）
     static int textWidth(const std::string& text);
-
-    // 计算文本在终端宽度下占用的行数（至少 1）
     static int wrappedLines(const std::string& text);
-
-    // 移动光标到指定行/列（1-based，ANSI）
     static void moveCursor(int row, int col);
-
-    // 清空当前行光标右侧
     static void clearLine();
 
-    // ============ 5 区布局 ============
-    // 1 滚动显示区（折叠/展开）  2 工作状态区  3 提示词输入区
-    // 4 工作模式区              5 交互确认区（确认时显示）
-
-    // 初始化布局（清屏 + 绘制固定区）
+    // —— 5 区布局 ——
     static void initLayout(const std::string& modeLabel);
-
-    // 滚动区折叠/展开（Ctrl+O 切换）
     static void setScrollCollapsed(bool collapsed);
     static bool isScrollCollapsed();
-
-    // 输出到滚动区（输出后自动重绘固定区，保证 2-5 不被覆盖）
-    // 返回后光标停在滚动区输出位置
     static void scrollPrint(const std::string& text);
-
-    // 轻量追加：与 scrollPrint 相同（保留接口兼容）
     static void scrollAppend(const std::string& text);
-
-    // 清除输入区（上线/输入行/下线），光标到内容区输出位置
-    // 提交输入前调用，内容从这里顺序输出
     static void toContentArea();
-
-    // 清屏重绘（窗口缩放时调用）：缓冲内容 + 输入区吸底
     static void redrawAll();
-
-    // 终端诊断信息（启动时显示，排查布局问题）
     static std::string diagnosticInfo();
-
-    // 各区域绘制（重绘前自动刷新区域行号，缩放自适应）
     static void drawStatusArea(const std::string& title, const std::string& content);
     static void drawInputArea(const std::string& text, int cursorPos = -1);
     static void drawModeArea(const std::string& mode);
     static void drawConfirmArea(const std::vector<std::string>& options, int selected);
     static void clearConfirmArea();
-
-    // 思考过程标记（每轮对话完成后显示耗时 + 工具统计）
-    // 格式：  Thought for {N}s, searched for X pattern(s), read Y file(s)
     static void thoughtMark(int seconds, int searchCount = 0, int readCount = 0);
-
-    // 恢复终端状态并清屏（退出时调用）
     static void restoreScrollRegion();
 
 private:
-    static bool s_ansiEnabled;
-    static bool s_scrollCollapsed;      // 滚动区折叠状态
-    static std::vector<std::string> s_scrollBuffer; // 滚动区内容缓冲
-    static std::mutex s_scrollMutex;    // 保护 s_scrollBuffer 读写（HTTP 回调线程 + 主线程）
-    static std::string s_statusTitle;   // 状态区标题
-    static std::string s_statusContent; // 状态区内容
-    static std::string s_inputText;     // 输入区文本
-    static std::string s_modeLabel;     // 模式区标签
-    static int  s_inputCursor;          // 输入光标位置（UTF-8 字符索引）
-    static bool s_inputDrawn;           // 输入区是否已绘制（更新时只重写输入行）
-    static bool s_confirmDrawn;         // 确认区是否已绘制（重绘时覆盖而非追加）
+    static CLFScrollBuffer s_buffer;
+    static std::string s_statusTitle;
+    static std::string s_statusContent;
+    static std::string s_inputText;
+    static std::string s_modeLabel;
+    static int  s_inputCursor;
+    static bool s_inputDrawn;
+    static bool s_confirmDrawn;
 };
 
 } // namespace CLF::CLFCore

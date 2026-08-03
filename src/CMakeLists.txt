@@ -1,5 +1,7 @@
 add_library(clf_core STATIC
     CLFCore/CLFAgentLoop.cpp
+    CLFCore/CLFAnsi.cpp
+    CLFCore/CLFCommandDispatcher.cpp
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFConsole.cpp
     CLFCore/CLFContext.cpp
@@ -7,6 +9,7 @@ add_library(clf_core STATIC
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRepl.cpp
     CLFCore/CLFRetryPolicy.cpp
+    CLFCore/CLFScrollBuffer.cpp
     CLFCore/CLFSecurityPolicy.cpp
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSkillLoader.cpp
