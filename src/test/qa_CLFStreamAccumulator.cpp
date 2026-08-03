@@ -112,3 +112,5 @@ suite qa_CLFStreamAccumulator = [] {
         expect(acc.getContent().empty());
     };
 };
+
+int main() {}
