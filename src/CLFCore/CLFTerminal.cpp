@@ -138,7 +138,7 @@ void CLFTerminal::renderFixedArea() {
     auto lines=splitLines(s_inputText);
     for(int i=0;i<N&&i<(int)lines.size();++i){
         int row=it+i;
-        std::string prefix=(i==0)?"❯ ":"  ";
+        std::string prefix=(i==0)?"> ":"  ";
         std::cout<<"\033["<<row<<";1H"<<prefix<<lines[i]<<"\033[K"<<std::flush;
     }
     // 清除多余旧行（仅限输入区内部, 不触碰下分隔线和模式行）
@@ -171,7 +171,7 @@ void CLFTerminal::renderFixedArea() {
     int cursorLine,cursorColW;
     cursorVisPos(s_inputText,s_inputCursor,cursorLine,cursorColW);
     cursorLine=std::min(cursorLine,(int)lines.size()-1);
-    int prefixW=(cursorLine==0)?CLFAnsi::textWidth("❯ "):CLFAnsi::textWidth("  ");
+    int prefixW=(cursorLine==0)?CLFAnsi::textWidth(">"):CLFAnsi::textWidth("  ");
     int col=1+prefixW+cursorColW;
     std::cout<<"\033["<<(it+cursorLine)<<";"<<col<<"H"<<std::flush;
 }
