@@ -350,26 +350,31 @@ void CLFTerminal::toContentArea() {
         return;
     }
 
-    // 清除所有输入行 + 重绘分隔线
+    // 清除所有输入行 + 重绘固定区
     int topRow = inputRowTop(H, iLines);
-    for (int r = topRow; r <= H; ++r) {
+    for (int r = topRow; r <= H; ++r)
         std::cout << "\033[" << r << ";1H\033[K" << std::flush;
-    }
-    drawLowerSep(W, H);
-    drawStatusLine(W, H, s_modeLabel);
 
-    int cb = contentBottom(H, 1); // 重置为单行输入区域
-    if (cb < 1) cb = 1;
+    // 重置为单行空输入 + 重绘固定区
+    s_inputText.clear();
+    s_inputCursor = 0;
+    iLines = 1;
+    int cb = contentBottom(H, iLines); if (cb < 1) cb = 1;
+
     resetScrollRegion();
     setScrollRegion(1, cb);
 
+    // 重绘固定区（不调用 drawInputArea——它会定位光标到输入区）
+    drawUpperSep(W, H, iLines);
+    std::cout << "\033[" << inputRowTop(H, iLines) << ";1H❯ \033[K" << std::flush;
+    drawLowerSep(W, H);
+    drawStatusLine(W, H, s_modeLabel);
+
+    // 光标回到内容区（后续 scrollPrint / ThinkingIndicator 从这里输出）
     std::cout << "\033[" << cb << ";1H" << std::flush;
     std::cout << "\n" << std::flush;
 
-    // 重绘单行空输入
-    s_inputText.clear();
-    s_inputCursor = 0;
-    drawInputArea(s_inputText);
+    s_inputDrawn = true;
     s_confirmDrawn = false;
 }
 
