@@ -7,7 +7,7 @@
 #include "CLFCore/CLFEventQueue.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
-#include "CLFCore/CLFStreamProcessor.hpp"
+#include "CLFCore/CLFStreamAccumulator.hpp"
 #include "CLFCore/CLFTerminal.hpp"
 #include "CLFCore/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
@@ -16,6 +16,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <thread>
 
@@ -61,49 +62,61 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             if (m_config.m_stream) {
                 // ====== 流式路径 ======
-                CLFStreamProcessor streamProc;
+                CLFStreamAccumulator acc;
                 CLFThinkingIndicator thinking(m_httpClient.get());
                 bool firstContent = true;
                 bool interrupted = false;
+                bool hadError = false;
+                std::string errorMsg;
 
                 CLF::CLFNetwork::CLFHttpResponse response =
                     m_httpClient->postJsonStream(
                         "/v1/chat/completions", body,
                         [&](const std::string& line) {
-                            if (streamProc.hadError() || interrupted) return;
+                            if (hadError || interrupted) return;
                             if (thinking.escPressed() || CLFConsole::checkEscape()) {
                                 interrupted = true;
-                                streamProc.markDone();
+                                acc.markDone();
                                 return;
                             }
-                            std::string chunk = streamProc.feedLine(line);
-                            if (!chunk.empty()) {
-                                if (firstContent) { thinking.stop(); firstContent = false; }
-                                emitContent(m_eventQueue,chunk);
-                            }
+                            if (line.rfind("data: ", 0) != 0) return;
+                            std::string payload = line.substr(6);
+                            if (payload == "[DONE]") { acc.markDone(); return; }
+                            try {
+                                auto delta = nlohmann::json::parse(payload);
+                                if (delta.contains("error")) { hadError = true; errorMsg = delta["error"].dump(); return; }
+                                if (delta.contains("choices") && !delta["choices"].empty()) {
+                                    const auto& choice = delta["choices"][0];
+                                    if (choice.contains("delta")) {
+                                        std::string chunk = acc.feedDelta(choice["delta"]);
+                                        if (!chunk.empty()) {
+                                            if (firstContent) { thinking.stop(); firstContent = false; }
+                                            emitContent(m_eventQueue, chunk);
+                                        }
+                                    }
+                                    if (choice.contains("finish_reason")) acc.feedDelta(choice);
+                                }
+                            } catch (const nlohmann::json::exception&) {}
                         });
 
                 // 错误处理
-                if (streamProc.hadError()) {
-                    emitContent(m_eventQueue,
-                        CLFTerminal::red("\n✗ Stream error: ") + streamProc.errorMsg() + "\n");
-                    return std::string("[Error] ") + streamProc.errorMsg();
+                if (hadError) {
+                    emitContent(m_eventQueue, CLFTerminal::red("\n✗ Stream error: ") + errorMsg + "\n");
+                    return std::string("[Error] ") + errorMsg;
                 }
                 if (interrupted || thinking.escPressed()) {
-                    emitContent(m_eventQueue,CLFTerminal::yellow("\n⏹ 已中断") + "\n");
+                    emitContent(m_eventQueue, CLFTerminal::yellow("\n⏹ 已中断") + "\n");
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        emitContent(m_eventQueue,
-                            CLFTerminal::red("\n✗ ") + response.m_error + "\n");
+                        emitContent(m_eventQueue, CLFTerminal::red("\n✗ ") + response.m_error + "\n");
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
-                    emitContent(m_eventQueue,
-                        CLFTerminal::yellow("\n⚠ ") + response.m_error
+                    emitContent(m_eventQueue, CLFTerminal::yellow("\n⚠ ") + response.m_error
                         + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
                                           + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");
                     std::this_thread::sleep_for(std::chrono::seconds(2 * consecutiveErrors));
@@ -111,10 +124,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 }
 
                 consecutiveErrors = 0;
-                streamProc.markDone();
-                parsed.m_content      = streamProc.getContent();
-                parsed.m_toolCalls    = streamProc.getToolCalls();
-                parsed.m_finishReason = streamProc.getFinishReason();
+                acc.markDone();
+                parsed.m_content      = acc.getContent();
+                parsed.m_toolCalls    = acc.getToolCalls();
+                parsed.m_finishReason = acc.getFinishReason();
 
             } else {
                 // ====== 同步路径 ======

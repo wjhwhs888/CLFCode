@@ -212,12 +212,12 @@ void CLFTerminal::showThinking(int seconds){
     s_statusTree.clear();
     int H=getTerminalHeight(); if(H<=0)H=30;
     if(!CLFAnsi::isEnabled()||H<10)return;
+    std::cout<<"\0337"; // 保存光标
     int cb=contentBottom();
-    // 写状态行 + 清除旧树形残留(最多10行)
-    std::cout<<"\033["<<(cb+1)<<";1H  "<<s_statusLine<<"\033[K"<<std::flush;
+    std::cout<<"\033["<<(cb+1)<<";1H  "<<s_statusLine<<"\033[K";
     for(int i=1;i<=10;++i)
-        std::cout<<"\033["<<(cb+1+i)<<";1H\033[K"<<std::flush;
-    std::cout<<std::flush;
+        std::cout<<"\033["<<(cb+1+i)<<";1H\033[K";
+    std::cout<<"\0338"<<std::flush; // 恢复光标
 }
 void CLFTerminal::showWorking(const std::string& title){
     s_statusLine=title;
@@ -235,14 +235,14 @@ void CLFTerminal::showTaskTree(const std::vector<std::string>& phases){
 void CLFTerminal::clearStatus(){
     s_statusLine.clear();
     s_statusTree.clear();
-    // 仅清除状态区显示, 不重置 DECSTBM(避免打断流式输出)
     int H=getTerminalHeight(); if(H<=0)H=30;
     if(!CLFAnsi::isEnabled()||H<10)return;
+    // DECSC保存光标 → 清除状态区 → DECRC恢复(防止移动光标影响流式输出)
+    std::cout<<"\0337";
     int cb=contentBottom();
-    // 清除基线 + 最多10行旧树形
     for(int i=0;i<=10;++i)
-        std::cout<<"\033["<<(cb+1+i)<<";1H\033[K"<<std::flush;
-    std::cout<<std::flush;
+        std::cout<<"\033["<<(cb+1+i)<<";1H\033[K";
+    std::cout<<"\0338"<<std::flush;
 }
 
 // ============ ⑤ InputRegion ============
