@@ -23,6 +23,9 @@ add_library(clf_tools STATIC
 )
 target_link_libraries(clf_tools PUBLIC clf_core)
 
+# clf_core 依赖 clf_network（CLFAgentLoop.cpp 构造 CLFHttpClient）
+target_link_libraries(clf_core PUBLIC clf_network)
+
 # 主程序
 add_executable(CLFCode main.cpp)
 target_link_libraries(CLFCode PRIVATE clf_core clf_network clf_tools ${CLF_OPENSSL_LIBS})

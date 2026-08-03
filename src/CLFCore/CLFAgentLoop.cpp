@@ -5,6 +5,7 @@
 #include "CLFCore/CLFConsole.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFTerminal.hpp"
+#include "CLFNetwork/CLFHttpClient.hpp" // CLFHttpClient 具体类（构造注入默认实现）
 
 #include <algorithm>
 #include <atomic>

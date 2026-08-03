@@ -10,9 +10,9 @@
 
 #include <string>
 
-#include "CLFCore/CLFAgentLoop.hpp"
-
 namespace CLF::CLFCore {
+
+class CLFAgentLoop;  // 前向声明（成员为引用，无需完整定义）
 
 class CLFRepl {
 public:

@@ -8,52 +8,16 @@
 #include <string>
 #include <vector>
 
+#include "CLFCore/CLFTypes.hpp"
 #include "CLFCore/CLFContext.hpp"
 #include "CLFCore/CLFProtocolAdapter.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
-#include "CLFNetwork/CLFHttpClient.hpp"
+
+namespace CLF::CLFNetwork { class ICLFHttpClient; }  // 前向声明（shared_ptr 支持不完整类型）
 
 namespace CLF::CLFCore {
 
-struct CLFAgentConfig {
-    // —— connection（连接认证）——
-    std::string m_apiBaseUrl = "https://api.deepseek.com";
-    std::string m_apiKey;
-
-    // —— chat_completions（对齐 DeepSeek API 参数）——
-    std::string m_modelName    = "deepseek-v4-flash";  // 主模型（V4 Flash 正式版）
-    std::string m_subModel     = "deepseek-v4-pro";   // 副模型（Pro 正式版未出，暂作备选）
-    int         m_maxTokens    = 8192;
-    float       m_temperature  = 0.0f;
-    float       m_topP         = 1.0f;
-    float       m_frequencyPenalty = 0.0f;          // -2.0~2.0，正值降低重复
-    float       m_presencePenalty  = 0.0f;          // -2.0~2.0，正值鼓励新话题
-    std::string m_responseFormat   = "text";        // "text" | "json_object"
-    std::vector<std::string> m_stop;                 // 停止序列（最多16个），空 = 不发送
-    bool        m_stream       = false;             // 流式输出（配置驱动）
-    std::string m_thinkingLevel = "max";            // 思考模式等级: off|low|medium|high|max
-
-    // —— agent（Agent 行为参数）——
-    int         m_maxContextWindow      = 1048576;  // 1M tokens
-    int         m_maxToolCallIterations = 16;
-    bool        m_contextCompression    = false;     // 上下文压缩
-    int         m_maxResponseDelaySec   = 300;       // 回复最大延迟（秒）
-    std::string m_interactionLanguage   = "zh-CN";   // 默认交互语言
-    std::string m_securityMode          = "edit";    // auto|analyze|edit|manual
-
-    // —— logging（日志配置）——
-    std::string m_logLevel   = "info";              // debug|info|warn|error
-    std::string m_logFile    = "clf_agent.log";     // 日志文件路径（相对项目根）
-    bool        m_logConsole = false;               // 同时输出到控制台
-};
-
-struct CLFTool {
-    std::string m_name;
-    std::string m_description;
-    std::string m_parametersSchema; // JSON Schema 字符串，描述 function parameters
-    CLFToolRisk m_risk = CLFToolRisk::Read; // 工具风险等级（安全策略用）
-    std::function<std::string(const std::string&)> m_handler; // 参数为 JSON string
-};
+// CLFAgentConfig / CLFTool 定义在 CLFTypes.hpp
 
 class CLFAgentLoop {
 public:

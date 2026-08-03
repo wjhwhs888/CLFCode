@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include "CLFCore/CLFContext.hpp"
+#include "CLFCore/CLFTypes.hpp"
 
 namespace CLF::CLFCore {
 

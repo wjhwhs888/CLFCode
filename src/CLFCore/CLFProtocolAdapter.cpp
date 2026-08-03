@@ -1,7 +1,7 @@
 // CLFProtocolAdapter.cpp — 协议适配器实现
 
 #include "CLFCore/CLFProtocolAdapter.hpp"
-#include "CLFCore/CLFAgentLoop.hpp" // CLFTool 定义
+// CLFTool / CLFAgentConfig / CLFMessage 定义在 CLFTypes.hpp（经 CLFProtocolAdapter.hpp 包含）
 
 #include <nlohmann/json.hpp>
 

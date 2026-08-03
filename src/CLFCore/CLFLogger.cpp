@@ -9,10 +9,6 @@
 #include <fstream>
 #include <iostream>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 namespace CLF::CLFCore {
 
 namespace {

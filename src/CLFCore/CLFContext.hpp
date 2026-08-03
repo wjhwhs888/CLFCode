@@ -6,30 +6,11 @@
 #include <string>
 #include <vector>
 
+#include "CLFCore/CLFTypes.hpp"
+
 namespace CLF::CLFCore {
 
-// 前置声明（CLFMessage 中引用 CLFToolCall）
-struct CLFToolCall;
-
-struct CLFMessage {
-    std::string m_role;     // "system" | "user" | "assistant" | "tool"
-    std::string m_content;  // 文本内容（assistant 发出 tool_calls 时可为空）
-    std::vector<CLFToolCall> m_toolCalls; // assistant role: 请求的工具调用
-    std::string m_toolCallId;             // tool role: 对应的 tool_call_id
-    std::string m_name;                   // tool role: 函数名（部分 provider 要求）
-};
-
-struct CLFToolCall {
-    std::string m_id;
-    std::string m_name;
-    std::string m_arguments; // JSON string
-};
-
-struct CLFToolResult {
-    std::string m_toolCallId;
-    std::string m_name;      // 工具名（用于 addToolResult）
-    std::string m_content;
-};
+// CLFMessage / CLFToolCall / CLFToolResult 定义在 CLFTypes.hpp
 
 class CLFContext {
 public:

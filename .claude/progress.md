@@ -4,7 +4,7 @@
 
 ### 工程基础
 - [x] 项目工程结构搭建 + CMake 构建（C++17 + Ninja）
-- [x] 3rdparty 库就位（httplib + nlohmann/json）
+- [x] 3rdparty 库就位（httplib + nlohmann/json + boost-ut）
 - [x] CLAUDE.md / ProjectSetting.md 规范文档
 - [x] `.claude/plans/` 规划目录 + 分组体系（分析/设计/归档/测试）
 
@@ -35,66 +35,52 @@
 - [x] 终端实时打字机输出（std::cout << flush）
 - [x] 配置 `stream: true` 默认开启
 
-## 待做
-
 ### 剩余核心问题
 - [x] **问题4：知识库加载** — ✅ 完成
 - [x] **问题5：上下文管理** — ✅ 完成
 
 ### 基础设施
 - [x] **日志系统** — ✅ 完成
-  - CLFLogger 单例：级别过滤 + 时间戳 + 文件输出 + 可选控制台
-  - logging.level / file / console 配置驱动
-  - 诊断输出统一走 logger（main / ConfigLoader）
-- [x] **测试策略** — ✅ 完成，5 个测试全部通过
-  - Boost.UT 引入（3rdparty/boost-ut，C++20 仅测试目标）
-  - ICLFHttpClient 抽象接口（DIP，支持 Mock 注入）
-  - L1 单元测试 ×4：CLFContext / CLFProtocolAdapter / CLFSecurityPolicy / CLFSessionManager
-  - L2 集成测试 ×1：CLFAgentLoop（Mock HTTP：tool-calling 循环 / 安全阻断 / 流式累积）
-  - CMake：enable_testing + 5 个 add_test
-  - 验证：5 个测试目标全绿（qa_CLFSessionManager 20 asserts / 6 tests）
-  - 测试发现并修复：Boost.UT 缺 main、测试漏链 OpenSSL、同秒会话文件覆盖（真实数据丢失风险）
+- [x] **测试策略** — ✅ 完成（5 个测试全部通过）
 - [x] **实战验证** — ✅ 完成
-  - 环境变量方式启动（任意目录运行）
-  - 流式 finish_reason 兜底修复（postJsonStream 返回后强制 markDone）
-  - 首个真实任务：五子棋游戏（HTML），工具调用 + 文件写入全流程成功
-- [x] **REPL 命令使用优化** — ✅ 完成（todo.md 5 项）
-  - /model 查看当前模型 + 可用列表
-  - /clear 先保存会话再开新会话
-  - /resume <n> 运行时恢复最近会话（list 带序号）
-  - /skill list 显示 [已加载] / [常驻] 状态
-  - /config 显示全部配置信息
-- [x] **终端 UI 美化** — ✅ 完成（Claude Code 风格）
-  - CLFTerminal 工具类：ANSI 颜色 + 树状符号（● ⎿ ✓ ✗ ⚠）
-  - 启动横幅 / 全部命令输出 / 工具调用过程 / 安全确认 树状化
-  - 仅安全字符（Windows 终端无 emoji 乱码）
-  - **底部悬浮输入框**：浅蓝分隔线（H-4 行）+ 输入行，长输入折行分隔线上移，提交后清除恢复内容区
-- [x] **5 区终端 UI** — ✅ 完成（2026-08-01 重构）`
-`  - CLFConsole Windows 端 _getch() 重写（方向键 + 中文 + Shift+Tab 全支持）`
-`  - 布局系统 DECSTBM 滚动区重构（内容独立滚动 + 底部固定区始终可见）`
-`  - shift+tab 模式切换 + esc 流式打断 + Claude Code 风格状态栏`
-`  - 思考过程标记 Thought for {N}s + finish_reason: length 支持`
-`  - 详见 .claude/plans/设计/设计-终端UI改造.md §8 实施记录
-- [x] **全量体检修复 4 个 bug**
-  - Windows 命令 stdout/stderr 读取（原为 TODO）
-  - SSE 跨 chunk 行缓冲（流式丢数据）
-  - max_response_delay_sec 接通 HTTP 超时
-  - 流式 tool_calls 提前 finalize（不依赖 [DONE]）
+- [x] **REPL 命令使用优化** — ✅ 完成
+- [x] **终端 UI 美化** — ✅ 完成
+- [x] **5 区终端 UI** — ✅ 完成
+- [x] **全量体检修复 4 个 bug** — ✅ 完成
 - [x] **安全策略实现** — ✅ 完成（四模式）
-  - CLFSecurityPolicy：auto 放行 / analyze 阻断 / edit+manual 确认
-  - CLFTool 风险分级（Read/Write/Command）
-  - executeTools 安全检查 + 确认回调
-  - /mode 命令切换 + security_mode 配置
 - [x] **会话持久化** — ✅ 完成
-  - CLFSessionManager：保存/加载/列表/清理（doc/contextHistory/）
-  - 崩溃恢复：每轮自动存盘 + 启动检测询问
-  - /history 列表 + 30 天自动清理
-  - CLFContext serialize/restore（tool_calls 全字段）
-    - [x] **2026-08-01 全量修复** — ✅ 完成（14 个文件，+609/-124 行）
-      - 工具显示 Claude Code 风格化（● tool(param) + exitCode/stderr + /context 命令）
-      - HTTP 错误处理（postJsonStream 状态码检查 + 致命/可重试分类 + 退避重试）
-      - Windows 编码全面修复（GBK↔UTF-8 + UTF-8 路径→宽字符 + 命令行 ACP 转换）
-      - 命令执行回退 std::system + 后台线程超时（CreateProcess 命令行解析不兼容）
-      - ESC 中断恢复（ThinkingIndicator 后台轮询 + ICLFHttpClient::abort + 互斥锁）
-      - 系统提示增强（Windows 环境声明 + 文件管理规则）
-      - 启动残留清理 + 恢复会话优化 + kFixedLines 调整 + 项目根/工作目录分拆
+- [x] **2026-08-01 全量修复** — ✅ 完成（14 个文件，+609/-124 行）
+- [x] **ProjectSetting.md 对齐** — ✅ 完成（2026-08-03）
+
+### 全量优化 → P0：Bug 修复 ✅
+- [x] P0-1: CLFCommandExec 超时 detach 悬垂引用（CreateProcess + TerminateProcess）
+- [x] P0-2: CLFHttpClient m_activeCli RAII 守卫 + SSE 行缓冲 O(n²) 修复
+- [x] P0-3: 序列化 dump() 异常保护 + CLFRepl::run() 兜底 catch
+- [x] P0-4: m_escPressed bool → std::atomic<bool>
+- [x] P0-5: CLFTerminal::s_scrollBuffer 加 std::mutex
+
+## 进行中
+
+### 全量优化 → P1：架构解耦（当前阶段）
+- [ ] P1-1: 抽取 CLFTypes.hpp（CLFAgentConfig + CLFTool + CLFMessage 等纯数据类型）
+- [ ] P1-2: 消除 CLFCore → CLFNetwork 头文件依赖（shared_ptr 前向声明）
+- [ ] P1-3: nlohmann/json 从头文件驱逐（StreamAccumulator.cpp + ProtocolAdapter 方法下沉）
+- [ ] P1-4: 消除冗余 include（CLFRepl.hpp / CLFConfigLoader.hpp 前向声明）
+- [ ] P1-5: CMake 链接依赖修正（clf_core → clf_network）
+
+## 待做
+
+### 全量优化 → P2：大文件拆分 + 错误处理加固（6 项）
+- [ ] P2-1: CLFAgentLoop 拆分（→ CLFToolExecutor + CLFStreamProcessor + CLFThinkingIndicator + CLFRetryPolicy）
+- [ ] P2-2: CLFRepl 拆分（→ CLFCommandDispatcher + CLFConfirmDialog）
+- [ ] P2-3: CLFTerminal 职责分离（→ CLFAnsi + CLFScrollBuffer）
+- [ ] P2-4: 结构化错误码 CLFErrorCodes.hpp
+- [ ] P2-5: 平台抽象层 CLFPlatform（可选）
+- [ ] P2-6: 消除重复代码（CLFEncoding / CLFMessageCodec / CLFBuiltinTools 样板）
+
+### 全量优化 → P3：测试补充 + 性能微调（5 项）
+- [ ] P3-1: 高优先级测试补充（qa_CLFHttpClient / qa_CLFCommandExec / qa_CLFStreamAccumulator / qa_CLFAgentLoop_ext）
+- [ ] P3-2: 现有测试覆盖补充
+- [ ] P3-3: 日志系统性能优化（文件句柄缓存 + 锁外过滤）
+- [ ] P3-4: 终端刷新合并 + ESC 检查降频
+- [ ] P3-5: （P0-2 已附带修复 SSE O(n²)）

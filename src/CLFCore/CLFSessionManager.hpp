@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include "CLFCore/CLFContext.hpp"
+#include "CLFCore/CLFTypes.hpp"
 
 namespace CLF::CLFCore {
 

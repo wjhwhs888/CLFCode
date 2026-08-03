@@ -7,6 +7,7 @@
 #include <ctime>
 #include <iostream>
 
+#include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFConsole.hpp"
 #include "CLFCore/CLFLogger.hpp"

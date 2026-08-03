@@ -10,7 +10,7 @@
 #pragma once
 
 #include <string>
-#include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFTypes.hpp"
 
 namespace CLF::CLFCore {
 

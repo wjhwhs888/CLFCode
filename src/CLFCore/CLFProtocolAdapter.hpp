@@ -13,12 +13,11 @@
 
 #include <nlohmann/json.hpp>
 
-#include "CLFCore/CLFContext.hpp"
+#include "CLFCore/CLFTypes.hpp"
 
 namespace CLF::CLFCore {
 
-struct CLFTool;       // 前向声明，定义在 CLFAgentLoop.hpp
-struct CLFAgentConfig; // 前向声明，定义在 CLFAgentLoop.hpp
+// CLFTool / CLFAgentConfig / CLFMessage / CLFToolCall 定义在 CLFTypes.hpp
 
 // 解析后的 assistant 响应
 struct CLFAssistantResponse {
