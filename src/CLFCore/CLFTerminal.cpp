@@ -208,6 +208,16 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
     int cur = (cursorPos < 0) ? static_cast<int>(text.size()) : cursorPos;
     s_inputCursor = cur;
 
+    // 显示用文本：换行 → ⏎ 标记（单行输入区不能有真实换行，否则覆盖固定区）
+    std::string display = text;
+    int displayCur = cur;
+    for (size_t i = 0; i < display.size(); ++i) {
+        if (display[i] == '\n') {
+            display.replace(i, 1, "⏎");
+            if (static_cast<int>(i) < cur) displayCur += 2; // ⏎ 占 3 字节 UTF-8，换行 1 字节
+        }
+    }
+
     int H = getTerminalHeight();
     int W = getTerminalWidth();
     if (H <= 0) H = 30;
@@ -217,15 +227,15 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
         if (!s_inputDrawn) {
             std::cout << "\n\n" << std::flush;
             std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
-            std::cout << "❯ " << text << "\n" << std::flush;
+            std::cout << "❯ " << display << "\n" << std::flush;
             std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
             drawModeLine(s_modeLabel);
             s_inputDrawn = true;
             std::cout << "\033[3A\r" << std::flush;
         } else {
-            std::cout << "\r❯ " << text << "\033[K" << std::flush;
+            std::cout << "\r❯ " << display << "\033[K" << std::flush;
         }
-        int col = 1 + textWidth("❯ ") + textWidth(text.substr(0, static_cast<size_t>(cur)));
+        int col = 1 + textWidth("❯ ") + textWidth(display.substr(0, static_cast<size_t>(displayCur)));
         std::cout << "\033[" << col << "G" << std::flush;
         return;
     }
@@ -235,7 +245,7 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
         int cb = contentBottom(H);
         setScrollRegion(1, cb);
         resetScrollRegion();
-        redrawFixedArea(W, H, s_inputText);
+        redrawFixedArea(W, H, display);
         drawModeLine(s_modeLabel);
         setScrollRegion(1, cb);
         std::cout << "\033[H" << std::flush;
@@ -243,9 +253,9 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
     }
 
     std::cout << "\033[" << inputRow(H) << ";1H"
-              << "\r❯ " << text << "\033[K" << std::flush;
+              << "\r❯ " << display << "\033[K" << std::flush;
 
-    std::string prefix = text.substr(0, static_cast<size_t>(cur));
+    std::string prefix = display.substr(0, static_cast<size_t>(displayCur));
     int col = 1 + textWidth("❯ ") + textWidth(prefix);
     std::cout << "\033[" << inputRow(H) << ";" << col << "H" << std::flush;
 }
