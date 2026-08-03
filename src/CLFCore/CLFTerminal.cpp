@@ -232,8 +232,14 @@ void CLFTerminal::showTaskTree(const std::vector<std::string>& phases){
 void CLFTerminal::clearStatus(){
     s_statusLine.clear();
     s_statusTree.clear();
-    recomputeLayout();
-    renderFixedArea();
+    // 仅清除状态区显示, 不重置 DECSTBM(避免打断流式输出)
+    int H=getTerminalHeight(); if(H<=0)H=30;
+    if(!CLFAnsi::isEnabled()||H<10)return;
+    int cb=contentBottom();
+    int sl=statusLineCount()+1; // 旧状态可能占多行
+    for(int i=0;i<sl;++i)
+        std::cout<<"\033["<<(cb+1+i)<<";1H\033[K"<<std::flush;
+    std::cout<<std::flush;
 }
 
 // ============ ⑤ InputRegion ============
