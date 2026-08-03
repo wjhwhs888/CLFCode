@@ -141,10 +141,14 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                        + parsed.m_finishReason + "'";
             }
 
-            // 累积文本
+            // 累积文本（思考模型可能在 reasoning_content 中耗尽 token，
+            // content 为空但 finish_reason 为 "length" 或 "stop"）
             if (!parsed.m_content.empty()) {
                 if (!finalContent.empty()) finalContent += "\n";
                 finalContent += parsed.m_content;
+            }
+            if (finalContent.empty() && parsed.m_finishReason == "length") {
+                finalContent = "(响应被截断 — 思考时间过长，token 已达上限)";
             }
 
             // tool_calls → 执行并继续循环
