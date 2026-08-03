@@ -6,6 +6,7 @@ add_library(clf_core STATIC
     CLFCore/CLFEncoding.cpp
     CLFCore/CLFConsole.cpp
     CLFCore/CLFContext.cpp
+    CLFCore/CLFEventQueue.cpp
     CLFCore/CLFLogger.cpp
     CLFCore/CLFMessageCodec.cpp
     CLFCore/CLFProtocolAdapter.cpp

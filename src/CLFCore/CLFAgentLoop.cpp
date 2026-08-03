@@ -3,22 +3,35 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFConsole.hpp"
+#include "CLFCore/CLFEvent.hpp"
+#include "CLFCore/CLFEventQueue.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFStreamProcessor.hpp"
 #include "CLFCore/CLFTerminal.hpp"
 #include "CLFCore/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
-#include "CLFNetwork/CLFHttpClient.hpp" // CLFHttpClient 具体类（默认实现）
+#include "CLFNetwork/CLFHttpClient.hpp"
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <thread>
 
 namespace CLF::CLFCore {
+
+namespace {
+// 推送事件到队列 并 直接渲染 (HTTP 回调线程需要立即输出)
+void emitContent(CLFEventQueue* q, const std::string& text) {
+    if (q) { Event e; e.type = EventType::ContentAppend; e.text = text; q->push(e); }
+    CLFTerminal::scrollPrint(text);
+}
+void emitNewline(CLFEventQueue* q) {
+    if (q) { Event e; e.type = EventType::ContentNewline; q->push(e); }
+    CLFTerminal::scrollPrint("\n");
+}
+} // anonymous namespace
 
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
                            std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient)
@@ -66,30 +79,30 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                             std::string chunk = streamProc.feedLine(line);
                             if (!chunk.empty()) {
                                 if (firstContent) { thinking.stop(); firstContent = false; }
-                                CLFTerminal::scrollPrint(chunk);
+                                emitContent(m_eventQueue,chunk);
                             }
                         });
 
                 // 错误处理
                 if (streamProc.hadError()) {
-                    CLFTerminal::scrollPrint(
+                    emitContent(m_eventQueue,
                         CLFTerminal::red("\n✗ Stream error: ") + streamProc.errorMsg() + "\n");
                     return std::string("[Error] ") + streamProc.errorMsg();
                 }
                 if (interrupted || thinking.escPressed()) {
-                    CLFTerminal::scrollPrint(CLFTerminal::yellow("\n⏹ 已中断") + "\n");
+                    emitContent(m_eventQueue,CLFTerminal::yellow("\n⏹ 已中断") + "\n");
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        CLFTerminal::scrollPrint(
+                        emitContent(m_eventQueue,
                             CLFTerminal::red("\n✗ ") + response.m_error + "\n");
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
-                    CLFTerminal::scrollPrint(
+                    emitContent(m_eventQueue,
                         CLFTerminal::yellow("\n⚠ ") + response.m_error
                         + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
                                           + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");
@@ -111,19 +124,19 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 thinking.stop();
 
                 if (thinking.escPressed()) {
-                    CLFTerminal::scrollPrint(CLFTerminal::yellow("\n⏹ 已中断") + "\n");
+                    emitContent(m_eventQueue,CLFTerminal::yellow("\n⏹ 已中断") + "\n");
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        CLFTerminal::scrollPrint(
+                        emitContent(m_eventQueue,
                             CLFTerminal::red("\n✗ ") + response.m_error + "\n");
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
-                    CLFTerminal::scrollPrint(
+                    emitContent(m_eventQueue,
                         CLFTerminal::yellow("\n⚠ ") + response.m_error
                         + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
                                           + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");
@@ -172,7 +185,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                 return std::string("[Error] Exception: ") + e.what();
             }
-            CLFTerminal::scrollPrint(
+            emitContent(m_eventQueue,
                 CLFTerminal::red("\n✗ Exception: ") + e.what()
                 + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
                                   + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");

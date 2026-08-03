@@ -13,17 +13,17 @@
 #include "CLFCore/CLFProtocolAdapter.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 
-namespace CLF::CLFNetwork { class ICLFHttpClient; }  // 前向声明（shared_ptr 支持不完整类型）
-
+namespace CLF::CLFNetwork { class ICLFHttpClient; }
+namespace CLF::CLFCore { class CLFEventQueue; }
 namespace CLF::CLFCore {
-
-// CLFAgentConfig / CLFTool 定义在 CLFTypes.hpp
 
 class CLFAgentLoop {
 public:
-    // httpClient 可注入 Mock（测试用）；nullptr 时创建真实实例
     explicit CLFAgentLoop(const CLFAgentConfig& config,
                           std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient = nullptr);
+
+    // 设置事件队列 (CLFRepl 注入, 用于 scrollPrint 等渲染事件)
+    void setEventQueue(CLFEventQueue* q) { m_eventQueue = q; }
 
     // 执行一轮对话（含 tool-calling 循环）
     std::string runTurn(const std::string& userInput);
@@ -86,6 +86,7 @@ private:
     std::vector<CLFTool>              m_tools;
     std::vector<std::string>          m_loadedSkills;
     ToolStats                         m_lastToolStats;
+    CLFEventQueue*                    m_eventQueue = nullptr;
 };
 
 } // namespace CLF::CLFCore

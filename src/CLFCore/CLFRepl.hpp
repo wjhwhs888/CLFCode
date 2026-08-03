@@ -15,6 +15,8 @@ namespace CLF::CLFCore {
 
 class CLFAgentLoop;
 class CLFCommandDispatcher;
+class CLFEventQueue;
+class CLFThinkingIndicator;
 
 class CLFRepl {
 public:
@@ -22,6 +24,9 @@ public:
     ~CLFRepl();
 
     int run();
+
+    // 供外部推送事件 (CLFAgentLoop / ThinkingIndicator)
+    CLFEventQueue& eventQueue() { return *m_eventQueue; }
 
 private:
     void printBanner();
@@ -36,6 +41,10 @@ private:
     std::string m_input;
     int m_cursorPos = 0;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
+    std::unique_ptr<CLFEventQueue> m_eventQueue;
+    bool m_confirmActive = false;
+    bool m_exit = false;
+    int m_lastHeight = -1;
 };
 
 } // namespace CLF::CLFCore
