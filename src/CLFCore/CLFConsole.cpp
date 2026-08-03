@@ -131,6 +131,12 @@ CLFKeyEvent CLFConsole::readKey() {
         return ev;
     }
 
+    // —— Shift+Enter（输入换行符）——
+    if ((ch == '\r' || ch == '\n') && (GetKeyState(VK_SHIFT) & 0x8000)) {
+        ev.m_key = CLFKey::ShiftEnter;
+        return ev;
+    }
+
     // —— 回车（_getch 返回 \r）——
     if (ch == '\r' || ch == '\n') {
         ev.m_key = CLFKey::Enter;

@@ -105,6 +105,11 @@ int CLFRepl::run() {
                 }
                 break;
 
+            case CLFKey::ShiftEnter:
+                m_input += '\n';
+                CLFTerminal::drawInputArea(m_input);
+                break;
+
             case CLFKey::ShiftTab:
                 cycleMode();
                 break;

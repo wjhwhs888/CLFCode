@@ -22,7 +22,8 @@ enum class CLFKey {
     CtrlO,      // Ctrl+O（折叠/展开）
     CtrlC,      // Ctrl+C（退出）
     Esc,        // Esc（取消 / 打断）
-    ShiftTab    // Shift+Tab（切换安全模式，替代 Ctrl+Tab——系统级不可捕获）
+    ShiftTab,   // Shift+Tab（切换安全模式）
+    ShiftEnter  // Shift+Enter（输入换行）
 };
 
 struct CLFKeyEvent {
