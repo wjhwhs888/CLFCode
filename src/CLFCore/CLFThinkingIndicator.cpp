@@ -16,8 +16,8 @@ CLFThinkingIndicator::CLFThinkingIndicator(CLF::CLFNetwork::ICLFHttpClient* http
         while (!m_done.load(std::memory_order_relaxed)) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - m_start).count();
-            std::string msg = "Thinking… (" + std::to_string(elapsed) + "s)";
-            std::cout << "\r· " << CLFTerminal::gray(msg) << "\033[K" << std::flush;
+            // 更新固定状态区 (而非直接写 stdout)
+            CLFTerminal::showThinking(static_cast<int>(elapsed));
 
             if (m_http && CLFConsole::checkEscape()) {
                 m_escPressed.store(true, std::memory_order_relaxed);
@@ -27,7 +27,7 @@ CLFThinkingIndicator::CLFThinkingIndicator(CLF::CLFNetwork::ICLFHttpClient* http
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        std::cout << "\r\033[K" << std::flush;
+        CLFTerminal::clearStatus();
     });
 }
 
