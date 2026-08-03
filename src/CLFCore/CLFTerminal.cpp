@@ -141,8 +141,8 @@ void CLFTerminal::renderFixedArea() {
         std::string prefix=(i==0)?"❯ ":"  ";
         std::cout<<"\033["<<row<<";1H"<<prefix<<lines[i]<<"\033[K"<<std::flush;
     }
-    // 清除多余旧行
-    for(int i=(int)lines.size();i<N+2;++i)
+    // 清除多余旧行（仅限输入区内部, 不触碰下分隔线和模式行）
+    for(int i=(int)lines.size();i<N;++i)
         std::cout<<"\033["<<(it+i)<<";1H\033[K"<<std::flush;
 
     // ④ ModeLine
