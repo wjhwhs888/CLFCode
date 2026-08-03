@@ -197,7 +197,7 @@ int CLFRepl::run() {
             }
         }
 
-        // —— 帧末: 刷新输入区 ——
+        // —— 帧末: 刷新输入区和模式行 ——
         CLFTerminal::drawInput(m_input, m_cursorPos);
         CLFTerminal::drawMode(m_dispatcher->modeName());
     }
@@ -295,6 +295,9 @@ bool CLFRepl::confirmDialog(const std::string& prompt) {
         if (key.m_key == CLFKey::ShiftTab) cycleMode();
     }
     CLFTerminal::hideConfirm();
+    // 重绘固定区(确认期间主循环阻塞, 输入区/模式行可能被覆盖)
+    CLFTerminal::drawInput(m_input, m_cursorPos);
+    CLFTerminal::drawMode(m_dispatcher->modeName());
     CLFTerminal::scrollPrint(CLFTerminal::green("  ⎿ ✓ ") + (sel == 0 ? "已确认" : "已取消") + "\n");
     return sel == 0;
 }
