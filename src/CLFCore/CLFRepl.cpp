@@ -49,7 +49,7 @@ CLFRepl::CLFRepl(CLFAgentLoop& agent, const std::string& historyDir)
 }
 
 int CLFRepl::run() {
-
+    try {
     // 启动清理：上次崩溃可能残留 clf_cmd_*.txt 临时文件
     try {
         for (const auto& entry : std::filesystem::directory_iterator(".")) {
@@ -142,6 +142,12 @@ int CLFRepl::run() {
             default:
                 break; // Up/Down/Left/Right 在输入区暂不处理
         }
+    }
+    } catch (...) {
+        CLFConsole::exitRawMode();
+        CLFTerminal::restoreScrollRegion();
+        std::cerr << "[Fatal] Unexpected error — CLFCode terminated." << std::endl;
+        return 1;
     }
 }
 

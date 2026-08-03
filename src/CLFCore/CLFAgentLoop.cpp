@@ -62,7 +62,7 @@ public:
 
 private:
     std::atomic<bool> m_done;
-    bool m_escPressed = false;
+    std::atomic<bool> m_escPressed{false};
     CLF::CLFNetwork::ICLFHttpClient* m_http;
     std::chrono::steady_clock::time_point m_start;
     std::thread m_thread;

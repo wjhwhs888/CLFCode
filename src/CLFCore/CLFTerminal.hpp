@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -101,6 +102,7 @@ private:
     static bool s_ansiEnabled;
     static bool s_scrollCollapsed;      // 滚动区折叠状态
     static std::vector<std::string> s_scrollBuffer; // 滚动区内容缓冲
+    static std::mutex s_scrollMutex;    // 保护 s_scrollBuffer 读写（HTTP 回调线程 + 主线程）
     static std::string s_statusTitle;   // 状态区标题
     static std::string s_statusContent; // 状态区内容
     static std::string s_inputText;     // 输入区文本

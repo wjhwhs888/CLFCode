@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <mutex>
 #include <thread>
 
 #ifdef _WIN32
@@ -21,6 +22,7 @@ namespace CLF::CLFCore {
 bool CLFTerminal::s_ansiEnabled = false;
 bool CLFTerminal::s_scrollCollapsed = true;
 std::vector<std::string> CLFTerminal::s_scrollBuffer;
+std::mutex CLFTerminal::s_scrollMutex;
 std::string CLFTerminal::s_statusTitle;
 std::string CLFTerminal::s_statusContent;
 std::string CLFTerminal::s_inputText;
@@ -249,18 +251,21 @@ void CLFTerminal::setScrollCollapsed(bool) {} // 保留接口
 bool CLFTerminal::isScrollCollapsed() { return false; }
 
 void CLFTerminal::scrollPrint(const std::string& text) {
-    // 缓冲维护
-    std::string line;
-    for (char c : text) {
-        if (c == '\n') {
-            s_scrollBuffer.push_back(line);
-            line.clear();
-        } else {
-            line += c;
+    // 缓冲维护（加锁：HTTP 流式回调线程与主线程并发）
+    {
+        std::lock_guard<std::mutex> lock(s_scrollMutex);
+        std::string line;
+        for (char c : text) {
+            if (c == '\n') {
+                s_scrollBuffer.push_back(line);
+                line.clear();
+            } else {
+                line += c;
+            }
         }
-    }
-    if (!line.empty()) {
-        s_scrollBuffer.push_back(line);
+        if (!line.empty()) {
+            s_scrollBuffer.push_back(line);
+        }
     }
 
     // 输出（滚动区内自然滚动）
@@ -430,10 +435,14 @@ void CLFTerminal::redrawAll() {
     resetScrollRegion();
     setScrollRegion(1, cb);
 
-    // 从缓冲重绘可见内容
+    // 从缓冲重绘可见内容（加锁读取）
     size_t visible = static_cast<size_t>(cb - 1);
-    size_t start = (s_scrollBuffer.size() > visible)
-                       ? s_scrollBuffer.size() - visible : 0;
+    size_t start;
+    {
+        std::lock_guard<std::mutex> lock(s_scrollMutex);
+        start = (s_scrollBuffer.size() > visible)
+                    ? s_scrollBuffer.size() - visible : 0;
+    }
     for (size_t i = start; i < s_scrollBuffer.size(); ++i) {
         const std::string& raw = s_scrollBuffer[i];
         std::string stripped = stripAnsi(raw);

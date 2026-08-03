@@ -129,7 +129,11 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
     if (!file.is_open()) {
         return "";
     }
-    file << data.dump(2);
+    try {
+        file << data.dump(2);
+    } catch (const nlohmann::json::exception&) {
+        file << data.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
+    }
     return filePath;
 }
 

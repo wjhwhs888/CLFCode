@@ -5,6 +5,25 @@
 #include <httplib.h>
 
 namespace CLF::CLFNetwork {
+namespace {
+
+// RAII 守卫：析构时自动清理 m_activeCli（即使回调抛异常也安全）
+class ActiveCliGuard {
+public:
+    ActiveCliGuard(std::mutex& m, std::shared_ptr<httplib::Client>& activeCli)
+        : m_mutex(m), m_activeCli(activeCli) {}
+    ~ActiveCliGuard() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_activeCli.reset();
+    }
+    ActiveCliGuard(const ActiveCliGuard&) = delete;
+    ActiveCliGuard& operator=(const ActiveCliGuard&) = delete;
+private:
+    std::mutex& m_mutex;
+    std::shared_ptr<httplib::Client>& m_activeCli;
+};
+
+} // anonymous namespace
 
 CLFHttpClient::CLFHttpClient(const std::string& baseUrl, const std::string& apiKey)
     : m_baseUrl(baseUrl)
@@ -21,6 +40,7 @@ CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::stri
         std::lock_guard<std::mutex> lock(m_cliMutex);
         m_activeCli = cli;
     }
+    ActiveCliGuard guard(m_cliMutex, m_activeCli);
 
     httplib::Headers headers = {
         {"Authorization", "Bearer " + m_apiKey},
@@ -28,11 +48,6 @@ CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::stri
     };
 
     auto res = cli->Post(path, headers, jsonBody, "application/json");
-
-    {
-        std::lock_guard<std::mutex> lock(m_cliMutex);
-        m_activeCli.reset();
-    }
 
     if (!res) {
         result.m_error = "Connection failed: " + httplib::to_string(res.error());
@@ -63,6 +78,7 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
         std::lock_guard<std::mutex> lock(m_cliMutex);
         m_activeCli = cli;
     }
+    ActiveCliGuard guard(m_cliMutex, m_activeCli);
 
     httplib::Headers headers = {
         {"Authorization", "Bearer " + m_apiKey},
@@ -71,20 +87,20 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
 
     // SSE 行缓冲：网络 chunk 边界可能切开一行数据，需缓冲尾部跨块拼接
     std::string lineBuffer;
+    size_t cursor = 0;  // 游标替代逐行 erase，避免 O(n²)
 
     auto res = cli->Post(
         path, headers, jsonBody, "application/json",
         [&](const char* data, size_t dataLen) {
             lineBuffer.append(data, dataLen);
 
-            size_t pos = 0;
             while (true) {
-                size_t end = lineBuffer.find('\n', pos);
+                size_t end = lineBuffer.find('\n', cursor);
                 if (end == std::string::npos) {
                     break;
                 }
-                std::string line = lineBuffer.substr(pos, end - pos);
-                pos = end + 1;
+                std::string line = lineBuffer.substr(cursor, end - cursor);
+                cursor = end + 1;
 
                 if (!line.empty() && line.back() == '\r') {
                     line.pop_back();
@@ -94,29 +110,26 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
                 }
             }
 
-            if (pos > 0) {
-                lineBuffer.erase(0, pos);
+            // 消费后裁剪已处理前缀，防止 buffer 无限增长
+            if (cursor > 4096) {
+                lineBuffer.erase(0, cursor);
+                cursor = 0;
             }
             return true;
         }
     );
 
     // 流结束后，冲刷缓冲中的最后一行（无 \n 结尾的最终数据）
-    if (!lineBuffer.empty()) {
-        std::string last = lineBuffer;
+    if (cursor < lineBuffer.size()) {
+        std::string last = lineBuffer.substr(cursor);
         if (!last.empty() && last.back() == '\r') {
             last.pop_back();
         }
         if (!last.empty()) {
             onLine(last);
         }
-        lineBuffer.clear();
     }
-
-    {
-        std::lock_guard<std::mutex> lock(m_cliMutex);
-        m_activeCli.reset();
-    }
+    lineBuffer.clear();
 
     if (!res) {
         result.m_error = "Stream connection failed: " + httplib::to_string(res.error());

@@ -161,7 +161,12 @@ std::string CLFContext::serialize() const {
     }
     data["messages"] = std::move(msgs);
 
-    return data.dump();
+    try {
+        return data.dump();
+    } catch (const json::exception&) {
+        // 无效 UTF-8 降级：用 replace 字符替代非法字节
+        return data.dump(-1, ' ', false, json::error_handler_t::replace);
+    }
 }
 
 bool CLFContext::restore(const std::string& jsonData) {
