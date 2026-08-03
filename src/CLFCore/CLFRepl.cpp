@@ -104,7 +104,6 @@ int CLFRepl::run() {
             case CLFKey::Left:
                 if (m_cursorPos > 0) {
                     --m_cursorPos;
-                    // 跳过 UTF-8 续字节
                     while (m_cursorPos > 0
                            && (static_cast<unsigned char>(m_input[m_cursorPos]) & 0xC0) == 0x80)
                         --m_cursorPos;
@@ -121,6 +120,60 @@ int CLFRepl::run() {
                     CLFTerminal::drawInputArea(m_input, m_cursorPos);
                 }
                 break;
+
+            case CLFKey::Home: {
+                // 移到当前行首（上一个 \n 之后或文本开头）
+                int pos = m_cursorPos;
+                while (pos > 0 && m_input[pos - 1] != '\n') --pos;
+                m_cursorPos = pos;
+                CLFTerminal::drawInputArea(m_input, m_cursorPos);
+                break;
+            }
+
+            case CLFKey::End: {
+                // 移到当前行尾（下一个 \n 之前或文本末尾）
+                int pos = m_cursorPos;
+                while (pos < static_cast<int>(m_input.size()) && m_input[pos] != '\n') ++pos;
+                m_cursorPos = pos;
+                CLFTerminal::drawInputArea(m_input, m_cursorPos);
+                break;
+            }
+
+            case CLFKey::Up: {
+                // 移到上一行同列位置
+                int lineStart = m_cursorPos;
+                while (lineStart > 0 && m_input[lineStart - 1] != '\n') --lineStart;
+                int colOffset = m_cursorPos - lineStart; // 当前列（字节偏移）
+                if (lineStart > 0) {
+                    // 找上一行起始位置
+                    int prevEnd = lineStart - 1; // 跳过 \n
+                    int prevStart = prevEnd;
+                    while (prevStart > 0 && m_input[prevStart - 1] != '\n') --prevStart;
+                    int prevLen = prevEnd - prevStart;
+                    m_cursorPos = prevStart + (colOffset < prevLen ? colOffset : prevLen);
+                    CLFTerminal::drawInputArea(m_input, m_cursorPos);
+                }
+                break;
+            }
+
+            case CLFKey::Down: {
+                // 移到下一行同列位置
+                int lineStart = m_cursorPos;
+                while (lineStart > 0 && m_input[lineStart - 1] != '\n') --lineStart;
+                int colOffset = m_cursorPos - lineStart;
+                // 找下一行起始位置
+                int nextStart = m_cursorPos;
+                while (nextStart < static_cast<int>(m_input.size()) && m_input[nextStart] != '\n') ++nextStart;
+                if (nextStart < static_cast<int>(m_input.size())) {
+                    ++nextStart; // 跳过 \n
+                    int nextEnd = nextStart;
+                    while (nextEnd < static_cast<int>(m_input.size()) && m_input[nextEnd] != '\n') ++nextEnd;
+                    int nextLen = nextEnd - nextStart;
+                    m_cursorPos = nextStart + (colOffset < nextLen ? colOffset : nextLen);
+                    CLFTerminal::drawInputArea(m_input, m_cursorPos);
+                }
+                break;
+            }
 
             case CLFKey::Enter:
                 if (!m_input.empty()) {

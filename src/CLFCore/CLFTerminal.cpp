@@ -360,9 +360,9 @@ void CLFTerminal::toContentArea() {
         return;
     }
 
-    // 清除所有输入行 + 重绘固定区
-    int topRow = inputRowTop(H, iLines);
-    for (int r = topRow; r <= H; ++r)
+    // 清除旧固定区全部行（从旧上分隔线到屏幕底，避免多行→单行切换时残留）
+    int oldSepRow = upperSepRow(H, iLines);
+    for (int r = oldSepRow; r <= H; ++r)
         std::cout << "\033[" << r << ";1H\033[K" << std::flush;
 
     // 重置为单行空输入 + 重绘固定区

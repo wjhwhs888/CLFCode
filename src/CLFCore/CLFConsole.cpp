@@ -114,12 +114,13 @@ CLFKeyEvent CLFConsole::readKey() {
         int c2 = _getch();
         if (c2 == EOF) return ev;
         switch (c2) {
-            case 0x48: ev.m_key = CLFKey::Up;    return ev;  // ↑
-            case 0x50: ev.m_key = CLFKey::Down;  return ev;  // ↓
-            case 0x4B: ev.m_key = CLFKey::Left;  return ev;  // ←
-            case 0x4D: ev.m_key = CLFKey::Right; return ev;  // →
-            // 0x47=Home, 0x4F=End, 0x49=PgUp, 0x51=PgDn → 暂忽略
-            default: return ev; // CLFKey::None
+            case 0x48: ev.m_key = CLFKey::Up;    return ev;
+            case 0x50: ev.m_key = CLFKey::Down;  return ev;
+            case 0x4B: ev.m_key = CLFKey::Left;  return ev;
+            case 0x4D: ev.m_key = CLFKey::Right; return ev;
+            case 0x47: ev.m_key = CLFKey::Home;  return ev;
+            case 0x4F: ev.m_key = CLFKey::End;   return ev;
+            default: return ev;
         }
     }
 

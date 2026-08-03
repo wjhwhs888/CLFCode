@@ -19,11 +19,13 @@ enum class CLFKey {
     Enter,      // 回车（提交）
     Backspace,  // 退格
     Up, Down, Left, Right, // 方向键
-    CtrlO,      // Ctrl+O（折叠/展开）
+    CtrlO,      // Ctrl+O
     CtrlC,      // Ctrl+C（退出）
     Esc,        // Esc（取消 / 打断）
     ShiftTab,   // Shift+Tab（切换安全模式）
-    ShiftEnter  // Shift+Enter（输入换行）
+    ShiftEnter, // Shift+Enter（输入换行）
+    Home,       // Home 键（行首）
+    End         // End 键（行尾）
 };
 
 struct CLFKeyEvent {
