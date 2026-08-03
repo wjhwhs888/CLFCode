@@ -63,13 +63,23 @@ std::vector<std::string> splitLines(const std::string& text) {
     return lines;
 }
 
-// 计算光标在输入区的视觉位置（行索引 0=第一行, 列偏移）
-void cursorVisualPos(const std::string& text, int bytePos, int& outLine, int& outCol) {
+// 计算光标在输入区的视觉位置（行索引 0=第一行, 列偏移=显示宽度）
+void cursorVisualPos(const std::string& text, int bytePos, int& outLine, int& outColWidth) {
     outLine = 0;
-    outCol = 0;
-    for (int i = 0; i < bytePos && i < static_cast<int>(text.size()); ++i) {
-        if (text[i] == '\n') { ++outLine; outCol = 0; }
-        else ++outCol;
+    outColWidth = 0;
+    for (int i = 0; i < bytePos && i < static_cast<int>(text.size()); ) {
+        if (text[i] == '\n') { ++outLine; outColWidth = 0; ++i; }
+        else {
+            // 取一个完整 UTF-8 字符，计算显示宽度
+            unsigned char c = static_cast<unsigned char>(text[i]);
+            int charLen = 1;
+            if ((c & 0xE0) == 0xC0) charLen = 2;
+            else if ((c & 0xF0) == 0xE0) charLen = 3;
+            else if ((c & 0xF8) == 0xF0) charLen = 4;
+            std::string ch = text.substr(i, charLen);
+            outColWidth += CLFAnsi::textWidth(ch);
+            i += charLen;
+        }
     }
 }
 
@@ -273,11 +283,11 @@ void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
     drawLowerSep(W, H);
     drawStatusLine(W, H, s_modeLabel);
 
-    // 光标定位
-    int cursorLine, cursorCol;
-    cursorVisualPos(text, cur, cursorLine, cursorCol);
+    // 光标定位（显示宽度，非字节偏移）
+    int cursorLine, cursorColW;
+    cursorVisualPos(text, cur, cursorLine, cursorColW);
     int prefixW = (cursorLine == 0) ? CLFAnsi::textWidth("❯ ") : CLFAnsi::textWidth("  ");
-    int col = 1 + prefixW + cursorCol;
+    int col = 1 + prefixW + cursorColW;
     std::cout << "\033[" << (topRow + cursorLine) << ";" << col << "H" << std::flush;
 
     s_inputDrawn = true;
