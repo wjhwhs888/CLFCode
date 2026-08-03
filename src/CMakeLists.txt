@@ -50,7 +50,7 @@ target_include_directories(clf_tools   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # 各测试目标：只链接所需模块
 # 注：Boost.UT 需要 C++20，测试目标单独设置（主程序保持 C++17）
 set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
-                     qa_CLFSessionManager qa_CLFAgentLoop)
+                     qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core)
@@ -72,6 +72,10 @@ add_executable(qa_CLFAgentLoop test/qa_CLFAgentLoop.cpp)
 # 需要 OpenSSL：clf_network 启用 HTTPS（CPPHTTPLIB_OPENSSL_SUPPORT）
 target_link_libraries(qa_CLFAgentLoop PRIVATE clf_core clf_network ${CLF_OPENSSL_LIBS})
 add_test(NAME qa_CLFAgentLoop COMMAND qa_CLFAgentLoop)
+
+add_executable(qa_CLFStreamAccumulator test/qa_CLFStreamAccumulator.cpp)
+target_link_libraries(qa_CLFStreamAccumulator PRIVATE clf_core)
+add_test(NAME qa_CLFStreamAccumulator COMMAND qa_CLFStreamAccumulator)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

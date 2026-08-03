@@ -91,18 +91,19 @@ void CLFLogger::log(CLFLogLevel msgLevel, const std::string& msg) {
         }
     }
 
-    // 文件输出（失败静默降级）
+    // 文件输出（句柄懒缓存，仅首次/路径变更时重新打开）
     if (!m_filePath.empty()) {
-        // 确保父目录存在（如 log/）
-        std::filesystem::path logPath(m_filePath);
-        if (logPath.has_parent_path()) {
-            std::error_code ec;
-            std::filesystem::create_directories(logPath.parent_path(), ec);
+        if (!m_fileStream.is_open()) {
+            std::filesystem::path logPath(m_filePath);
+            if (logPath.has_parent_path()) {
+                std::error_code ec;
+                std::filesystem::create_directories(logPath.parent_path(), ec);
+            }
+            m_fileStream.open(m_filePath, std::ios::app);
         }
-
-        std::ofstream file(m_filePath, std::ios::app);
-        if (file.is_open()) {
-            file << line;
+        if (m_fileStream.is_open()) {
+            m_fileStream << line;
+            m_fileStream.flush(); // 立即落盘（防止崩溃丢失日志）
         }
     }
 }

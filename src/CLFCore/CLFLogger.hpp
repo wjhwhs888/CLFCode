@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <fstream>
 #include <mutex>
 #include <string>
 
@@ -51,6 +52,7 @@ private:
     bool        m_console  = false;
     bool        m_initialized = false;
     std::mutex  m_mutex;
+    std::ofstream m_fileStream; // 缓存文件句柄（懒打开，析构关闭）
 };
 
 } // namespace CLF::CLFCore
