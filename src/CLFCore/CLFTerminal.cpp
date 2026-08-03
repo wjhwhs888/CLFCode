@@ -172,7 +172,7 @@ void CLFTerminal::renderFixedArea() {
     cursorVisPos(s_inputText,s_inputCursor,cursorLine,cursorColW);
     cursorLine=std::min(cursorLine,(int)lines.size()-1);
     int prefixW=(cursorLine==0)?CLFAnsi::textWidth(">"):CLFAnsi::textWidth("  ");
-    int col=1+prefixW+cursorColW;
+    int col=prefixW+cursorColW+2;
     std::cout<<"\033["<<(it+cursorLine)<<";"<<col<<"H"<<std::flush;
 }
 
