@@ -75,25 +75,50 @@ int CLFRepl::run() {
         }
         lastHeight = currentHeight;
 
-        CLFTerminal::drawInputArea(m_input);
+        CLFTerminal::drawInputArea(m_input, m_cursorPos);
         CLFTerminal::drawModeArea(m_dispatcher->modeName());
 
         auto key = CLFConsole::readKey();
 
         switch (key.m_key) {
             case CLFKey::Char:
-                m_input += key.m_utf8;
-                CLFTerminal::drawInputArea(m_input);
+                m_input.insert(m_cursorPos, key.m_utf8);
+                m_cursorPos += static_cast<int>(key.m_utf8.size());
+                CLFTerminal::drawInputArea(m_input, m_cursorPos);
                 break;
 
             case CLFKey::Backspace:
-                if (!m_input.empty()) {
+                if (m_cursorPos > 0 && !m_input.empty()) {
+                    // 删除光标前一个 UTF-8 字符
+                    int delPos = m_cursorPos - 1;
                     size_t len = 1;
-                    while (len < m_input.size()
-                           && (static_cast<unsigned char>(m_input[m_input.size() - len]) & 0xC0) == 0x80)
+                    while (delPos - static_cast<int>(len) + 1 >= 0
+                           && (static_cast<unsigned char>(m_input[delPos - static_cast<int>(len) + 1]) & 0xC0) == 0x80)
                         ++len;
-                    m_input.erase(m_input.size() - len);
-                    CLFTerminal::drawInputArea(m_input);
+                    m_input.erase(m_cursorPos - static_cast<int>(len), len);
+                    m_cursorPos -= static_cast<int>(len);
+                    CLFTerminal::drawInputArea(m_input, m_cursorPos);
+                }
+                break;
+
+            case CLFKey::Left:
+                if (m_cursorPos > 0) {
+                    --m_cursorPos;
+                    // 跳过 UTF-8 续字节
+                    while (m_cursorPos > 0
+                           && (static_cast<unsigned char>(m_input[m_cursorPos]) & 0xC0) == 0x80)
+                        --m_cursorPos;
+                    CLFTerminal::drawInputArea(m_input, m_cursorPos);
+                }
+                break;
+
+            case CLFKey::Right:
+                if (m_cursorPos < static_cast<int>(m_input.size())) {
+                    ++m_cursorPos;
+                    while (m_cursorPos < static_cast<int>(m_input.size())
+                           && (static_cast<unsigned char>(m_input[m_cursorPos]) & 0xC0) == 0x80)
+                        ++m_cursorPos;
+                    CLFTerminal::drawInputArea(m_input, m_cursorPos);
                 }
                 break;
 
@@ -101,13 +126,15 @@ int CLFRepl::run() {
                 if (!m_input.empty()) {
                     std::string submitted = m_input;
                     m_input.clear();
+                    m_cursorPos = 0;
                     submit(submitted);
                 }
                 break;
 
             case CLFKey::ShiftEnter:
-                m_input += '\n';
-                CLFTerminal::drawInputArea(m_input);
+                m_input.insert(m_cursorPos, "\n");
+                ++m_cursorPos;
+                CLFTerminal::drawInputArea(m_input, m_cursorPos);
                 break;
 
             case CLFKey::ShiftTab:
@@ -116,12 +143,14 @@ int CLFRepl::run() {
 
             case CLFKey::Esc:
                 m_input.clear();
+                m_cursorPos = 0;
                 CLFTerminal::drawInputArea(m_input);
                 break;
 
             case CLFKey::CtrlC:
                 if (!m_input.empty()) {
                     m_input.clear();
+                    m_cursorPos = 0;
                     CLFTerminal::drawInputArea(m_input);
                 } else {
                     saveSession(false);

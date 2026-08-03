@@ -1,5 +1,12 @@
-// CLFTerminal.cpp — 终端 UI 工具实现（DECSTBM 5 区布局）
+// CLFTerminal.cpp — 终端 UI（Claude Code 风格多行输入区）
 // 颜色/尺寸 → 委托 CLFAnsi；滚动缓冲 → 委托 CLFScrollBuffer
+//
+// 布局（从底向上）：
+//   Row H:     [状态行]  mode · hints
+//   Row H-1:   [下分隔线]
+//   Row H-2 ~ H-1-inputLines:  [多行输入区]  ❯ line1 / line2 / ...
+//   Row H-2-inputLines: [上分隔线]  ─── info ───
+//   以上:      滚动内容区 (DECSTBM)
 
 #include "CLFCore/CLFTerminal.hpp"
 #include "CLFCore/CLFAnsi.hpp"
@@ -7,6 +14,8 @@
 
 #include <algorithm>
 #include <iostream>
+#include <sstream>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -16,7 +25,6 @@
 
 namespace CLF::CLFCore {
 
-// 静态状态
 CLFScrollBuffer CLFTerminal::s_buffer;
 std::string CLFTerminal::s_statusTitle;
 std::string CLFTerminal::s_statusContent;
@@ -28,10 +36,44 @@ bool CLFTerminal::s_confirmDrawn = false;
 
 namespace {
 
-constexpr int kFixedLines = 7;
-int contentBottom(int H) { return H - kFixedLines; }
-int inputRow(int H)      { return H - 2; }
-int modeRow(int H)       { return H; }
+// ============ 布局计算 ============
+// 固定区 = 上分隔线(1) + 输入行(N) + 下分隔线(1) + 状态行(1) = N + 3
+
+int inputLines(const std::string& text) {
+    int lines = 1;
+    for (char c : text) if (c == '\n') ++lines;
+    return lines;
+}
+
+int inputRowTop(int H, int iLines)   { return H - 1 - iLines; }     // 输入区第一行
+int upperSepRow(int H, int iLines)   { return H - 2 - iLines; }     // 上分隔线
+int contentBottom(int H, int iLines) { return H - 3 - iLines; }     // 滚动区底
+int lowerSepRow(int H)               { return H - 1; }              // 下分隔线
+int statusRow(int H)                 { return H; }                  // 状态行
+
+// 多行文本切分（按 \n）
+std::vector<std::string> splitLines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::string cur;
+    for (char c : text) {
+        if (c == '\n') { lines.push_back(cur); cur.clear(); }
+        else cur += c;
+    }
+    lines.push_back(cur);
+    return lines;
+}
+
+// 计算光标在输入区的视觉位置（行索引 0=第一行, 列偏移）
+void cursorVisualPos(const std::string& text, int bytePos, int& outLine, int& outCol) {
+    outLine = 0;
+    outCol = 0;
+    for (int i = 0; i < bytePos && i < static_cast<int>(text.size()); ++i) {
+        if (text[i] == '\n') { ++outLine; outCol = 0; }
+        else ++outCol;
+    }
+}
+
+// ============ 绘制辅助 ============
 
 std::string truncateToWidth(const std::string& text, int maxWidth) {
     if (CLFAnsi::textWidth(text) <= maxWidth) return text;
@@ -69,48 +111,48 @@ void resetScrollRegion() {
     std::cout << "\033[r" << std::flush;
 }
 
-void drawModeLine(const std::string& mode) {
-    int W = CLFAnsi::terminalWidth();
-    if (W <= 0) W = 80;
-    std::string left  = mode + " mode on";
-    std::string hints = "shift+tab to cycle · esc to interrupt · ? for help";
-    constexpr int kIndent = 2;
-    int pad = W - kIndent - CLFAnsi::textWidth(left) - CLFAnsi::textWidth(hints);
-    if (pad < 0) pad = 1;
-    std::string display = truncateToWidth(left + std::string(pad, ' ') + hints, W - kIndent);
-    std::cout << std::string(kIndent, ' ') << CLFAnsi::gray(display) << std::flush;
+// 绘制上分隔线（含右侧信息）
+void drawUpperSep(int W, int H, int iLines) {
+    std::string info = "clfcode";
+    std::string left = std::string(3, '-');
+    int pad = W - CLFAnsi::textWidth(left) - CLFAnsi::textWidth(info) - 2;
+    if (pad < 1) pad = 1;
+    std::string line = left + std::string(pad, '-') + " " + info;
+    std::cout << "\033[" << upperSepRow(H, iLines) << ";1H"
+              << CLFAnsi::gray(truncateToWidth(line, W)) << "\033[K" << std::flush;
 }
 
-void redrawFixedArea(int W, int H, const std::string& inputText) {
-    std::cout << "\033[" << (H - 4) << ";1H\033[K" << std::flush;
-    std::cout << "\033[" << (H - 3) << ";1H"
-              << CLFAnsi::lightBlue(std::string(W - 1, '-')) << std::flush;
-    std::cout << "\033[" << (H - 2) << ";1H"
-              << "❯ " << inputText << "\033[K" << std::flush;
-    std::cout << "\033[" << (H - 1) << ";1H"
-              << CLFAnsi::lightBlue(std::string(W - 1, '-')) << std::flush;
-    std::cout << "\033[" << H << ";1H\033[K" << std::flush;
+// 绘制下分隔线
+void drawLowerSep(int W, int H) {
+    std::cout << "\033[" << lowerSepRow(H) << ";1H"
+              << CLFAnsi::gray(std::string(W, '-')) << "\033[K" << std::flush;
+}
+
+// 绘制状态行
+void drawStatusLine(int W, int H, const std::string& mode) {
+    std::string left  = "  " + mode + " mode on";
+    std::string hints = "shift+tab to cycle · esc to interrupt · ? for help";
+    int pad = W - CLFAnsi::textWidth(left) - CLFAnsi::textWidth(hints) - 2;
+    if (pad < 1) pad = 1;
+    std::string display = left + std::string(pad, ' ') + hints;
+    std::cout << "\033[" << statusRow(H) << ";1H"
+              << CLFAnsi::gray(truncateToWidth(display, W)) << "\033[K" << std::flush;
 }
 
 } // anonymous namespace
 
 // ============================================================================
-// ANSI 颜色 — 委托 CLFAnsi
+// ANSI — 委托 CLFAnsi
 // ============================================================================
 
 void CLFTerminal::enableAnsi() { CLFAnsi::enable(); }
-
-std::string CLFTerminal::green(const std::string& s)     { return CLFAnsi::green(s); }
-std::string CLFTerminal::cyan(const std::string& s)      { return CLFAnsi::cyan(s); }
+std::string CLFTerminal::green(const std::string& s)  { return CLFAnsi::green(s); }
+std::string CLFTerminal::cyan(const std::string& s)   { return CLFAnsi::cyan(s); }
 std::string CLFTerminal::lightBlue(const std::string& s) { return CLFAnsi::lightBlue(s); }
-std::string CLFTerminal::yellow(const std::string& s)    { return CLFAnsi::yellow(s); }
-std::string CLFTerminal::red(const std::string& s)       { return CLFAnsi::red(s); }
-std::string CLFTerminal::gray(const std::string& s)      { return CLFAnsi::gray(s); }
-std::string CLFTerminal::bold(const std::string& s)      { return CLFAnsi::bold(s); }
-
-// ============================================================================
-// 树状输出
-// ============================================================================
+std::string CLFTerminal::yellow(const std::string& s) { return CLFAnsi::yellow(s); }
+std::string CLFTerminal::red(const std::string& s)    { return CLFAnsi::red(s); }
+std::string CLFTerminal::gray(const std::string& s)   { return CLFAnsi::gray(s); }
+std::string CLFTerminal::bold(const std::string& s)   { return CLFAnsi::bold(s); }
 
 void CLFTerminal::item(const std::string& text) { std::cout << "● " << text << std::endl; }
 void CLFTerminal::sub(const std::string& text)  { std::cout << "  ⎿ " << text << std::endl; }
@@ -119,26 +161,20 @@ void CLFTerminal::ok(const std::string& text)   { std::cout << "● " << green("
 void CLFTerminal::fail(const std::string& text) { std::cout << "● " << red("✗") << " " << text << std::endl; }
 void CLFTerminal::info(const std::string& text) { std::cout << "● " << yellow("⚠") << " " << text << std::endl; }
 
-// ============================================================================
-// 终端控制 — 委托 CLFAnsi
-// ============================================================================
-
 int CLFTerminal::getTerminalHeight() { return CLFAnsi::terminalHeight(); }
 int CLFTerminal::getTerminalWidth()  { return CLFAnsi::terminalWidth(); }
-int CLFTerminal::textWidth(const std::string& text) { return CLFAnsi::textWidth(text); }
-int CLFTerminal::wrappedLines(const std::string& text) { return CLFAnsi::wrappedLines(text); }
+int CLFTerminal::textWidth(const std::string& t) { return CLFAnsi::textWidth(t); }
+int CLFTerminal::wrappedLines(const std::string& t) { return CLFAnsi::wrappedLines(t); }
 
-void CLFTerminal::moveCursor(int row, int col) {
-    if (!CLFAnsi::isEnabled()) return;
-    std::cout << "\033[" << row << ";" << col << "H" << std::flush;
+void CLFTerminal::moveCursor(int r, int c) {
+    if (CLFAnsi::isEnabled()) std::cout << "\033[" << r << ";" << c << "H" << std::flush;
 }
 void CLFTerminal::clearLine() {
-    if (!CLFAnsi::isEnabled()) return;
-    std::cout << "\033[K" << std::flush;
+    if (CLFAnsi::isEnabled()) std::cout << "\033[K" << std::flush;
 }
 
 // ============================================================================
-// DECSTBM 滚动区布局
+// 布局初始化
 // ============================================================================
 
 void CLFTerminal::initLayout(const std::string& modeLabel) {
@@ -151,8 +187,7 @@ void CLFTerminal::initLayout(const std::string& modeLabel) {
 
     int H = getTerminalHeight();
     int W = getTerminalWidth();
-    if (H <= 0) H = 30;
-    if (W <= 0) W = 80;
+    if (H <= 0) H = 30; if (W <= 0) W = 80;
 
     if (!CLFAnsi::isEnabled() || H < 10) {
         std::cout << "\033[2J\033[H" << std::flush;
@@ -160,22 +195,97 @@ void CLFTerminal::initLayout(const std::string& modeLabel) {
     }
 
     std::cout << "\033[2J\033[H" << std::flush;
+    int iLines = inputLines(s_inputText);
+    int cb = contentBottom(H, iLines);
+    if (cb < 1) cb = 1;
 
-    int cb = contentBottom(H);
     setScrollRegion(1, cb);
-
     resetScrollRegion();
-    redrawFixedArea(W, H, s_inputText);
-    drawModeLine(s_modeLabel);
+
+    drawUpperSep(W, H, iLines);
+    drawLowerSep(W, H);
+    drawStatusLine(W, H, s_modeLabel);
+
+    // 绘制空输入行
+    std::cout << "\033[" << inputRowTop(H, iLines) << ";1H"
+              << "❯ " << "\033[K" << std::flush;
 
     setScrollRegion(1, cb);
     std::cout << "\033[H" << std::flush;
-
     s_inputDrawn = true;
 }
 
 void CLFTerminal::setScrollCollapsed(bool) {}
 bool CLFTerminal::isScrollCollapsed() { return false; }
+
+// ============================================================================
+// 多行输入区绘制（含光标定位）
+// ============================================================================
+
+void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
+    s_inputText = text;
+    int cur = (cursorPos < 0) ? static_cast<int>(text.size()) : cursorPos;
+    s_inputCursor = cur;
+
+    int H = getTerminalHeight();
+    int W = getTerminalWidth();
+    if (H <= 0) H = 30; if (W <= 0) W = 80;
+
+    int iLines = inputLines(text);
+    if (iLines < 1) iLines = 1;
+
+    if (!CLFAnsi::isEnabled() || H < 10) {
+        std::cout << "\n\n" << std::flush;
+        std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
+        auto lines = splitLines(text);
+        for (const auto& l : lines) std::cout << "❯ " << l << "\n" << std::flush;
+        std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
+        s_inputDrawn = true;
+        return;
+    }
+
+    // 计算布局（动态适应行数变化）
+    int cb = contentBottom(H, iLines);
+    if (cb < 1) cb = 1;
+    int topRow = inputRowTop(H, iLines);
+
+    // 重设滚动区（输入行数可能变化）
+    resetScrollRegion();
+    setScrollRegion(1, cb);
+
+    // 绘制固定区
+    drawUpperSep(W, H, iLines);
+
+    // 逐行绘制输入文本
+    auto lines = splitLines(text);
+    for (size_t li = 0; li < lines.size(); ++li) {
+        int row = topRow + static_cast<int>(li);
+        std::string prefix = (li == 0) ? "❯ " : "  ";
+        std::cout << "\033[" << row << ";1H"
+                  << prefix << lines[li] << "\033[K" << std::flush;
+    }
+    // 清除多余的旧行
+    int maxRows = H - 2 - upperSepRow(H, iLines);
+    for (int r = topRow + static_cast<int>(lines.size()); r < topRow + maxRows; ++r) {
+        std::cout << "\033[" << r << ";1H\033[K" << std::flush;
+    }
+
+    drawLowerSep(W, H);
+    drawStatusLine(W, H, s_modeLabel);
+
+    // 光标定位
+    int cursorLine, cursorCol;
+    cursorVisualPos(text, cur, cursorLine, cursorCol);
+    int prefixW = (cursorLine == 0) ? CLFAnsi::textWidth("❯ ") : CLFAnsi::textWidth("  ");
+    int col = 1 + prefixW + cursorCol;
+    std::cout << "\033[" << (topRow + cursorLine) << ";" << col << "H" << std::flush;
+
+    s_inputDrawn = true;
+}
+
+// ============================================================================
+// 内容区输出 / 区域绘制
+// ============================================================================
 
 void CLFTerminal::scrollPrint(const std::string& text) {
     s_buffer.append(text);
@@ -189,100 +299,32 @@ void CLFTerminal::scrollAppend(const std::string& text) {
 void CLFTerminal::drawStatusArea(const std::string& title, const std::string& content) {
     s_statusTitle = title;
     s_statusContent = content;
-
-    int W = getTerminalWidth();
-    if (W <= 0) W = 80;
-
-    if (!title.empty()) {
+    int W = getTerminalWidth(); if (W <= 0) W = 80;
+    if (!title.empty())
         scrollPrint(lightBlue("▍ ") + bold(truncateToWidth(title, W - 3)) + "\n");
-    }
     if (!content.empty()) {
-        std::string display = truncateToWidth(content, W - 5);
-        if (display != content) display += "...";
-        scrollPrint("  ⎿ " + gray(display) + "\n");
+        std::string d = truncateToWidth(content, W - 5);
+        if (d != content) d += "...";
+        scrollPrint("  ⎿ " + gray(d) + "\n");
     }
-}
-
-void CLFTerminal::drawInputArea(const std::string& text, int cursorPos) {
-    s_inputText = text;
-    int cur = (cursorPos < 0) ? static_cast<int>(text.size()) : cursorPos;
-    s_inputCursor = cur;
-
-    // 显示用文本：换行 → ⏎ 标记（单行输入区不能有真实换行，否则覆盖固定区）
-    std::string display = text;
-    int displayCur = cur;
-    for (size_t i = 0; i < display.size(); ++i) {
-        if (display[i] == '\n') {
-            display.replace(i, 1, "⏎");
-            if (static_cast<int>(i) < cur) displayCur += 2; // ⏎ 占 3 字节 UTF-8，换行 1 字节
-        }
-    }
-
-    int H = getTerminalHeight();
-    int W = getTerminalWidth();
-    if (H <= 0) H = 30;
-    if (W <= 0) W = 80;
-
-    if (!CLFAnsi::isEnabled() || H < 10) {
-        if (!s_inputDrawn) {
-            std::cout << "\n\n" << std::flush;
-            std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
-            std::cout << "❯ " << display << "\n" << std::flush;
-            std::cout << lightBlue(std::string(W - 1, '-')) << "\n" << std::flush;
-            drawModeLine(s_modeLabel);
-            s_inputDrawn = true;
-            std::cout << "\033[3A\r" << std::flush;
-        } else {
-            std::cout << "\r❯ " << display << "\033[K" << std::flush;
-        }
-        int col = 1 + textWidth("❯ ") + textWidth(display.substr(0, static_cast<size_t>(displayCur)));
-        std::cout << "\033[" << col << "G" << std::flush;
-        return;
-    }
-
-    if (!s_inputDrawn) {
-        std::cout << "\033[2J\033[H" << std::flush;
-        int cb = contentBottom(H);
-        setScrollRegion(1, cb);
-        resetScrollRegion();
-        redrawFixedArea(W, H, display);
-        drawModeLine(s_modeLabel);
-        setScrollRegion(1, cb);
-        std::cout << "\033[H" << std::flush;
-        s_inputDrawn = true;
-    }
-
-    std::cout << "\033[" << inputRow(H) << ";1H"
-              << "\r❯ " << display << "\033[K" << std::flush;
-
-    std::string prefix = display.substr(0, static_cast<size_t>(displayCur));
-    int col = 1 + textWidth("❯ ") + textWidth(prefix);
-    std::cout << "\033[" << inputRow(H) << ";" << col << "H" << std::flush;
 }
 
 void CLFTerminal::drawModeArea(const std::string& mode) {
     if (s_modeLabel == mode) return;
     s_modeLabel = mode;
     if (!s_inputDrawn || !CLFAnsi::isEnabled()) return;
-
-    int H = getTerminalHeight();
-    if (H < 10) return;
-
-    std::cout << "\0337"
-              << "\033[" << modeRow(H) << ";1H\033[K"
-              << std::flush;
-    drawModeLine(mode);
+    int H = getTerminalHeight(); if (H < 10) return;
+    int W = getTerminalWidth(); if (W <= 0) W = 80;
+    int iLines = inputLines(s_inputText); if (iLines < 1) iLines = 1;
+    std::cout << "\0337";
+    drawStatusLine(W, H, mode);
     std::cout << "\0338" << std::flush;
 }
 
 void CLFTerminal::drawConfirmArea(const std::vector<std::string>& options, int selected) {
-    if (s_confirmDrawn && CLFAnsi::isEnabled()) {
-        std::cout << "\033[2A" << std::flush;
-    }
+    if (s_confirmDrawn && CLFAnsi::isEnabled()) std::cout << "\033[2A" << std::flush;
     s_confirmDrawn = true;
-
     std::cout << "\r\033[K" << yellow("⚠ ") << "请确认操作：" << "\n" << std::flush;
-
     std::string display;
     for (size_t i = 0; i < options.size(); ++i) {
         if (i > 0) display += "    ";
@@ -297,8 +339,9 @@ void CLFTerminal::drawConfirmArea(const std::vector<std::string>& options, int s
 void CLFTerminal::clearConfirmArea() {}
 
 void CLFTerminal::toContentArea() {
-    int H = getTerminalHeight();
-    if (H <= 0) H = 30;
+    int H = getTerminalHeight(); if (H <= 0) H = 30;
+    int W = getTerminalWidth(); if (W <= 0) W = 80;
+    int iLines = inputLines(s_inputText); if (iLines < 1) iLines = 1;
 
     if (!CLFAnsi::isEnabled() || H < 10) {
         std::cout << "\r\033[K\n\033[K\n\033[K\n" << std::flush;
@@ -307,67 +350,73 @@ void CLFTerminal::toContentArea() {
         return;
     }
 
-    int W = getTerminalWidth();
-    if (W <= 0) W = 80;
-    std::cout << "\033[" << inputRow(H) << ";1H" << std::flush;
-    std::cout << "\r\033[K" << std::flush;
-    std::cout << "\033[" << (H - 1) << ";1H" << std::flush;
-    std::cout << lightBlue(std::string(W - 1, '-')) << std::flush;
+    // 清除所有输入行 + 重绘分隔线
+    int topRow = inputRowTop(H, iLines);
+    for (int r = topRow; r <= H; ++r) {
+        std::cout << "\033[" << r << ";1H\033[K" << std::flush;
+    }
+    drawLowerSep(W, H);
+    drawStatusLine(W, H, s_modeLabel);
 
-    std::cout << "\033[" << contentBottom(H) << ";1H" << std::flush;
+    int cb = contentBottom(H, 1); // 重置为单行输入区域
+    if (cb < 1) cb = 1;
+    resetScrollRegion();
+    setScrollRegion(1, cb);
+
+    std::cout << "\033[" << cb << ";1H" << std::flush;
     std::cout << "\n" << std::flush;
+
+    // 重绘单行空输入
+    s_inputText.clear();
+    s_inputCursor = 0;
+    drawInputArea(s_inputText);
     s_confirmDrawn = false;
 }
 
 void CLFTerminal::redrawAll() {
-    int H = getTerminalHeight();
-    int W = getTerminalWidth();
-    if (H <= 0) H = 30;
-    if (W <= 0) W = 80;
+    int H = getTerminalHeight(); int W = getTerminalWidth();
+    if (H <= 0) H = 30; if (W <= 0) W = 80;
 
     if (!CLFAnsi::isEnabled() || H < 10) {
         std::cout << "\033[2J\033[H" << std::flush;
-        for (const auto& line : s_buffer.lines()) {
+        for (const auto& line : s_buffer.lines())
             std::cout << line << "\n" << std::flush;
-        }
         s_inputDrawn = false;
         drawInputArea(s_inputText, s_inputCursor);
         return;
     }
 
     std::cout << "\033[2J\033[H" << std::flush;
+    int iLines = inputLines(s_inputText); if (iLines < 1) iLines = 1;
+    int cb = contentBottom(H, iLines); if (cb < 1) cb = 1;
 
-    int cb = contentBottom(H);
     resetScrollRegion();
     setScrollRegion(1, cb);
 
+    // 重放缓冲内容
     const auto& lines = s_buffer.lines();
     size_t visible = static_cast<size_t>(cb - 1);
     size_t start = (lines.size() > visible) ? lines.size() - visible : 0;
     for (size_t i = start; i < lines.size(); ++i) {
         std::string stripped = stripAnsi(lines[i]);
-        if (textWidth(stripped) <= W - 1) {
+        if (textWidth(stripped) <= W - 1)
             std::cout << lines[i] << "\n" << std::flush;
-        } else {
+        else
             std::cout << truncateToWidth(stripped, W - 1) << "\n" << std::flush;
-        }
     }
 
+    // 重绘固定区
     resetScrollRegion();
-    redrawFixedArea(W, H, s_inputText);
-    drawModeLine(s_modeLabel);
+    s_inputDrawn = false;
+    drawInputArea(s_inputText, s_inputCursor);
 
     setScrollRegion(1, cb);
     std::cout << "\033[H" << std::flush;
-
-    s_inputDrawn = true;
-    drawInputArea(s_inputText, s_inputCursor);
 }
 
 std::string CLFTerminal::diagnosticInfo() {
-    int H = getTerminalHeight();
-    int W = getTerminalWidth();
-    return "终端: 高" + std::to_string(H) + " x 宽" + std::to_string(W)
+    return "终端: 高" + std::to_string(getTerminalHeight())
+         + " x 宽" + std::to_string(getTerminalWidth())
          + ", ANSI: " + (CLFAnsi::isEnabled() ? "开" : "关");
 }
 
@@ -381,9 +430,7 @@ void CLFTerminal::thoughtMark(int seconds, int searchCount, int readCount) {
 
 void CLFTerminal::restoreScrollRegion() {
     resetScrollRegion();
-    if (CLFAnsi::isEnabled()) {
-        std::cout << "\033[2J\033[H" << std::flush;
-    }
+    if (CLFAnsi::isEnabled()) std::cout << "\033[2J\033[H" << std::flush;
 }
 
 } // namespace CLF::CLFCore

@@ -34,6 +34,7 @@ private:
     CLFAgentLoop& m_agent;
     std::string m_historyDir;
     std::string m_input;
+    int m_cursorPos = 0;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
 };
 
