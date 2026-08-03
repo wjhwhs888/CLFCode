@@ -52,6 +52,7 @@ int CLFRepl::run() {
     CLFTerminal::initLayout(m_dispatcher->modeName());
     printBanner();
     checkIncompleteSession();
+    CLFTerminal::drawInput("");  // 启动后立刻显示输入光标
     CLFConsole::enterRawMode();
     atexit(CLFConsole::exitRawMode);
 
