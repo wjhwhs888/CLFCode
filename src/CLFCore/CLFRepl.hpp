@@ -42,7 +42,6 @@ private:
     int m_cursorPos = 0;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
     std::unique_ptr<CLFEventQueue> m_eventQueue;
-    bool m_confirmActive = false;
     bool m_exit = false;
     int m_lastHeight = -1;
 };

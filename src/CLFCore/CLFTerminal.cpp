@@ -356,7 +356,6 @@ void CLFTerminal::drawStatusArea(const std::string& title, const std::string& co
 }
 
 void CLFTerminal::toContentArea(){
-    // 提交后: 清空输入, 恢复单行, 光标回滚动区
     s_inputText.clear(); s_inputCursor=0;
     s_statusLine.clear(); s_statusTree.clear();
     s_confirmOpts.clear();
@@ -364,10 +363,10 @@ void CLFTerminal::toContentArea(){
     int H=getTerminalHeight(),W=getTerminalWidth();
     if(H<=0)H=30;if(W<=0)W=80;
     if(!CLFAnsi::isEnabled()||H<10){std::cout<<"\r\033[K\n\033[K\n\033[K\n"<<std::flush;return;}
+    // 清屏 + 重绘固定区 + 光标回滚动区顶部(让后续输出从第1行开始自然填充)
     std::cout<<"\033[2J\033[H"<<std::flush;
-    int cb=contentBottom();
     renderFixedArea();
-    std::cout<<"\033["<<cb<<";1H\n"<<std::flush;
+    std::cout<<"\033[H"<<std::flush;  // row 1, col 1 — 滚动区顶部
 }
 
 } // namespace CLF::CLFCore

@@ -58,47 +58,32 @@ int CLFRepl::run() {
     // ====== 事件驱动主循环 ======
     while (!m_exit) {
         // —— 键盘输入 ——
-        if (!m_confirmActive) {
-            auto key = CLFConsole::readKey();
-            Event ev;
-            switch (key.m_key) {
-                case CLFKey::Char:
-                    ev.type = EventType::KeyChar; ev.text = key.m_utf8; break;
-                case CLFKey::Enter:
-                    ev.type = m_input.empty() ? EventType::None : EventType::KeySubmit; break;
-                case CLFKey::ShiftEnter:
-                    ev.type = EventType::KeyNewLine; break;
-                case CLFKey::Backspace:
-                    ev.type = EventType::KeyBackspace; break;
-                case CLFKey::Left:   ev.type = EventType::KeyMoveLeft; break;
-                case CLFKey::Right:  ev.type = EventType::KeyMoveRight; break;
-                case CLFKey::Up:     ev.type = EventType::KeyMoveUp; break;
-                case CLFKey::Down:   ev.type = EventType::KeyMoveDown; break;
-                case CLFKey::Home:   ev.type = EventType::KeyHome; break;
-                case CLFKey::End:    ev.type = EventType::KeyEnd; break;
-                case CLFKey::Esc:
-                    ev.type = EventType::KeyClearInput; break;
-                case CLFKey::ShiftTab:
-                    ev.type = EventType::KeyCycleMode; break;
-                case CLFKey::CtrlC:
-                    ev.type = m_input.empty() ? EventType::KeyExit : EventType::KeyClearInput; break;
-                default: break;
-            }
-            if (ev.type != EventType::None) m_eventQueue->push(ev);
-        } else {
-            auto key = CLFConsole::readKey();
-            Event ev;
-            if (key.m_key == CLFKey::Enter)
-                ev.type = EventType::ConfirmHide;
-            else if (key.m_key == CLFKey::Esc || key.m_key == CLFKey::CtrlC)
-                { ev.type = EventType::ConfirmHide; ev.i1 = 1; }
-            else if (key.m_key == CLFKey::Up || key.m_key == CLFKey::Left
-                     || key.m_key == CLFKey::Down || key.m_key == CLFKey::Right)
-                { ev.type = EventType::ConfirmShow; ev.i1 = 1 - ev.i1; }
-            else if (key.m_key == CLFKey::ShiftTab)
-                ev.type = EventType::KeyCycleMode;
-            if (ev.type != EventType::None) m_eventQueue->push(ev);
+        auto key = CLFConsole::readKey();
+        Event ev;
+        switch (key.m_key) {
+            case CLFKey::Char:
+                ev.type = EventType::KeyChar; ev.text = key.m_utf8; break;
+            case CLFKey::Enter:
+                ev.type = m_input.empty() ? EventType::None : EventType::KeySubmit; break;
+            case CLFKey::ShiftEnter:
+                ev.type = EventType::KeyNewLine; break;
+            case CLFKey::Backspace:
+                ev.type = EventType::KeyBackspace; break;
+            case CLFKey::Left:   ev.type = EventType::KeyMoveLeft; break;
+            case CLFKey::Right:  ev.type = EventType::KeyMoveRight; break;
+            case CLFKey::Up:     ev.type = EventType::KeyMoveUp; break;
+            case CLFKey::Down:   ev.type = EventType::KeyMoveDown; break;
+            case CLFKey::Home:   ev.type = EventType::KeyHome; break;
+            case CLFKey::End:    ev.type = EventType::KeyEnd; break;
+            case CLFKey::Esc:
+                ev.type = EventType::KeyClearInput; break;
+            case CLFKey::ShiftTab:
+                ev.type = EventType::KeyCycleMode; break;
+            case CLFKey::CtrlC:
+                ev.type = m_input.empty() ? EventType::KeyExit : EventType::KeyClearInput; break;
+            default: break;
         }
+        if (ev.type != EventType::None) m_eventQueue->push(ev);
 
         // —— 缩放检测 ——
         int h = CLFTerminal::getTerminalHeight();
@@ -195,14 +180,6 @@ int CLFRepl::run() {
                 case EventType::StatusTaskTree:
                     CLFTerminal::showTaskTree(e.tree); break;
 
-                // ==== 确认 ====
-                case EventType::ConfirmShow:
-                    m_confirmActive = true;
-                    CLFTerminal::showConfirm(e.tree, e.i1); break;
-                case EventType::ConfirmHide:
-                    m_confirmActive = false;
-                    CLFTerminal::hideConfirm(); break;
-
                 // ==== 布局 ====
                 case EventType::LayoutResize:
                     CLFTerminal::redrawAll(); break;
@@ -219,9 +196,7 @@ int CLFRepl::run() {
         }
 
         // —— 帧末: 刷新输入区 ——
-        if (!m_confirmActive) {
-            CLFTerminal::drawInput(m_input, m_cursorPos);
-        }
+        CLFTerminal::drawInput(m_input, m_cursorPos);
         CLFTerminal::drawMode(m_dispatcher->modeName());
     }
     } catch (...) {
@@ -301,45 +276,25 @@ bool CLFRepl::confirmDialog(const std::string& prompt) {
         CLFTerminal::scrollPrint("  ⎿ 参数: " + CLFTerminal::gray(args) + "\n");
     }
 
-    // 使用事件队列处理确认交互
-    m_confirmActive = true;
-    Event ev; ev.type = EventType::ConfirmShow; ev.tree = {"确认", "取消"}; ev.i1 = 0;
-    m_eventQueue->push(ev);
+    // 直接调终端（独立按键循环, 不依赖事件队列）
+    std::vector<std::string> opts = {"确认", "取消"};
+    int sel = 0;
+    CLFTerminal::showConfirm(opts, sel);
 
-    // 等待确认结果 (事件循环在主循环中处理)
-    int result = 1; // 默认取消
-    while (m_confirmActive) {
-        // 消费事件直到确认完成
-        if (!m_eventQueue->empty()) {
-            Event e = m_eventQueue->pop();
-            if (e.type == EventType::ConfirmShow) {
-                ev.i1 = e.i1; ev.tree = {"确认", "取消"};
-                m_eventQueue->push(ev);
-            } else if (e.type == EventType::ConfirmHide) {
-                result = e.i1; // 0=确认, 1=取消
-                m_confirmActive = false;
-            } else if (e.type == EventType::KeyCycleMode) {
-                cycleMode();
-            }
-        }
-        // 读取键盘
+    while (true) {
         auto key = CLFConsole::readKey();
-        if (key.m_key == CLFKey::Enter) {
-            result = ev.i1; m_confirmActive = false;
-        } else if (key.m_key == CLFKey::Esc || key.m_key == CLFKey::CtrlC) {
-            result = 1; m_confirmActive = false;
-        } else if (key.m_key == CLFKey::Up || key.m_key == CLFKey::Left
-                   || key.m_key == CLFKey::Down || key.m_key == CLFKey::Right) {
-            ev.i1 = (ev.i1 == 0) ? 1 : 0;
-            ev.tree = {"确认", "取消"};
-            m_eventQueue->push(ev);
-        } else if (key.m_key == CLFKey::ShiftTab) {
-            cycleMode();
+        if (key.m_key == CLFKey::Enter) break;
+        if (key.m_key == CLFKey::Esc || key.m_key == CLFKey::CtrlC) { sel = 1; break; }
+        if (key.m_key == CLFKey::Up || key.m_key == CLFKey::Left
+            || key.m_key == CLFKey::Down || key.m_key == CLFKey::Right) {
+            sel = (sel == 0) ? 1 : 0;
+            CLFTerminal::showConfirm(opts, sel);
         }
+        if (key.m_key == CLFKey::ShiftTab) cycleMode();
     }
     CLFTerminal::hideConfirm();
-    CLFTerminal::scrollPrint(CLFTerminal::green("  ⎿ ✓ ") + (result == 0 ? "已确认" : "已取消") + "\n");
-    return result == 0;
+    CLFTerminal::scrollPrint(CLFTerminal::green("  ⎿ ✓ ") + (sel == 0 ? "已确认" : "已取消") + "\n");
+    return sel == 0;
 }
 
 void CLFRepl::cycleMode() {
