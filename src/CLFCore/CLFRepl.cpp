@@ -278,10 +278,10 @@ bool CLFRepl::confirmDialog(const std::string& prompt) {
         CLFTerminal::scrollPrint("  ⎿ 参数: " + CLFTerminal::gray(args) + "\n");
     }
 
-    // 直接调终端（独立按键循环, 不依赖事件队列）
     std::vector<std::string> opts = {"确认", "取消"};
     int sel = 0;
     CLFTerminal::showConfirm(opts, sel);
+    CLFTerminal::drawInput(m_input, m_cursorPos); // 保持固定区完整
 
     while (true) {
         auto key = CLFConsole::readKey();
@@ -295,9 +295,6 @@ bool CLFRepl::confirmDialog(const std::string& prompt) {
         if (key.m_key == CLFKey::ShiftTab) cycleMode();
     }
     CLFTerminal::hideConfirm();
-    // 重绘固定区(确认期间主循环阻塞, 输入区/模式行可能被覆盖)
-    CLFTerminal::drawInput(m_input, m_cursorPos);
-    CLFTerminal::drawMode(m_dispatcher->modeName());
     CLFTerminal::scrollPrint(CLFTerminal::green("  ⎿ ✓ ") + (sel == 0 ? "已确认" : "已取消") + "\n");
     return sel == 0;
 }
