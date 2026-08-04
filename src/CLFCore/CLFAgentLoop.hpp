@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "CLFCore/CLFTypes.hpp"
+#include "CLFTypes/CLFTypes.hpp"
+#include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFContext.hpp"
 #include "CLFCore/CLFProtocolAdapter.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
@@ -21,8 +23,13 @@ class CLFAgentLoop {
 public:
     explicit CLFAgentLoop(const CLFAgentConfig& config,
                           std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient = nullptr);
+    ~CLFAgentLoop();
 
-    // 设置事件队列 (CLFRepl 注入, 用于 scrollPrint 等渲染事件)
+    // 注入输出通道 + 注册中断回调 (替代直接 CLFTerminal/CLFConsole 调用).
+    // 析构时自动清空回调.
+    void setOutput(CLF::CLFTypes::ICLFOutput* output);
+
+    // 设置事件队列 (CLFRepl 注入)
     void setEventQueue(CLFEventQueue* q) { m_eventQueue = q; }
 
     // 执行一轮对话（含 tool-calling 循环）
@@ -87,6 +94,8 @@ private:
     std::vector<std::string>          m_loadedSkills;
     ToolStats                         m_lastToolStats;
     CLFEventQueue*                    m_eventQueue = nullptr;
+    CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
+    std::atomic<bool>                 m_interrupted{false};
 };
 
 } // namespace CLF::CLFCore

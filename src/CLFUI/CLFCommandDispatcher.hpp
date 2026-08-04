@@ -10,13 +10,13 @@
 #include <functional>
 #include <string>
 
-namespace CLF::CLFCore {
+namespace CLF::CLFCore { class CLFAgentLoop; }
 
-class CLFAgentLoop;
+namespace CLF::CLFUI {
 
 class CLFCommandDispatcher {
 public:
-    CLFCommandDispatcher(CLFAgentLoop& agent, const std::string& historyDir);
+    CLFCommandDispatcher(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDir);
 
     // 处理 /xxx 命令，返回 true 表示已处理（非命令返回 false）
     bool handle(const std::string& input);
@@ -26,9 +26,9 @@ public:
     void setModeName(const std::string& name) { m_modeName = name; }
 
 private:
-    CLFAgentLoop& m_agent;
+    CLF::CLFCore::CLFAgentLoop& m_agent;
     std::string m_historyDir;
     std::string m_modeName;
 };
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

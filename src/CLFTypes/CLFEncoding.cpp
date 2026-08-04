@@ -1,6 +1,6 @@
 // CLFEncoding.cpp — 编码转换工具实现
 
-#include "CLFCore/CLFEncoding.hpp"
+#include "CLFTypes/CLFEncoding.hpp"
 
 #ifdef _WIN32
 #include <windows.h>

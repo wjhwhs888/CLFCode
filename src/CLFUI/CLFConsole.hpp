@@ -11,7 +11,7 @@
 
 #include <string>
 
-namespace CLF::CLFCore {
+namespace CLF::CLFUI {
 
 enum class CLFKey {
     None = 0,
@@ -48,4 +48,4 @@ public:
     static bool checkEscape();
 };
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

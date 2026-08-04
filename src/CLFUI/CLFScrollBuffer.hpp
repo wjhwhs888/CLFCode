@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace CLF::CLFCore {
+namespace CLF::CLFUI {
 
 class CLFScrollBuffer {
 public:
@@ -16,10 +16,13 @@ public:
 
     // 获取缓冲区引用（调用方需持锁，仅在主线程使用）
     const std::vector<std::string>& lines() const { return m_lines; }
-    size_t size() const { std::lock_guard<std::mutex> lock(m_mutex); return m_lines.size(); }
+    size_t size() const { std::lock_guard<std::mutex> lock(m_mutex); return m_lines.size() + (m_pending.empty()?0:1); }
 
-    // 清空缓冲
+    // 清空缓冲 (包括未完成行)
     void clear();
+
+    // 将未完成行推入 m_lines (读取 buffer 前调用)
+    void flushPending();
 
     // 锁住缓冲，禁止流式线程写入（缩放重绘时使用）
     void lock()   { m_mutex.lock(); }
@@ -28,6 +31,7 @@ public:
 private:
     mutable std::mutex m_mutex;
     std::vector<std::string> m_lines;
+    std::string m_pending;  // 跨 append 调用的未完成行累加器
 };
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

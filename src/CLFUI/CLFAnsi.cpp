@@ -1,6 +1,6 @@
 // CLFAnsi.cpp — ANSI 终端控制原语实现
 
-#include "CLFCore/CLFAnsi.hpp"
+#include "CLFUI/CLFAnsi.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -9,7 +9,7 @@
 #include <unistd.h>
 #endif
 
-namespace CLF::CLFCore {
+namespace CLF::CLFUI {
 
 bool CLFAnsi::s_enabled = false;
 
@@ -84,4 +84,4 @@ int CLFAnsi::wrappedLines(const std::string& text) {
     return (lines > 0) ? lines : 1;
 }
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

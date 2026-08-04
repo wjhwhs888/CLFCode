@@ -2,7 +2,7 @@
 // Windows：_getch() 直接读（无缓冲、无 VT 干扰）
 // Linux：POSIX read()
 
-#include "CLFCore/CLFConsole.hpp"
+#include "CLFUI/CLFConsole.hpp"
 
 #include <mutex>
 
@@ -15,7 +15,7 @@
 #include <unistd.h>
 #endif
 
-namespace CLF::CLFCore {
+namespace CLF::CLFUI {
 
 namespace {
 
@@ -230,4 +230,4 @@ bool CLFConsole::checkEscape() {
 
 #endif
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

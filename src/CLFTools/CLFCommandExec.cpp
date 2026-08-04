@@ -2,7 +2,7 @@
 // 编码转换 → 委托 CLFEncoding
 
 #include "CLFTools/CLFCommandExec.hpp"
-#include "CLFCore/CLFEncoding.hpp"
+#include "CLFTypes/CLFEncoding.hpp"
 
 #ifdef _WIN32
 #include <windows.h>

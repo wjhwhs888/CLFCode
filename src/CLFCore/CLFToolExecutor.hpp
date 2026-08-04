@@ -11,7 +11,8 @@
 #include <string>
 #include <vector>
 
-#include "CLFCore/CLFTypes.hpp"
+#include "CLFTypes/CLFTypes.hpp"
+#include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 
 namespace CLF::CLFCore {
@@ -23,7 +24,8 @@ public:
     CLFToolExecutor(std::vector<CLFTool>& tools,
                     CLFSecurityPolicy& policy,
                     std::function<bool(const std::string&)> confirmCallback,
-                    ToolStats& stats);
+                    ToolStats& stats,
+                    CLF::CLFTypes::ICLFOutput* output = nullptr);
 
     // 执行一组工具调用，返回结果列表
     std::vector<CLFToolResult> execute(const std::vector<CLFToolCall>& calls);
@@ -33,6 +35,7 @@ private:
     CLFSecurityPolicy& m_securityPolicy;
     std::function<bool(const std::string&)> m_confirmCallback;
     ToolStats& m_stats;
+    CLF::CLFTypes::ICLFOutput* m_output;
 };
 
 } // namespace CLF::CLFCore

@@ -1,19 +1,20 @@
 // CLFCommandDispatcher.cpp — REPL 命令分发实现
 
-#include "CLFCore/CLFCommandDispatcher.hpp"
+#include "CLFUI/CLFCommandDispatcher.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
-#include "CLFCore/CLFTerminal.hpp"
+#include "CLFUI/CLFTerminal.hpp"
 
 #include <algorithm>
 #include <iostream>
 
-namespace CLF::CLFCore {
+namespace CLF::CLFUI {
+using namespace CLF::CLFCore;
 
-CLFCommandDispatcher::CLFCommandDispatcher(CLFAgentLoop& agent,
+CLFCommandDispatcher::CLFCommandDispatcher(CLF::CLFCore::CLFAgentLoop& agent,
                                            const std::string& historyDir)
     : m_agent(agent)
     , m_historyDir(historyDir)
@@ -176,4 +177,4 @@ bool CLFCommandDispatcher::handle(const std::string& input) {
     return false;
 }
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

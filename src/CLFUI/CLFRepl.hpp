@@ -11,39 +11,39 @@
 #include <memory>
 #include <string>
 
-namespace CLF::CLFCore {
+namespace CLF::CLFCore { class CLFAgentLoop; class CLFEventQueue; }
+namespace CLF::CLFTypes { class ICLFOutput; }
 
-class CLFAgentLoop;
+namespace CLF::CLFUI {
+
 class CLFCommandDispatcher;
-class CLFEventQueue;
-class CLFThinkingIndicator;
 
 class CLFRepl {
 public:
-    CLFRepl(CLFAgentLoop& agent, const std::string& historyDir);
+    CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDir,
+            CLF::CLFTypes::ICLFOutput* output = nullptr);
     ~CLFRepl();
 
     int run();
-
-    // 供外部推送事件 (CLFAgentLoop / ThinkingIndicator)
-    CLFEventQueue& eventQueue() { return *m_eventQueue; }
+    bool confirmDialog(const std::string& prompt);
+    void submit(const std::string& input);   // FTXUI 回调
+    void cycleMode();                        // FTXUI 回调
+    std::string& inputText() { return m_input; }
 
 private:
     void printBanner();
     void checkIncompleteSession();
-    void submit(const std::string& input);
-    bool confirmDialog(const std::string& prompt);
-    void cycleMode();
     void saveSession(bool incomplete);
 
-    CLFAgentLoop& m_agent;
+    CLF::CLFCore::CLFAgentLoop& m_agent;
+    CLF::CLFTypes::ICLFOutput* m_output;
     std::string m_historyDir;
     std::string m_input;
     int m_cursorPos = 0;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
-    std::unique_ptr<CLFEventQueue> m_eventQueue;
+    std::unique_ptr<CLF::CLFCore::CLFEventQueue> m_eventQueue;
     bool m_exit = false;
     int m_lastHeight = -1;
 };
 
-} // namespace CLF::CLFCore
+} // namespace CLF::CLFUI

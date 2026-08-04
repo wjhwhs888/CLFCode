@@ -2,31 +2,44 @@
 
 ## 已完成
 
-### 全量优化 P0-P3 ✅
-- P0: Bug修复(5项) — 命令执行/HTTP RAII/序列化/原子变量/线程安全
-- P1: 架构解耦 — CLFTypes提取 + 头依赖治理 + CMake链接
-- P2: 大文件拆分(8新模块) + 去重(CLFEncoding/CLFMessageCodec) + 错误码
-- P3: 6区终端UI + 事件系统 + 日志优化 + 多行输入/光标/快捷键
+### Harness 架构重构 ✅ (2026-08-04)
+- ICLFOutput 接口 (11 纯虚方法) + InterruptError + MockOutput
+- CLFAgentLoop / CLFToolExecutor / CLFThinkingIndicator → 全部走 ICLFOutput
+- CLFRepl 注入 ICLFOutput，内容/状态走接口
+- CLFTerminal 实现 ICLFOutput
+- CLFEncoding → CLFTypes (CCP 修复)
+- 目录结构：5 模块分层 (CLFTypes/CLFNetwork/CLFCore/CLFTools/CLFUI)
+- clf_core 不链接 clf_ui (依赖单向)
+- SOLID 两轮审查通过
 
-### 6区终端UI
-- ✅ 布局: ③确认 ④模式 ⑤输入 ⑥状态 ⑦滚动 + LayoutEngine
-- ✅ 事件: CLFEvent(25种) + CLFEventQueue(256环形) + 主循环dispatch
-- ✅ 流式输出: DECSC/DECRC保护光标 + emitContent双通道(事件+直渲)
-- ✅ 光标: prefixW对齐 + col计算 + Home/End/↑↓导航
-- ✅ 多行输入: Shift+Enter换行 + 输入区动态扩展
+### FTXUI 终端 UI 重构 ✅ (2026-08-04)
+- FTXUI v6.1.9 集成 (3rdparty/ftxui + add_subdirectory)
+- CLFTerminal 重写：组件树 + 状态管理 + 静态兼容层
+- CLFRepl::run() 改为 FTXUI Loop + 异步提交
+- emitContent 累积 m_pendingLine + stripAnsi
+- 模式行实时刷新、Shift+Tab 模式切换、ESC 中断
+- 确认对话框走 FTXUI 嵌套 Loop
+- 启动默认新会话 (旧会话通过 /resume 恢复)
+- 内容区 frame 滚动 + 每次提交清 buffer
+
+### 全量优化 P0-P3 ✅
+- P0: Bug修复(5项)
+- P1: 架构解耦
+- P2: 大文件拆分 + 去重 + 错误码
+- P3: 6区终端UI + 事件系统 + 多行输入
+
+### CLFScrollBuffer 修复 ✅
+- m_pending 跨调用累积 + flushPending
+
+## 进行中
+
+### FTXUI UI 优化
+- 输入法 IME 光标位置 (FTXUI 兼容性)
+- 内容区自动滚动到底部
 
 ## 遗留问题
 
-### 1. 确认对话框期间固定区消失
-- 现象: 高风险确认弹窗时，输入区和模式行不可见
-- 原因: confirmDialog在主循环内同步阻塞，drawInput/drawMode不执行；showConfirm的DECSC/DECRC可能与固定区渲染冲突
-- 尝试: showConfirm+drawInput组合 → 未完全解决
-- 方向: 确认对话框需要独立的固定区保活渲染，或改为异步事件驱动
-
-### 2. 每次输入后终端"刷新"效果
-- 现象: submit时toContentArea的\033[2J全屏清除
-- 状态: 设计行为（提交后清屏重新布局），非bug
-
-### 3. 底部区域重复重绘
-- 现象: 主循环每帧调用drawInput+renderFixedArea全量重绘固定区
-- 状态: 低优先级优化项，可加dirty标记避免无变化重绘
+### 1. 确认对话框期间固定区消失 (已由 FTXUI 方案规避)
+### 2. showThinking/clearStatus 清除行数已修复
+### 3. CLFCommandDispatcher if-else 链 (OCP 遗留)
+### 4. askSelect/askInput/emitRaw ANSI 透传 (第二期)

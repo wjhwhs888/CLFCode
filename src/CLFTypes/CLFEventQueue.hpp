@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "CLFCore/CLFEvent.hpp"
+#include "CLFTypes/CLFEvent.hpp"
 
 #include <array>
 #include <atomic>

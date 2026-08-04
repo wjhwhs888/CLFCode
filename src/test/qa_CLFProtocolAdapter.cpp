@@ -3,7 +3,7 @@
 
 #include <boost/ut.hpp>
 #include "CLFCore/CLFProtocolAdapter.hpp"
-#include "CLFCore/CLFTypes.hpp" // CLFTool / CLFAgentConfig
+#include "CLFTypes/CLFTypes.hpp" // CLFTool / CLFAgentConfig
 
 #include <nlohmann/json.hpp>
 

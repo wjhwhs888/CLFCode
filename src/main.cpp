@@ -8,9 +8,9 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
-#include "CLFCore/CLFRepl.hpp"
+#include "CLFUI/CLFRepl.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
-#include "CLFCore/CLFTerminal.hpp"
+#include "CLFUI/CLFTerminal.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
@@ -18,7 +18,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
 #endif
-    CLF::CLFCore::CLFTerminal::enableAnsi();
+    CLF::CLFUI::CLFTerminal::enableAnsi();
 
     // 1. 加载配置（优先 .local.json → 环境变量 → agent_settings.json）
     CLF::CLFCore::CLFAgentConfig config;
@@ -54,14 +54,17 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         return 1;
     }
 
-    // 3. 创建 Agent + 注册内置工具（确认/状态回调由 CLFRepl 注入）
+    // 3. 创建 Terminal (ICLFOutput 实现) + Agent + 注入
+    CLF::CLFUI::CLFTerminal terminal;
     CLF::CLFCore::CLFAgentLoop agent(config);
+    agent.setOutput(&terminal);               // Agent → ICLFOutput
     CLF::CLFTools::registerBuiltinTools(agent);
 
-    // 4. 启动 REPL（5 区 UI）
+    // 4. 启动 REPL
     std::string historyDir = projectRoot + "/doc/contextHistory";
     CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30);
 
-    CLF::CLFCore::CLFRepl repl(agent, historyDir);
+    CLF::CLFUI::CLFRepl repl(agent, historyDir, &terminal);
+    terminal.setRepl(&repl);                  // Terminal → Repl (用于 confirm 委托)
     return repl.run();
 }

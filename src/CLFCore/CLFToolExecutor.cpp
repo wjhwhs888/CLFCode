@@ -1,7 +1,6 @@
 // CLFToolExecutor.cpp — 工具调用执行器实现
 
 #include "CLFCore/CLFToolExecutor.hpp"
-#include "CLFCore/CLFTerminal.hpp"
 
 #include <algorithm>
 #include <nlohmann/json.hpp>
@@ -88,11 +87,13 @@ ToolResultDisplay formatToolResult(const std::string& resultJson) {
 CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
                                  CLFSecurityPolicy& policy,
                                  std::function<bool(const std::string&)> confirmCallback,
-                                 ToolStats& stats)
+                                 ToolStats& stats,
+                                 CLF::CLFTypes::ICLFOutput* output)
     : m_tools(tools)
     , m_securityPolicy(policy)
     , m_confirmCallback(std::move(confirmCallback))
-    , m_stats(stats) {
+    , m_stats(stats)
+    , m_output(output) {
 }
 
 std::vector<CLFToolResult> CLFToolExecutor::execute(
@@ -109,11 +110,11 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         result.m_name       = call.m_name;
 
         std::string keyParam = extractKeyParam(call.m_arguments);
-        std::string header = "● " + CLFTerminal::cyan(call.m_name);
+        std::string header = "● " + call.m_name;
         if (!keyParam.empty()) {
-            header += "(" + CLFTerminal::gray(keyParam) + ")";
+            header += "(" + keyParam + ")";
         }
-        CLFTerminal::scrollPrint("\n" + header + "\n");
+        if(m_output) m_output->emitContent("\n" + header + "\n");
 
         // 统计
         if (call.m_name.find("search") != std::string::npos) {
@@ -128,7 +129,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
         if (it == m_tools.end()) {
             result.m_content = std::string("Tool not found: ") + call.m_name;
-            CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::red("✗ unknown") + "\n");
+            if(m_output) m_output->emitContent("  ⎿ ✗ unknown\n");
             results.push_back(std::move(result));
             continue;
         }
@@ -139,7 +140,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             result.m_content = std::string("[Blocked by security policy (mode: ")
                              + m_securityPolicy.getModeName()
                              + ")] 当前模式禁止执行该操作。";
-            CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::red("✗ blocked") + "\n");
+            if(m_output) m_output->emitContent("  ⎿ ✗ blocked\n");
             results.push_back(std::move(result));
             continue;
         }
@@ -150,7 +151,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                                + "参数: " + call.m_arguments;
             if (!m_confirmCallback(prompt)) {
                 result.m_content = "[Denied by user] 用户拒绝了该操作。";
-                CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::yellow("✗ denied") + "\n");
+                if(m_output) m_output->emitContent("  ⎿ ✗ denied\n");
                 results.push_back(std::move(result));
                 continue;
             }
@@ -160,12 +161,12 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         try {
             result.m_content = it->m_handler(call.m_arguments);
             auto rd = formatToolResult(result.m_content);
-            CLFTerminal::scrollPrint("  ⎿ "
-                + (rd.ok ? CLFTerminal::green("✓ ") : CLFTerminal::red("✗ "))
+            if (m_output) m_output->emitContent("  ⎿ "
+                + std::string(rd.ok ? "✓ " : "✗ ")
                 + rd.text + "\n");
         } catch (const std::exception& e) {
             result.m_content = std::string("Tool execution error: ") + e.what();
-            CLFTerminal::scrollPrint("  ⎿ " + CLFTerminal::red("✗ ") + e.what() + "\n");
+            if(m_output) m_output->emitContent(std::string("  ⎿ ✗ ") + e.what() + "\n");
         }
 
         results.push_back(std::move(result));

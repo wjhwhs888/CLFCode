@@ -2,14 +2,12 @@
 
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
-#include "CLFCore/CLFConsole.hpp"
-#include "CLFCore/CLFEvent.hpp"
-#include "CLFCore/CLFEventQueue.hpp"
+#include "CLFTypes/CLFEvent.hpp"
+#include "CLFTypes/CLFEventQueue.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFStreamAccumulator.hpp"
-#include "CLFCore/CLFTerminal.hpp"
-#include "CLFCore/CLFThinkingIndicator.hpp"
+#include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
 
@@ -23,14 +21,14 @@
 namespace CLF::CLFCore {
 
 namespace {
-// 推送事件到队列 并 直接渲染 (HTTP 回调线程需要立即输出)
-void emitContent(CLFEventQueue* q, const std::string& text) {
+// 推送事件到队列 + 通过输出接口渲染
+void emitContent(CLFEventQueue* q, CLF::CLFTypes::ICLFOutput* out, const std::string& text) {
     if (q) { Event e; e.type = EventType::ContentAppend; e.text = text; q->push(e); }
-    CLFTerminal::scrollPrint(text);
+    if (out) out->emitContent(text);
 }
-void emitNewline(CLFEventQueue* q) {
+void emitNewline(CLFEventQueue* q, CLF::CLFTypes::ICLFOutput* out) {
     if (q) { Event e; e.type = EventType::ContentNewline; q->push(e); }
-    CLFTerminal::scrollPrint("\n");
+    if (out) out->emitContent("\n");
 }
 } // anonymous namespace
 
@@ -44,6 +42,18 @@ CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
     , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode)) {
     m_httpClient->setTimeout(config.m_maxResponseDelaySec);
     injectSystemPrompt();
+}
+
+CLFAgentLoop::~CLFAgentLoop() {
+    if (m_output) m_output->onInterrupt(nullptr);  // 清空回调, 防止悬空指针
+}
+
+void CLFAgentLoop::setOutput(CLF::CLFTypes::ICLFOutput* output) {
+    m_output = output;
+    m_output->onInterrupt([this]() {
+        m_interrupted = true;
+        if (m_httpClient) m_httpClient->abort();
+    });
 }
 
 std::string CLFAgentLoop::runTurn(const std::string& userInput) {
@@ -63,7 +73,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (m_config.m_stream) {
                 // ====== 流式路径 ======
                 CLFStreamAccumulator acc;
-                CLFThinkingIndicator thinking(m_httpClient.get());
+                CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
                 bool firstContent = true;
                 bool interrupted = false;
                 bool hadError = false;
@@ -74,7 +84,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         "/v1/chat/completions", body,
                         [&](const std::string& line) {
                             if (hadError || interrupted) return;
-                            if (thinking.escPressed() || CLFConsole::checkEscape()) {
+                            if (m_interrupted) {
                                 interrupted = true;
                                 acc.markDone();
                                 return;
@@ -91,7 +101,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                                         std::string chunk = acc.feedDelta(choice["delta"]);
                                         if (!chunk.empty()) {
                                             if (firstContent) { thinking.stop(); firstContent = false; }
-                                            emitContent(m_eventQueue, chunk);
+                                            emitContent(m_eventQueue, m_output, chunk);
                                         }
                                     }
                                     if (choice.contains("finish_reason")) acc.feedDelta(choice);
@@ -101,24 +111,25 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
                 // 错误处理
                 if (hadError) {
-                    emitContent(m_eventQueue, CLFTerminal::red("\n✗ Stream error: ") + errorMsg + "\n");
+                    if (m_output) m_output->emitError("Stream error: " + errorMsg);
                     return std::string("[Error] ") + errorMsg;
                 }
-                if (interrupted || thinking.escPressed()) {
-                    emitContent(m_eventQueue, CLFTerminal::yellow("\n⏹ 已中断") + "\n");
+                if (interrupted) {
+                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        emitContent(m_eventQueue, CLFTerminal::red("\n✗ ") + response.m_error + "\n");
+                        if (m_output) m_output->emitError(response.m_error);
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
-                    emitContent(m_eventQueue, CLFTerminal::yellow("\n⚠ ") + response.m_error
-                        + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
-                                          + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");
+                    if (m_output) m_output->emitContent(
+                        "\n⚠ " + response.m_error + " — retry "
+                        + std::to_string(consecutiveErrors) + "/"
+                        + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
                     std::this_thread::sleep_for(std::chrono::seconds(2 * consecutiveErrors));
                     continue;
                 }
@@ -131,28 +142,27 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             } else {
                 // ====== 同步路径 ======
-                CLFThinkingIndicator thinking(m_httpClient.get());
+                CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
                 CLF::CLFNetwork::CLFHttpResponse response =
                     m_httpClient->postJson("/v1/chat/completions", body);
                 thinking.stop();
 
-                if (thinking.escPressed()) {
-                    emitContent(m_eventQueue,CLFTerminal::yellow("\n⏹ 已中断") + "\n");
+                if (m_interrupted) {
+                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        emitContent(m_eventQueue,
-                            CLFTerminal::red("\n✗ ") + response.m_error + "\n");
+                        if (m_output) m_output->emitError(response.m_error);
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
-                    emitContent(m_eventQueue,
-                        CLFTerminal::yellow("\n⚠ ") + response.m_error
-                        + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
-                                          + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");
+                    if (m_output) m_output->emitContent(
+                        "\n⚠ " + response.m_error + " — retry "
+                        + std::to_string(consecutiveErrors) + "/"
+                        + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
                     std::this_thread::sleep_for(std::chrono::seconds(2 * consecutiveErrors));
                     continue;
                 }
@@ -198,10 +208,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
                 return std::string("[Error] Exception: ") + e.what();
             }
-            emitContent(m_eventQueue,
-                CLFTerminal::red("\n✗ Exception: ") + e.what()
-                + CLFTerminal::gray(" — retry " + std::to_string(consecutiveErrors)
-                                  + "/" + std::to_string(CLFRetryPolicy::kMaxRetries)) + "\n");
+            if (m_output) m_output->emitContent(
+                "\n✗ Exception: " + std::string(e.what())
+                + " — retry " + std::to_string(consecutiveErrors)
+                + "/" + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
     }

@@ -2,7 +2,7 @@
 // 编码转换 → 委托 CLFEncoding
 
 #include "CLFTools/CLFFileOps.hpp"
-#include "CLFCore/CLFEncoding.hpp"
+#include "CLFTypes/CLFEncoding.hpp"
 
 #include <filesystem>
 #include <fstream>
