@@ -1,6 +1,20 @@
 # 设计-终端UI重构-FTXUI方案
 
-> 状态：设计中 | 创建：2026-08-04 | 依赖：Harness架构重构（已完成）
+> 状态：**已完成** | 创建：2026-08-04 | 实施：2026-08-05 | 版本：FTXUI v7.0.0
+
+## 实施差异说明
+
+| 设计 | 实际实现 | 原因 |
+|------|----------|------|
+| 嵌套 `screen.Loop()` (confirm) | CV 同步等待 + 底部确认栏 | v7 App::Loop 嵌套不稳定 |
+| Modal 弹窗遮罩 | 底部固定栏 (设计 §3.6 原样) | 避免双 UI 渲染撕裂 |
+| `m_refreshPending` 防抖 | 已实现 | 一致 |
+| `vscroll_indicator \| frame` | 手动滚动偏移 + 鼠标滚轮 + 键盘翻页 | frame 不跟踪新内容，需要 focus 配合 |
+| FTXUI v6.1.9 | FTXUI v7.0.0 | v7 修复嵌套 Renderer 光标 + 输入光标定位 |
+| CLFAnsi 可删除 | 保留 (颜色辅助方法) | emitContent 自动过滤 ANSI，颜色方法无副作用 |
+| 静态兼容层逐步迁移 | 一次性全部删除 | 代码清洁度优先 |
+| `emitRaw` 第一期透传 | 实现独立 emitRaw (保留 ANSI) | 提前完成 |
+| askSelect/askInput stub | 未变 | 第二期
 
 ## 1. 为什么选 FTXUI
 

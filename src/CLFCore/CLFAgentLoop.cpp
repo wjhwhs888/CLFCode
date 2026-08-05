@@ -64,6 +64,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     int consecutiveErrors = 0;
 
     for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
+        // ① 每次循环迭代前检查中断
+        if (m_interrupted) {
+            if (m_output) m_output->emitContent("\n⏹ 已中断\n");
+            return std::string("[Interrupted]");
+        }
         try {
             std::string body = m_protocolAdapter.buildChatRequest(
                 m_context.getMessages(), m_tools, m_config);
@@ -130,7 +135,13 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         "\n⚠ " + response.m_error + " — retry "
                         + std::to_string(consecutiveErrors) + "/"
                         + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
-                    std::this_thread::sleep_for(std::chrono::seconds(2 * consecutiveErrors));
+                    // ③ 可中断等待 (每 100ms 检查一次)
+                    for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    if (m_interrupted) {
+                        if (m_output) m_output->emitContent("⏹ 已中断\n");
+                        return std::string("[Interrupted]");
+                    }
                     continue;
                 }
 
@@ -163,7 +174,13 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         "\n⚠ " + response.m_error + " — retry "
                         + std::to_string(consecutiveErrors) + "/"
                         + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
-                    std::this_thread::sleep_for(std::chrono::seconds(2 * consecutiveErrors));
+                    // ③ 可中断等待 (每 100ms 检查一次)
+                    for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    if (m_interrupted) {
+                        if (m_output) m_output->emitContent("⏹ 已中断\n");
+                        return std::string("[Interrupted]");
+                    }
                     continue;
                 }
 
@@ -197,6 +214,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     m_context.addToolResult(
                         result.m_toolCallId, result.m_name, result.m_content);
                 }
+                // ② 工具执行后检查中断 (工具可能耗时数秒)
+                if (m_interrupted) {
+                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
+                    return std::string("[Interrupted]");
+                }
                 continue;
             }
 
@@ -212,7 +234,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 "\n✗ Exception: " + std::string(e.what())
                 + " — retry " + std::to_string(consecutiveErrors)
                 + "/" + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+            // ④ 可中断等待
+            for (int w = 0; w < 20 && !m_interrupted; ++w)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 

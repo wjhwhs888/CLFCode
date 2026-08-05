@@ -56,7 +56,9 @@ std::string CLFProtocolAdapter::buildChatRequest(
         body["tool_choice"] = "auto";
     }
 
-    return body.dump();
+    // error_handler_t::replace: 非法 UTF-8 字节 → �, 不抛异常
+    // 兜底保护: Windows 命令输出(GBK)/二进制文件内容不会导致整个请求崩溃
+    return body.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 CLFAssistantResponse CLFProtocolAdapter::parseAssistantResponse(

@@ -13,6 +13,54 @@ namespace {
 
 constexpr size_t kMaxMessageChars = 8000;
 
+// UTF-8 净化：将非法字节序列替换为 U+FFFD (�)
+// 从字节流中识别合法的 1~4 字节 UTF-8 序列, 非法部分逐字节替换
+std::string sanitizeUtf8(const std::string& input) {
+    std::string out;
+    out.reserve(input.size());
+    size_t i = 0;
+    while (i < input.size()) {
+        unsigned char c = static_cast<unsigned char>(input[i]);
+        // ASCII
+        if (c < 0x80) { out += static_cast<char>(c); ++i; continue; }
+        // 2-byte sequence (C2..DF 80..BF)
+        if (c >= 0xC2 && c <= 0xDF) {
+            if (i + 1 < input.size() &&
+                (static_cast<unsigned char>(input[i+1]) & 0xC0) == 0x80)
+            { out += input[i]; out += input[i+1]; i += 2; continue; }
+        }
+        // 3-byte sequence (E0..EF 80..BF 80..BF)
+        else if (c >= 0xE0 && c <= 0xEF) {
+            if (i + 2 < input.size() &&
+                (static_cast<unsigned char>(input[i+1]) & 0xC0) == 0x80 &&
+                (static_cast<unsigned char>(input[i+2]) & 0xC0) == 0x80)
+            {
+                // 排除 overlong encodings
+                if (c == 0xE0 && static_cast<unsigned char>(input[i+1]) < 0xA0) goto invalid;
+                if (c == 0xED && static_cast<unsigned char>(input[i+1]) > 0x9F) goto invalid;
+                out += input[i]; out += input[i+1]; out += input[i+2]; i += 3; continue;
+            }
+        }
+        // 4-byte sequence (F0..F4 80..BF 80..BF 80..BF)
+        else if (c >= 0xF0 && c <= 0xF4) {
+            if (i + 3 < input.size() &&
+                (static_cast<unsigned char>(input[i+1]) & 0xC0) == 0x80 &&
+                (static_cast<unsigned char>(input[i+2]) & 0xC0) == 0x80 &&
+                (static_cast<unsigned char>(input[i+3]) & 0xC0) == 0x80)
+            {
+                if (c == 0xF0 && static_cast<unsigned char>(input[i+1]) < 0x90) goto invalid;
+                if (c == 0xF4 && static_cast<unsigned char>(input[i+1]) > 0x8F) goto invalid;
+                out += input[i]; out += input[i+1]; out += input[i+2]; out += input[i+3]; i += 4; continue;
+            }
+        }
+    invalid:
+        // 非法字节 → U+FFFD (3 bytes in UTF-8: EF BF BD)
+        out += '\xEF'; out += '\xBF'; out += '\xBD';
+        ++i;
+    }
+    return out;
+}
+
 int estimateTokensForMessage(const CLFMessage& msg) {
     int ascii = 0;
     int nonAscii = 0;
@@ -49,7 +97,7 @@ CLFContext::CLFContext(int maxContextWindow)
 }
 
 void CLFContext::addMessage(const std::string& role, const std::string& content) {
-    m_messages.push_back({role, content});
+    m_messages.push_back({role, sanitizeUtf8(content)});
 }
 
 void CLFContext::addAssistantToolCalls(const std::vector<CLFToolCall>& toolCalls,
@@ -66,7 +114,7 @@ void CLFContext::addToolResult(const std::string& toolCallId,
                                const std::string& content) {
     CLFMessage msg;
     msg.m_role       = "tool";
-    msg.m_content    = truncateContent(content, true);
+    msg.m_content    = truncateContent(sanitizeUtf8(content), true);
     msg.m_toolCallId = toolCallId;
     msg.m_name       = name;
     m_messages.push_back(std::move(msg));
