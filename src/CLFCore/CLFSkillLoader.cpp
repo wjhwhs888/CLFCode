@@ -54,8 +54,4 @@ std::vector<std::string> CLFSkillLoader::listNames() {
     return names;
 }
 
-void CLFSkillLoader::clear() {
-    s_skills.clear();
-}
-
 } // namespace CLF::CLFCore

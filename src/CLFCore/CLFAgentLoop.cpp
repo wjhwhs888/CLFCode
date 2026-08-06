@@ -2,8 +2,6 @@
 
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
-#include "CLFTypes/CLFEvent.hpp"
-#include "CLFTypes/CLFEventQueue.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFStreamAccumulator.hpp"
@@ -19,18 +17,6 @@
 #include <thread>
 
 namespace CLF::CLFCore {
-
-namespace {
-// 推送事件到队列 + 通过输出接口渲染
-void emitContent(CLFEventQueue* q, CLF::CLFTypes::ICLFOutput* out, const std::string& text) {
-    if (q) { Event e; e.type = EventType::ContentAppend; e.text = text; q->push(e); }
-    if (out) out->emitContent(text);
-}
-void emitNewline(CLFEventQueue* q, CLF::CLFTypes::ICLFOutput* out) {
-    if (q) { Event e; e.type = EventType::ContentNewline; q->push(e); }
-    if (out) out->emitContent("\n");
-}
-} // anonymous namespace
 
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
                            std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient)
@@ -106,7 +92,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                                         std::string chunk = acc.feedDelta(choice["delta"]);
                                         if (!chunk.empty()) {
                                             if (firstContent) { thinking.stop(); firstContent = false; }
-                                            emitContent(m_eventQueue, m_output, chunk);
+                                            if (m_output) m_output->emitContent(chunk);
                                         }
                                     }
                                     if (choice.contains("finish_reason")) acc.feedDelta(choice);
@@ -208,7 +194,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (CLFProtocolAdapter::hasToolCalls(parsed)) {
                 m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
                 CLFToolExecutor executor(m_tools, m_securityPolicy,
-                                         m_confirmCallback, m_lastToolStats);
+                                         m_confirmCallback, m_lastToolStats, m_output);
                 auto results = executor.execute(parsed.m_toolCalls);
                 for (const auto& result : results) {
                     m_context.addToolResult(
@@ -272,21 +258,12 @@ void CLFAgentLoop::setSecurityMode(CLFSecurityMode mode) {
     m_securityPolicy.setMode(mode);
 }
 
-CLFSecurityMode CLFAgentLoop::getSecurityMode() const {
-    return m_securityPolicy.getMode();
-}
-
 const char* CLFAgentLoop::getSecurityModeName() const {
     return m_securityPolicy.getModeName();
 }
 
 void CLFAgentLoop::setConfirmCallback(std::function<bool(const std::string&)> callback) {
     m_confirmCallback = std::move(callback);
-}
-
-void CLFAgentLoop::setStatusCallback(
-    std::function<void(const std::string&, const std::string&)> callback) {
-    m_statusCallback = std::move(callback);
 }
 
 std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool incomplete) const {

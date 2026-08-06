@@ -47,11 +47,7 @@ public:
     // 结果缓存到 s_projectRoot，后续 resolvePath 都基于它
     static std::string findProjectRoot();
 
-    // 获取已缓存的项目根目录
-    static const std::string& getProjectRoot();
-
-    // 基于项目根目录解析相对路径（替代旧的 resolveConfigPath）
-    // 等价于 getProjectRoot() + "/" + relativePath
+    // 基于项目根目录解析相对路径
     static std::string resolvePath(const std::string& relativePath);
 
     // 获取当前工作目录（用户启动 CLFCode 的目录，即 user's project root）

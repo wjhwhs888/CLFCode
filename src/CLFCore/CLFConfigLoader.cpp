@@ -57,11 +57,6 @@ std::string CLFConfigLoader::findProjectRoot() {
     return s_projectRoot;
 }
 
-const std::string& CLFConfigLoader::getProjectRoot() {
-    if (s_projectRoot.empty()) findProjectRoot();
-    return s_projectRoot;
-}
-
 std::string CLFConfigLoader::resolvePath(const std::string& relativePath) {
     if (s_projectRoot.empty()) findProjectRoot();
     return s_projectRoot + "/" + relativePath;

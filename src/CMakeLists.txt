@@ -3,7 +3,6 @@
 # ============================================================================
 add_library(clf_types STATIC
     CLFTypes/CLFEncoding.cpp
-    CLFTypes/CLFEventQueue.cpp
 )
 target_include_directories(clf_types PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -41,10 +40,13 @@ target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ============================================================================
 add_library(clf_ui STATIC
     CLFUI/CLFAnsi.cpp
+    CLFUI/CLFAsyncSubmit.cpp
+    CLFUI/CLFClipboard.cpp
     CLFUI/CLFCommandDispatcher.cpp
-    CLFUI/CLFConsole.cpp
+    CLFUI/CLFCommands.cpp
+    CLFUI/CLFConfirmBar.cpp
     CLFUI/CLFRepl.cpp
-    CLFUI/CLFScrollBuffer.cpp
+    CLFUI/CLFScrollView.cpp
     CLFUI/CLFTerminal.cpp
 )
 target_link_libraries(clf_ui PUBLIC clf_core ftxui::screen ftxui::dom ftxui::component)
@@ -96,8 +98,6 @@ add_test(NAME qa_CLFAgentLoop COMMAND qa_CLFAgentLoop)
 add_executable(qa_CLFStreamAccumulator test/qa_CLFStreamAccumulator.cpp)
 target_link_libraries(qa_CLFStreamAccumulator PRIVATE clf_core clf_ui)
 add_test(NAME qa_CLFStreamAccumulator COMMAND qa_CLFStreamAccumulator)
-
-# Step 0: FTXUI ANSI 透传验证 (临时, 验证后删除)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

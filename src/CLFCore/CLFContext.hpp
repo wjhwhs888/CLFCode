@@ -52,4 +52,8 @@ private:
     int                     m_maxContextWindow;
 };
 
+// UTF-8 净化：将非法字节序列替换为 U+FFFD (�)
+// 用于输入边界防护（剪贴板粘贴等）
+std::string sanitizeUtf8(const std::string& input);
+
 } // namespace CLF::CLFCore

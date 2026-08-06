@@ -9,10 +9,6 @@
 
 namespace CLF::CLFCore {
 
-namespace {
-
-constexpr size_t kMaxMessageChars = 8000;
-
 // UTF-8 净化：将非法字节序列替换为 U+FFFD (�)
 // 从字节流中识别合法的 1~4 字节 UTF-8 序列, 非法部分逐字节替换
 std::string sanitizeUtf8(const std::string& input) {
@@ -60,6 +56,10 @@ std::string sanitizeUtf8(const std::string& input) {
     }
     return out;
 }
+
+namespace {
+
+constexpr size_t kMaxMessageChars = 8000;
 
 int estimateTokensForMessage(const CLFMessage& msg) {
     int ascii = 0;

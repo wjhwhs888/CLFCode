@@ -11,7 +11,7 @@
 #include <memory>
 #include <string>
 
-namespace CLF::CLFCore { class CLFAgentLoop; class CLFEventQueue; }
+namespace CLF::CLFCore { class CLFAgentLoop; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
 namespace CLF::CLFUI {
@@ -37,7 +37,6 @@ private:
     CLF::CLFTypes::ICLFOutput*  m_output;
     std::string m_historyDir;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
-    std::unique_ptr<CLF::CLFCore::CLFEventQueue> m_eventQueue;
 };
 
 } // namespace CLF::CLFUI

@@ -66,6 +66,5 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30);
 
     CLF::CLFUI::CLFRepl repl(agent, historyDir, &terminal);
-    terminal.setRepl(&repl);                  // Terminal → Repl (用于 confirm 委托)
     return repl.run();
 }

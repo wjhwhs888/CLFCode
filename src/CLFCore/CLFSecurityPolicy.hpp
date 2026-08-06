@@ -36,6 +36,16 @@ public:
     // 字符串 → 模式；未知字符串返回 Edit
     static CLFSecurityMode modeFromString(const std::string& s);
 
+    // 所有模式的有序列表（供 cycleMode 等遍历使用）
+    static constexpr CLFSecurityMode kAllModes[] = {
+        CLFSecurityMode::Auto, CLFSecurityMode::Analyze,
+        CLFSecurityMode::Edit, CLFSecurityMode::Manual
+    };
+    static constexpr int kModeCount = 4;
+
+    // 循环到下一个模式
+    static CLFSecurityMode nextMode(CLFSecurityMode current);
+
 private:
     CLFSecurityMode m_mode;
 };

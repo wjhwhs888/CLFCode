@@ -12,12 +12,4 @@ bool CLFRetryPolicy::isFatalHttpError(const std::string& err) {
         || err.find("HTTP 403") != std::string::npos;
 }
 
-bool CLFRetryPolicy::isRetryableError(const std::string& err) {
-    return err.find("HTTP 429") != std::string::npos
-        || err.find("HTTP 5")   != std::string::npos
-        || err.find("Connection failed") != std::string::npos
-        || err.find("timeout")  != std::string::npos
-        || err.find("Timeout")  != std::string::npos;
-}
-
 } // namespace CLF::CLFCore

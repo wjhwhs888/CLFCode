@@ -55,4 +55,12 @@ CLFSecurityMode CLFSecurityPolicy::modeFromString(const std::string& s) {
     return CLFSecurityMode::Edit; // 默认
 }
 
+CLFSecurityMode CLFSecurityPolicy::nextMode(CLFSecurityMode current) {
+    for (int i = 0; i < kModeCount; ++i) {
+        if (kAllModes[i] == current)
+            return kAllModes[(i + 1) % kModeCount];
+    }
+    return CLFSecurityMode::Edit;
+}
+
 } // namespace CLF::CLFCore

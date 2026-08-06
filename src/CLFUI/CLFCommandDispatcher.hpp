@@ -9,11 +9,29 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace CLF::CLFCore { class CLFAgentLoop; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
 namespace CLF::CLFUI {
+
+// ---- 命令 handler 签名 ----
+// 参数: 命令名 (/xxx)、参数字符串（不含命令名，已 trim）、Agent、历史目录、输出
+// 返回: true = 已处理
+using CLFCommandHandler = std::function<bool(
+    const std::string& cmdName,
+    const std::string& args,
+    CLF::CLFCore::CLFAgentLoop& agent,
+    const std::string& historyDir,
+    CLF::CLFTypes::ICLFOutput* output)>;
+
+// ---- 命令注册项 ----
+struct CLFCommand {
+    std::string       m_name;         // "/exit"（含前缀）
+    std::string       m_description;  // 帮助文本
+    CLFCommandHandler m_handler;
+};
 
 class CLFCommandDispatcher {
 public:
@@ -22,22 +40,31 @@ public:
                          CLF::CLFTypes::ICLFOutput* output,
                          std::function<void()> onExit);
 
-    // 处理 /xxx 命令，返回 true 表示已处理（非命令返回 false）
+    // 注册命令（内部调用，构造时批量注册内置命令）
+    void registerCommand(CLFCommand cmd);
+
+    // 处理 /xxx 输入，返回 true 表示已处理（非命令返回 false）
     bool handle(const std::string& input);
 
-    // 获取/设置当前模式名（/mode 命令修改）
-    const std::string& modeName() const { return m_modeName; }
-    void setModeName(const std::string& name) { m_modeName = name; }
+    // 获取当前模式名（代理 agent，单一权威源）
+    std::string modeName() const;
 
     // 设置退出回调（screen 创建后注入）
     void setOnExit(std::function<void()> cb) { m_onExit = std::move(cb); }
 
+    // 获取注册表（供 /help 等遍历）
+    const std::vector<CLFCommand>& commands() const { return m_commands; }
+
 private:
     CLF::CLFCore::CLFAgentLoop& m_agent;
     std::string m_historyDir;
-    std::string m_modeName;
     CLF::CLFTypes::ICLFOutput* m_output;
     std::function<void()> m_onExit;
+
+    std::vector<CLFCommand> m_commands;  // 注册表（线性搜索，11 个命令性能充足）
 };
+
+// 注册所有内置斜杠命令（由 CLFCommandDispatcher 构造时调用）
+void registerBuiltinCommands(CLFCommandDispatcher& dispatcher);
 
 } // namespace CLF::CLFUI

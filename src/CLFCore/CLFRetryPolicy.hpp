@@ -3,7 +3,6 @@
 //
 // example:
 //   if (CLFRetryPolicy::isFatalHttpError(err)) return error;
-//   if (CLFRetryPolicy::isRetryableError(err)) retry();
 
 #pragma once
 
@@ -17,9 +16,6 @@ public:
 
     // 致命错误（请求/认证/权限问题，重试无意义）
     static bool isFatalHttpError(const std::string& err);
-
-    // 可重试错误（限流/服务端/超时）
-    static bool isRetryableError(const std::string& err);
 };
 
 } // namespace CLF::CLFCore

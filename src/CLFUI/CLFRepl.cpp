@@ -10,64 +10,23 @@
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
-#include "CLFTypes/CLFEventQueue.hpp"
+#include "CLFUI/CLFClipboard.hpp"
+#include "CLFUI/CLFAsyncSubmit.hpp"
+#include "CLFUI/CLFScrollView.hpp"
+#include "CLFUI/CLFConfirmBar.hpp"
 
-#include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <ctime>
 #include <filesystem>
 #include <iostream>
-#include <thread>
-
-#ifdef _WIN32
-#include <windows.h>
-#undef min
-#undef max
-#endif
 
 namespace CLF::CLFUI {
 using namespace CLF::CLFCore;
 
-// 从系统剪贴板读取文本 (Ctrl+V 粘贴)
-static std::string readClipboard() {
-#ifdef _WIN32
-    if (!OpenClipboard(nullptr)) return "";
-    HANDLE h = GetClipboardData(CF_UNICODETEXT);
-    if (!h) { CloseClipboard(); return ""; }
-    wchar_t* wstr = static_cast<wchar_t*>(GlobalLock(h));
-    if (!wstr) { CloseClipboard(); return ""; }
-    int len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
-    std::string out(len > 0 ? len - 1 : 0, '\0');
-    if (len > 1) WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &out[0], len, nullptr, nullptr);
-    GlobalUnlock(h);
-    CloseClipboard();
-    return out;
-#else
-    return "";
-#endif
-}
-
-// 写入系统剪贴板 (Ctrl+Y 复制全部内容)
-static void writeClipboard(const std::string& text) {
-#ifdef _WIN32
-    if (!OpenClipboard(nullptr)) return;
-    EmptyClipboard();
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
-    if (wlen <= 0) { CloseClipboard(); return; }
-    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, wlen * sizeof(wchar_t));
-    if (!hMem) { CloseClipboard(); return; }
-    wchar_t* wstr = static_cast<wchar_t*>(GlobalLock(hMem));
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, wstr, wlen);
-    GlobalUnlock(hMem);
-    SetClipboardData(CF_UNICODETEXT, hMem);
-    CloseClipboard();
-#endif
-}
-
 namespace {
-const char* kModeCycle[] = {"auto", "analyze", "edit", "manual"};
-constexpr int kModeCount = 4;
+// Keybinding 说明（Renderer + CatchEvent 共用，防止 drift）
+const char* kKeybindLegend =
+    "shift+tab 切换 · esc 中断 · /help 帮助"
+    " | ctrl+d 提交 · enter 换行 · ctrl+v 粘贴 · ctrl+y 全量复制";
 }
 
 // ============================================================================
@@ -79,14 +38,9 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
     : m_agent(agent)
     , m_output(output)
     , m_historyDir(historyDir)
-    , m_dispatcher(std::make_unique<CLFCommandDispatcher>(agent, historyDir, output, nullptr))
-    , m_eventQueue(std::make_unique<CLF::CLFCore::CLFEventQueue>()) {
-    m_agent.setEventQueue(m_eventQueue.get());
+    , m_dispatcher(std::make_unique<CLFCommandDispatcher>(agent, historyDir, output, nullptr)) {
     m_agent.setConfirmCallback(
         [this](const std::string& prompt) { return confirmDialog(prompt); });
-    m_agent.setStatusCallback([this](const std::string& title, const std::string& content) {
-        if (m_output) m_output->setStatus(title + ": " + content);
-    });
 }
 
 CLFRepl::~CLFRepl() = default;
@@ -97,7 +51,7 @@ CLFRepl::~CLFRepl() = default;
 
 int CLFRepl::run() {
     try {
-        // 启动清理
+        // 启动临时文件清理
         try {
             for (auto& e : std::filesystem::directory_iterator(".")) {
                 std::string n = e.path().filename().string();
@@ -120,104 +74,50 @@ int CLFRepl::run() {
         // ---- 输入组件 ----
         std::string inputText;
         ftxui::InputOption inputOpt;
-        inputOpt.multiline = true;  // Enter 换行, Ctrl+D 提交
+        inputOpt.multiline = true;
         auto input = ftxui::Input(&inputText, "❯ ", inputOpt);
-
         auto root = ftxui::Container::Vertical({input});
         root->SetActiveChild(input);
         input->TakeFocus();
 
-        // ---- 滚动偏移 (鼠标滚轮控制) ----
-        int  scrollOffset   = 0;      // >0 = 向上滚动了多少行, 0 = 底部
-        bool autoScroll      = true;  // 新内容到达时自动回底部
-        int  lastTotalLines  = 0;     // 追踪内容增长以触发自动滚动
+        // ---- 组件 ----
+        CLFScrollView   scrollView;
+        CLFConfirmBar   confirmBar;
+        CLFAsyncSubmit  asyncSubmit;
 
         // ---- 主渲染器 ----
         auto ui = ftxui::Renderer(root, [&] {
-            // 防抖: 本帧已渲染, 允许新的 PostEvent
+            // 防抖
             if (terminal) terminal->m_refreshPending = false;
 
-            // 构建全部内容行
+            // 线程安全快照
+            auto snap = terminal ? terminal->contentSnapshot()
+                                 : CLFTerminal::ContentSnapshot{};
+
+            // 构建全部内容行 + 更新滚动视口
             ftxui::Elements allLines;
-            if (terminal) {
-                for (auto& l : terminal->m_contentBuffer)
-                    allLines.push_back(ftxui::text(l));
-                if (!terminal->m_pendingLine.empty())
-                    allLines.push_back(ftxui::text(terminal->m_pendingLine));
-            }
-            const int totalLines = static_cast<int>(allLines.size());
+            for (auto& l : snap.lines)
+                allLines.push_back(ftxui::text(l));
+            if (!snap.pendingLine.empty())
+                allLines.push_back(ftxui::text(snap.pendingLine));
 
-            // 自动滚动: 新内容到达 → 回底部
-            if (totalLines != lastTotalLines) {
-                lastTotalLines = totalLines;
-                if (autoScroll) scrollOffset = 0;
-            }
+            scrollView.update(static_cast<int>(allLines.size()),
+                              CLFTerminal::getTerminalHeight());
 
-            // 计算可见窗口 (给输入/状态/模式留 6 行)
-            const int termH  = CLFTerminal::getTerminalHeight();
-            const int viewH  = std::max(8, termH - 6);
-            const int maxOff = std::max(0, totalLines - viewH);
-            if (scrollOffset < 0)        scrollOffset = 0;
-            if (scrollOffset > maxOff)   scrollOffset = maxOff;
-
-            // 截取可见行
-            const int startLine = totalLines - viewH - scrollOffset;
-            ftxui::Elements visible;
-            for (int i = std::max(0, startLine);
-                 i < totalLines && (int)visible.size() < viewH; ++i) {
-                visible.push_back(allLines[i]);
-            }
-
-            // 滚动位置指示 (顶部/底部)
-            if (scrollOffset > 0) {
-                auto hint = "↑ " + std::to_string(scrollOffset) + " lines above";
-                visible.insert(visible.begin(),
-                    ftxui::dim(ftxui::text("  " + hint)));
-            }
-            if (scrollOffset < maxOff) {
-                auto hint = "↓ " + std::to_string(maxOff - scrollOffset) + " lines below";
-                visible.push_back(ftxui::dim(ftxui::text("  " + hint)));
-            }
-
-            auto contentArea = ftxui::vbox(visible) | ftxui::flex;
+            auto contentArea = ftxui::vbox(scrollView.renderWindow(allLines))
+                             | ftxui::flex;
 
             // 状态行
-            auto statusLine = terminal && !terminal->m_statusText.empty()
-                ? ftxui::dim(ftxui::text("  " + terminal->m_statusText))
+            auto statusLine = !snap.statusText.empty()
+                ? ftxui::dim(ftxui::text("  " + snap.statusText))
                 : ftxui::emptyElement();
 
             // 模式行
-            auto modeStr = m_dispatcher->modeName();
             auto modeLine = ftxui::dim(ftxui::hbox({
-                ftxui::text("  " + modeStr + " mode on"),
+                ftxui::text("  " + m_dispatcher->modeName() + " mode on"),
                 ftxui::filler(),
-                ftxui::dim(ftxui::text(
-                    "shift+tab 切换 · esc 中断 · /help 帮助"
-                    " | ctrl+d 提交 · enter 换行 · ctrl+v 粘贴 · ctrl+y 全量复制")),
+                ftxui::dim(ftxui::text(kKeybindLegend)),
             }));
-
-            // 确认栏 (设计 §3.6: 底部固定, paragraph 自动换行)
-            auto confirmBar = terminal && terminal->m_confirmActive
-                ? ftxui::vbox({
-                      ftxui::separator(),
-                      ftxui::color(ftxui::Color::Yellow,
-                                   ftxui::paragraph("  ⚠ " + terminal->m_confirmPrompt)),
-                      ftxui::hbox({
-                          ftxui::text("  [") | ftxui::dim,
-                          (0 == terminal->m_confirmSel
-                              ? ftxui::bold(ftxui::text("●") | ftxui::color(ftxui::Color::Green))
-                              : ftxui::dim(ftxui::text("○"))),
-                          ftxui::text("] " + terminal->m_confirmOpts[0] + "    "),
-                          ftxui::text("[") | ftxui::dim,
-                          (1 == terminal->m_confirmSel
-                              ? ftxui::bold(ftxui::text("●") | ftxui::color(ftxui::Color::Green))
-                              : ftxui::dim(ftxui::text("○"))),
-                          ftxui::text("] " + terminal->m_confirmOpts[1]),
-                          ftxui::filler(),
-                          ftxui::dim(ftxui::text("← → 选择  Enter 确认  Esc 取消")),
-                      }),
-                  })
-                : ftxui::emptyElement();
 
             return ftxui::vbox({
                 contentArea,
@@ -226,112 +126,65 @@ int CLFRepl::run() {
                 input->Render(),
                 ftxui::separator(),
                 modeLine,
-                confirmBar,
+                confirmBar.render(*terminal),
             });
         });
 
-        // ---- 主事件处理 ----
-        std::thread       submitThread;
-        std::atomic<bool> submitting{false};
+        // ---- 事件处理 ----
+        auto handler = ftxui::CatchEvent(ui, [&](ftxui::Event e) {
+            // 1) 确认栏按键
+            if (terminal && confirmBar.handleEvent(e, *terminal))
+                return true;
 
-        auto submitHandler = ftxui::CatchEvent(ui, [&](ftxui::Event e) {
-            // 鼠标滚轮 → 内容区滚动
-            if (e.is_mouse()) {
-                auto& mouse = e.mouse();
-                if (mouse.button == ftxui::Mouse::WheelUp) {
-                    scrollOffset += 3;  autoScroll = false;  return true;
-                }
-                if (mouse.button == ftxui::Mouse::WheelDown) {
-                    scrollOffset -= 3;  if (scrollOffset <= 0)
-                        { scrollOffset = 0; autoScroll = true; } return true;
-                }
-            }
-            // 键盘翻页
-            if (e == ftxui::Event::PageUp) {
-                scrollOffset += 15;  autoScroll = false;  return true;
-            }
-            if (e == ftxui::Event::PageDown) {
-                scrollOffset -= 15;  if (scrollOffset <= 0)
-                    { scrollOffset = 0; autoScroll = true; } return true;
-            }
-            if (e == ftxui::Event::Home) {
-                scrollOffset = 999999;  autoScroll = false;  return true;  // clamp in renderer
-            }
-            if (e == ftxui::Event::End) {
-                scrollOffset = 0;  autoScroll = true;  return true;
-            }
-            // confirm 激活时: 拦截方向键 + Enter/Esc, 不走正常输入
-            if (terminal && terminal->m_confirmActive) {
-                if (e == ftxui::Event::Return) {
-                    terminal->m_confirmResult = true;
-                    terminal->m_confirmActive = false;
-                    terminal->m_confirmCv.notify_one();
-                    return true;
-                }
-                if (e == ftxui::Event::Escape) {
-                    terminal->m_confirmResult = false;
-                    terminal->m_confirmActive = false;
-                    terminal->m_confirmCv.notify_one();
-                    return true;
-                }
-                if (e == ftxui::Event::ArrowLeft || e == ftxui::Event::ArrowRight) {
-                    terminal->m_confirmSel = 1 - terminal->m_confirmSel;
-                    return true;
-                }
-                return false;  // confirm 期间屏蔽其他按键
-            }
-            // Ctrl+D → 异步提交 (Enter 在 multiline 模式下插入换行)
-            if (e == ftxui::Event::CtrlD && !inputText.empty() && !submitting) {
+            // 2) 滚动按键
+            if (scrollView.handleEvent(e))
+                return true;
+
+            // 3) Ctrl+D → 异步提交
+            if (e == ftxui::Event::CtrlD && !inputText.empty() && !asyncSubmit.busy()) {
                 auto text = inputText;
                 inputText.clear();
-                submitting = true;
-                if (submitThread.joinable()) submitThread.join();
-                submitThread = std::thread([&, text]() {
-                    submit(text);
-                    submitting = false;
-                });
+                asyncSubmit.launch([&, text]() { submit(text); });
                 return true;
             }
-            // Shift+Tab → 切换模式
+
+            // 4) Shift+Tab → 切换模式
             if (e == ftxui::Event::TabReverse) {
                 cycleMode();
                 return true;
             }
-            // Escape → 中断
-            if (e == ftxui::Event::Escape) {
+
+            // 5) Escape / Ctrl+C → 中断
+            if (e == ftxui::Event::Escape || e == ftxui::Event::CtrlC) {
                 if (terminal && terminal->m_interruptCb)
                     terminal->m_interruptCb();
                 return true;
             }
-            // Ctrl+C → 等效 Esc (中断, 不杀进程)
-            if (e == ftxui::Event::CtrlC) {
-                if (terminal && terminal->m_interruptCb)
-                    terminal->m_interruptCb();
-                return true;
-            }
-            // Ctrl+V → 粘贴剪贴板 (保留换行, multiline 模式正常显示)
+
+            // 6) Ctrl+V → 粘贴
             if (e == ftxui::Event::CtrlV) {
-                std::string clip = readClipboard();
+                std::string clip = CLFClipboard::read();
                 if (!clip.empty()) inputText += clip;
                 return true;
             }
-            // Ctrl+Y → 复制全部内容到剪贴板 (保真换行, 比终端拖选准确)
+
+            // 7) Ctrl+Y → 全量复制
             if (e == ftxui::Event::CtrlY) {
                 std::string all;
                 if (terminal) {
                     for (auto& line : terminal->m_contentBuffer)
                         all += line + "\n";
                 }
-                writeClipboard(all);
+                CLFClipboard::write(all);
                 return true;
             }
+
             return false;
         });
 
-        // ---- 运行 (无 Modal 包裹, 确认栏在主 UI 底部) ----
-        screen.Loop(submitHandler);
-        submitting = true;
-        if (submitThread.joinable()) submitThread.join();
+        // ---- 运行 ----
+        screen.Loop(handler);
+        asyncSubmit.join();
 
     } catch (...) {
         std::cerr << "[Fatal] Unexpected error — CLFCode terminated." << std::endl;
@@ -399,20 +252,14 @@ void CLFRepl::submit(const std::string& input) {
 
 bool CLFRepl::confirmDialog(const std::string& prompt) {
     auto* term = dynamic_cast<CLFTerminal*>(m_output);
-    if (term) return term->confirm(prompt);  // FTXUI Modal 路径
-    return false;  // 无 Terminal 时直接拒绝
+    if (term) return term->confirm(prompt);
+    return false;
 }
 
 void CLFRepl::cycleMode() {
-    auto cur = m_agent.getSecurityModeName();
-    for (int i = 0; i < kModeCount; ++i) {
-        if (std::string(kModeCycle[i]) == cur) {
-            std::string nm = kModeCycle[(i + 1) % kModeCount];
-            m_dispatcher->setModeName(nm);
-            m_agent.setSecurityMode(CLFSecurityPolicy::modeFromString(nm));
-            break;
-        }
-    }
+    auto next = CLFSecurityPolicy::nextMode(
+        CLFSecurityPolicy::modeFromString(m_agent.getSecurityModeName()));
+    m_agent.setSecurityMode(next);
 }
 
 void CLFRepl::saveSession(bool incomplete) {

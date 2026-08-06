@@ -2,7 +2,15 @@
 
 ## 已完成
 
-### 2026-08-05 UI 全面重构 ✅ (当前状态)
+### 2026-08-06 代码清理 + OCP 重构 + 组件提取 + CJK 缓解 ✅
+- **Phase 0 清理**: 删除 11 个死文件 (CLFConsole/CLFScrollBuffer/CLFEvent/CLFEventQueue/CLFErrorCodes/MockOutput), ICLFOutput 瘦身 (13→6 方法), 修复 CLFToolExecutor nullptr bug, 修复数据竞争 (ContentSnapshot), 删除 ~15 个死方法, Mode 去重 (CLFSecurityPolicy 为权威源)
+- **Phase 1 OCP 重构**: CLFCommandDispatcher 注册表模式, CLFCommands.cpp 独立 TU, handle() 查表路由, /exit onExit 特殊处理
+- **Phase 2 组件提取**: CLFClipboard (解除 CLFRepl 对 windows.h 依赖) / CLFAsyncSubmit / CLFScrollView / CLFConfirmBar 四个组件, CLFRepl::run() 从 244→130 行
+- **Phase 3 CJK 缓解**: sanitizeUtf8 提升为公开函数, Ctrl+V 粘贴增加 UTF-8 净化
+- **总计**: ~1100 行净删除, +4 个新文件, 0 个旧功能破坏
+- 设计文档: [plans/设计-OCP重构与边界场景完善.md](../plans/设计-OCP重构与边界场景完善.md)
+
+### 2026-08-05 UI 全面重构 ✅
 - **FTXUI v6 → v7 迁移**: 3rdparty 替换, API 适配 (Post→PostEvent, Decorator→函数式)
 - **CLFTerminal 重写**: 删除 30+ 静态兼容方法, 纯 ICLFOutput 实现
 - **CLFRepl 重写**: 死代码清理, 简化组件树, 确认栏在底部 (设计 §3.6)
@@ -29,11 +37,12 @@
 ### 全量优化 P0-P3 ✅
 - P0-P3 Bug修复 + 架构解耦 + 大文件拆分 + 6区终端UI
 
-## 进行中
-
-
 ## 遗留问题
 
-### CLFCommandDispatcher if-else 链 (OCP 遗留)
-### askSelect / askInput / emitRaw ANSI 透传 (第二期)
-### CJK 光标半字移动 (FTXUI 内部限制)
+### CJK 光标半字移动
+- 已实施缓解措施 (粘贴 UTF-8 净化), 但根因在 FTXUI 内部
+- 需在 Windows Terminal 中尝试复现, 无法复现则关闭
+
+### emitRaw 钩子
+- 接口保留, 逻辑完整, 但无调用方
+- 待子进程输出路径接入 (Phase 2 未覆盖)
