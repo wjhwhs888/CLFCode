@@ -74,3 +74,16 @@ ctest --test-dir build --output-on-failure -j6
 ## 项目目录结构
 
 详见 `ProjectSetting.md`。
+
+## Plans 目录
+
+遵循全局 `~/.claude/CLAUDE.md` 中的 Plans 目录规范：
+
+```
+.claude/plans/
+├── 分析/      # 分析可行性、技术选型
+├── 测试/      # 测试记录与结果
+├── 设计/      # 严格设计方案
+│   └── 归档/   # 已完成或废弃
+└── README.md
+```

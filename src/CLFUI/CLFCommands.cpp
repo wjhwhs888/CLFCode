@@ -48,10 +48,25 @@ bool cmdHelp(const std::string&, const std::string&,
              CLFAgentLoop&, const std::string&,
              ICLFOutput* output) {
     if (output) output->emitContent(
-        "\n  ⎿ /exit   退出 | /clear 新会话 | /skill 知识库\n"
-        "  ⎿ /mode   安全模式 | /history 会话 | /resume <n> 恢复\n"
-        "  ⎿ /model  模型 | /config 配置 | /context 用量\n"
-        "  ⎿ Shift+Tab 切换模式 | Esc 清空输入\n");
+        "\n● 快捷键\n"
+        "  ⎿ 提交：enter / ctrl+d\n"
+        "  ⎿ 换行：ctrl+n\n"
+        "  ⎿ 粘贴：ctrl+v\n"
+        "  ⎿ 全量复制：ctrl+y\n"
+        "  ⎿ 切换模式：shift+tab\n"
+        "  ⎿ 中断/清空输入：esc\n"
+        "\n"
+        "● 命令\n"
+        "  ⎿ /exit       退出并保存会话\n"
+        "  ⎿ /clear      保存并开始新会话\n"
+        "  ⎿ /mode       切换安全模式\n"
+        "  ⎿ /model      显示当前模型\n"
+        "  ⎿ /config     显示配置信息\n"
+        "  ⎿ /context    显示上下文用量\n"
+        "  ⎿ /skill      知识库管理\n"
+        "  ⎿ /history    显示最近会话\n"
+        "  ⎿ /resume     恢复指定会话\n"
+        "  ⎿ /help       显示此帮助\n");
     return true;
 }
 

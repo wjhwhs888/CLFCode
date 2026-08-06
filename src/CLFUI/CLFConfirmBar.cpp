@@ -1,4 +1,4 @@
-// CLFConfirmBar.cpp — 确认栏组件实现
+// CLFConfirmBar.cpp — 确认栏组件渲染实现
 
 #include "CLFUI/CLFConfirmBar.hpp"
 #include "CLFUI/CLFTerminal.hpp"
@@ -36,29 +36,6 @@ ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
                      ftxui::paragraph("  ⚠ " + terminal.m_confirmPrompt)),
         opts,
     });
-}
-
-bool CLFConfirmBar::handleEvent(ftxui::Event e, CLFTerminal& terminal) const {
-    if (!terminal.m_confirmActive) return false;
-
-    if (e == ftxui::Event::Return) {
-        terminal.m_confirmResult = true;
-        terminal.m_confirmActive = false;
-        terminal.m_confirmCv.notify_one();
-        return true;
-    }
-    if (e == ftxui::Event::Escape) {
-        terminal.m_confirmResult = false;
-        terminal.m_confirmActive = false;
-        terminal.m_confirmCv.notify_one();
-        return true;
-    }
-    if (e == ftxui::Event::ArrowLeft || e == ftxui::Event::ArrowRight) {
-        terminal.m_confirmSel = 1 - terminal.m_confirmSel;
-        return true;
-    }
-    // confirm 期间屏蔽其他按键
-    return false;
 }
 
 } // namespace CLF::CLFUI

@@ -40,13 +40,10 @@ target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ============================================================================
 add_library(clf_ui STATIC
     CLFUI/CLFAnsi.cpp
-    CLFUI/CLFAsyncSubmit.cpp
-    CLFUI/CLFClipboard.cpp
     CLFUI/CLFCommandDispatcher.cpp
     CLFUI/CLFCommands.cpp
     CLFUI/CLFConfirmBar.cpp
     CLFUI/CLFRepl.cpp
-    CLFUI/CLFScrollView.cpp
     CLFUI/CLFTerminal.cpp
 )
 target_link_libraries(clf_ui PUBLIC clf_core ftxui::screen ftxui::dom ftxui::component)
