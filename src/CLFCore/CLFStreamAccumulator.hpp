@@ -61,10 +61,18 @@ private:
 inline std::string CLFStreamAccumulator::feedDelta(const nlohmann::json& delta) {
     std::string contentDelta;
 
+    // 提取推理过程（DeepSeek 等模型在 thinking 模式下输出，优先于 content）
+    if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+        contentDelta = delta["reasoning_content"].get<std::string>();
+        m_content += contentDelta;
+    }
     // 提取文本增量
     if (delta.contains("content") && delta["content"].is_string()) {
-        contentDelta = delta["content"].get<std::string>();
-        m_content += contentDelta;
+        auto c = delta["content"].get<std::string>();
+        if (!c.empty()) {
+            contentDelta += c;
+            m_content += c;
+        }
     }
 
     // 提取 tool_calls 增量（可能为空数组）
