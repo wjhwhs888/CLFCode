@@ -71,7 +71,9 @@ int CLFRepl::run() {
         CLFAsyncSubmit  asyncSubmit;
 
         ftxui::InputOption inputOpt;
-        inputOpt.multiline = true;  // 多行显示（Alt+Enter/Ctrl+N 换行后可见多行）
+        inputOpt.multiline = true;  // 多行显示（Ctrl+N 换行后可见多行）
+        ftxui::Ref<int> cursorPos = 0;
+        inputOpt.cursor_position = cursorPos;  // ↑/↓ 历史导航需要光标位置
 
         std::string inputText;
         auto input = ftxui::Input(&inputText, "❯ ", inputOpt);
@@ -218,6 +220,8 @@ int CLFRepl::run() {
             if (e == ftxui::Event::Return || e == ftxui::Event::CtrlD) {
                 if (!inputText.empty() && !asyncSubmit.busy()) {
                     m_lastSubmittedInput = inputText;
+                    m_inputHistory.push_back(inputText);
+                    m_historyIndex = -1;
                     auto text = inputText;
                     inputText.clear();
                     asyncSubmit.launch([this, text]() { submit(text); });
@@ -229,6 +233,45 @@ int CLFRepl::run() {
             if (e == ftxui::Event::CtrlN) {
                 input->OnEvent(ftxui::Event::Character("\n"));
                 return true;
+            }
+
+            // === 4a. ↑/↓ 历史导航（光标在首行按↑ / 尾行按↓ 触发） ===
+            if (e == ftxui::Event::ArrowUp || e == ftxui::Event::ArrowDown) {
+                int pos = *cursorPos;
+                // ↑：光标在首行 + 有历史 → 取上一条
+                if (e == ftxui::Event::ArrowUp) {
+                    size_t prevNl = (pos == 0) ? std::string::npos
+                                               : inputText.rfind('\n', pos - 1);
+                    if (prevNl == std::string::npos && !m_inputHistory.empty()) {
+                        if (m_historyIndex == -1) {
+                            m_historyDraft = inputText;  // 保存当前草稿
+                            m_historyIndex = static_cast<int>(m_inputHistory.size()) - 1;
+                        } else if (m_historyIndex > 0) {
+                            m_historyIndex--;
+                        }
+                        inputText = m_inputHistory[m_historyIndex];
+                        *cursorPos = static_cast<int>(inputText.size());
+                        return true;
+                    }
+                }
+                // ↓：光标在尾行 + 在历史中 → 取下一条
+                if (e == ftxui::Event::ArrowDown) {
+                    size_t nextNl = inputText.find('\n', pos);
+                    if (nextNl == std::string::npos && m_historyIndex != -1) {
+                        if (m_historyIndex < static_cast<int>(m_inputHistory.size()) - 1) {
+                            m_historyIndex++;
+                            inputText = m_inputHistory[m_historyIndex];
+                        } else {
+                            // ↓ 到底 → 恢复进入历史前正在编辑的草稿
+                            m_historyIndex = -1;
+                            inputText = std::move(m_historyDraft);
+                        }
+                        *cursorPos = static_cast<int>(inputText.size());
+                        return true;
+                    }
+                }
+                // 非边界 → 不拦截，让 Input 组件正常处理行内移动
+                return false;
             }
 
             // === 4. Ctrl+C: 上下文感知分发 ===
