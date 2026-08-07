@@ -44,6 +44,10 @@ public:
     void onInterrupt(std::function<void()> cb) override;
     void emitError(const std::string& m) override;
 
+    // 线程安全：confirm 工作线程写 / 主线程 CatchEvent 读
+    bool isConfirmActive() const { std::lock_guard lock(m_mutex); return m_confirmActive; }
+    void setConfirmActive(bool v) { std::lock_guard lock(m_mutex); m_confirmActive = v; }
+
     // === 线程安全快照 (Renderer 使用, 一次加锁拷贝) ===
     struct ContentSnapshot {
         std::vector<std::string> lines;

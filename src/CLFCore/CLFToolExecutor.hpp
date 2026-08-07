@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <string>
 #include <vector>
@@ -25,9 +26,10 @@ public:
                     CLFSecurityPolicy& policy,
                     std::function<bool(const std::string&)> confirmCallback,
                     ToolStats& stats,
-                    CLF::CLFTypes::ICLFOutput* output = nullptr);
+                    CLF::CLFTypes::ICLFOutput* output = nullptr,
+                    std::atomic<bool>* interruptFlag = nullptr);
 
-    // 执行一组工具调用，返回结果列表
+    // 执行一组工具调用，返回结果列表（interruptFlag 置位时提前退出）
     std::vector<CLFToolResult> execute(const std::vector<CLFToolCall>& calls);
 
 private:
@@ -36,6 +38,7 @@ private:
     std::function<bool(const std::string&)> m_confirmCallback;
     ToolStats& m_stats;
     CLF::CLFTypes::ICLFOutput* m_output;
+    std::atomic<bool>* m_interruptFlag;
 };
 
 } // namespace CLF::CLFCore

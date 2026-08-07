@@ -43,6 +43,7 @@ void CLFAgentLoop::setOutput(CLF::CLFTypes::ICLFOutput* output) {
 }
 
 std::string CLFAgentLoop::runTurn(const std::string& userInput) {
+    m_interrupted = false;  // 新 turn 开始时重置中断标志
     m_context.addMessage("user", userInput);
     m_lastToolStats = {};
 
@@ -105,7 +106,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     if (m_output) m_output->emitError("Stream error: " + errorMsg);
                     return std::string("[Error] ") + errorMsg;
                 }
-                if (interrupted) {
+                if (interrupted || m_interrupted) {
+                    // abort() 可能直接关闭连接导致回调不再触发，局部 interrupted 未置位，
+                    // 此时需兜底检查成员 m_interrupted
                     if (m_output) m_output->emitContent("\n⏹ 已中断\n");
                     return std::string("[Interrupted]");
                 }
@@ -192,9 +195,15 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             // tool_calls → 执行并继续循环
             if (CLFProtocolAdapter::hasToolCalls(parsed)) {
+                // 中断检查：流式被 abort 后可能累积了 tool call，执行前再检查
+                if (m_interrupted) {
+                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
+                    return std::string("[Interrupted]");
+                }
                 m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
                 CLFToolExecutor executor(m_tools, m_securityPolicy,
-                                         m_confirmCallback, m_lastToolStats, m_output);
+                                         m_confirmCallback, m_lastToolStats, m_output,
+                                         &m_interrupted);
                 auto results = executor.execute(parsed.m_toolCalls);
                 for (const auto& result : results) {
                     m_context.addToolResult(

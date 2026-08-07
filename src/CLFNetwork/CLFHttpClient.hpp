@@ -35,6 +35,7 @@ private:
     int         m_timeoutSec = 30;
     std::mutex  m_cliMutex;
     std::shared_ptr<httplib::Client> m_activeCli;
+    std::atomic<bool> m_aborted{false};  // 流式中断：回调检查此标志立即停止
 };
 
 } // namespace CLF::CLFNetwork

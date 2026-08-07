@@ -108,11 +108,14 @@ void CLFTerminal::setStatus(const std::string& title, int cur, int total) {
 
 bool CLFTerminal::confirm(const std::string& prompt) {
     if (!m_screen) return false;
-    m_confirmPrompt = prompt;
-    m_confirmOpts = {"确认", "取消"};
-    m_confirmSel   = 0;
-    m_confirmResult = false;
-    m_confirmActive = true;
+    {
+        std::lock_guard lock(m_mutex);
+        m_confirmPrompt = prompt;
+        m_confirmOpts = {"确认", "返回"};
+        m_confirmSel   = 0;
+        m_confirmResult = false;
+        m_confirmActive = true;
+    }
     requestRefresh();
 
     // 同步等待主线程 (FTXUI Loop) 处理用户选择

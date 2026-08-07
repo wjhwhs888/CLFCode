@@ -70,6 +70,7 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     std::function<void(const std::string& line)> onLine
 ) {
     CLFHttpResponse result;
+    m_aborted = false;  // 新请求开始，重置中断标志
 
     auto cli = std::make_shared<httplib::Client>(m_baseUrl);
     cli->set_connection_timeout(10, 0);
@@ -92,6 +93,9 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     auto res = cli->Post(
         path, headers, jsonBody, "application/json",
         [&](const char* data, size_t dataLen) {
+            // 中断检查：abort() 设置 m_aborted，立即停止接收
+            if (m_aborted) return false;
+
             lineBuffer.append(data, dataLen);
 
             while (true) {
@@ -108,6 +112,8 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
                 if (!line.empty()) {
                     onLine(line);
                 }
+                // 每条 SSE 行处理后复查中断标志
+                if (m_aborted) return false;
             }
 
             // 消费后裁剪已处理前缀，防止 buffer 无限增长
@@ -115,7 +121,7 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
                 lineBuffer.erase(0, cursor);
                 cursor = 0;
             }
-            return true;
+            return !m_aborted;
         }
     );
 
@@ -148,6 +154,7 @@ void CLFHttpClient::setTimeout(int seconds) {
 }
 
 void CLFHttpClient::abort() {
+    m_aborted = true;
     std::lock_guard<std::mutex> lock(m_cliMutex);
     if (m_activeCli) {
         m_activeCli->stop();

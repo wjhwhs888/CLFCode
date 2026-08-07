@@ -6,7 +6,7 @@
 namespace CLF::CLFUI {
 
 ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
-    if (!terminal.m_confirmActive)
+    if (!terminal.isConfirmActive())
         return ftxui::emptyElement();
 
     using namespace ftxui;
@@ -27,7 +27,7 @@ ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
     opts = ftxui::hbox(
         std::move(opts),
         ftxui::filler(),
-        ftxui::dim(ftxui::text("← → 选择  Enter 确认  Esc 取消"))
+        ftxui::dim(ftxui::text("← → 选择  Enter 确认/返回  Esc 返回"))
     );
 
     return ftxui::vbox({

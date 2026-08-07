@@ -88,12 +88,14 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
                                  CLFSecurityPolicy& policy,
                                  std::function<bool(const std::string&)> confirmCallback,
                                  ToolStats& stats,
-                                 CLF::CLFTypes::ICLFOutput* output)
+                                 CLF::CLFTypes::ICLFOutput* output,
+                                 std::atomic<bool>* interruptFlag)
     : m_tools(tools)
     , m_securityPolicy(policy)
     , m_confirmCallback(std::move(confirmCallback))
     , m_stats(stats)
-    , m_output(output) {
+    , m_output(output)
+    , m_interruptFlag(interruptFlag) {
 }
 
 std::vector<CLFToolResult> CLFToolExecutor::execute(
@@ -105,6 +107,12 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     int readCount   = m_stats.readCount;
 
     for (const auto& call : calls) {
+        // 中断检查：工具执行前检查（"返回" 确认栏触发）
+        if (m_interruptFlag && m_interruptFlag->load()) {
+            if (m_output) m_output->emitContent("  ⎿ ⏹ 已中断\n");
+            break;
+        }
+
         CLFToolResult result;
         result.m_toolCallId = call.m_id;
         result.m_name       = call.m_name;
@@ -153,6 +161,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 result.m_content = "[Denied by user] 用户拒绝了该操作。";
                 if(m_output) m_output->emitContent("  ⎿ ✗ denied\n");
                 results.push_back(std::move(result));
+                // "返回" 触发了 interrupt → 停止后续工具
+                if (m_interruptFlag && m_interruptFlag->load()) break;
                 continue;
             }
         }
