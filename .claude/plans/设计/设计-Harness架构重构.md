@@ -1,6 +1,14 @@
 # 设计-Harness 架构重构
 
-> 状态：设计中 | 创建：2026-08-04 | 参考：Claude Code Harness Architecture
+> 状态：已完成 | 创建：2026-08-04 | 审查日期：2026-08-07
+> 
+> **⚠️ 审查标记**：本文档是开发过程文档。以下内容与当前代码**不一致**，阅读时请注意：
+> - `ICLFOutput` 接口实际为 **6 方法**（非文档描述的 11 方法），`onToolCall/onToolResult/askSelect/askInput/requestShutdown` 未实现，`InterruptError` 不存在
+> - `confirm` 机制改为 **CLFTerminal 内部 CV 同步 + 底部确认栏**（非嵌套 Loop，非双向注入 setRepl）
+> - 中断改为**标志检查 + 返回字符串**（非 throw InterruptError）
+> - `CLFConsole` 已删除（非保留为私有辅助），`CLFScrollBuffer` 由 `CLFScrollView` 取代
+> - `MockOutput` 测试未实施
+> - 以 `> **DEPRECATED:**` 标记的段落均与当前代码不符
 
 ## 1. 背景
 
@@ -105,6 +113,8 @@ Claude Code 整个产品就是一个 Harness。Anthropic 的定义："Claude Cod
 | 3 | **中断靠信号** | 轮询 `isInterrupted()` 在主线程阻塞（等子进程）时完全失效——必须用信号驱动 |
 
 ### 接口定义
+
+> **DEPRECATED: 下文接口为设计初稿，实际 ICLFOutput 仅 6 个方法（emitContent/emitRaw/setStatus/confirm/onInterrupt/emitError），onToolCall/onToolResult/askSelect/askInput/requestShutdown/InterruptError 均未实现。**
 
 ```cpp
 // CLFTypes/ICLFOutput.hpp — Agent → UI 输出抽象, CLI 约束版

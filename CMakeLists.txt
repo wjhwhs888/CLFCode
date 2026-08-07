@@ -4,7 +4,7 @@ project(CLFCode VERSION 1.0.0 LANGUAGES CXX)
 # 测试支持（顶层启用，src/ 下 add_test 注册）
 enable_testing()
 
-# FTXUI — C++ 声明式终端 UI 库 (MIT, 零外部依赖, v6.1.9)
+# FTXUI — C++ 声明式终端 UI 库 (MIT, 零外部依赖, v7.0.0)
 # 源码位于 3rdparty/ftxui/, 随项目版本控制
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/ftxui ${CMAKE_BINARY_DIR}/ftxui)
 
