@@ -243,20 +243,29 @@ int CLFRepl::run() {
                 return true;
             }
 
-            // === 5. Esc: 立即中断（双击退出 + Alt+Enter 见第 2 批）===
-            // FTXUI v7 首次 ESC 生成双字节 Special({27,27})，后续生成单字节 Special({27})
-            // 两者都视为用户中断
+            // === 5. Esc: 双击退出 + 立即中断 ===
+            // 注：Alt+Enter 弃用（终端层面触发全屏），换行用 Ctrl+N
             if (e == ftxui::Event::Escape
                 || e == ftxui::Event::Special({27, 27})) {
+                // 5a. 双击检测（空闲时 500ms 内连续两次 Esc → 退出）
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - m_lastEscTime).count();
+                if (elapsed < 500 && !asyncSubmit.busy()) {
+                    m_lastEscTime = {};
+                    m_dispatcher->handle("/exit");
+                    return true;
+                }
+                m_lastEscTime = now;
+
+                // 5b. 立即中断
                 if (terminal && terminal->m_interruptCb)
                     terminal->m_interruptCb();
                 m_justInterrupted = true;
-                // Agent 运行中（或 CPR 的 ESC 紧随其后的情况）→ 清空输入截获 CPR 泄露
                 if (asyncSubmit.busy() || m_needRestoreInput) {
                     inputText.clear();
                     m_needRestoreInput = true;
                 }
-                // 接下来 N 帧持续剥离 CPR（捕获跨事件循环到达的残留字节）
                 m_escCleanupFrames = 3;
                 if (terminal) terminal->setStatus("⏹ 中断中…");
                 screen.PostEvent(ftxui::Event::Custom);

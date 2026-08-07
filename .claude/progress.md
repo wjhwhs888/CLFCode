@@ -2,27 +2,25 @@
 
 ## 已完成
 
-### 2026-08-07 快捷键方案 — 第 1 批核心输入输出 ✅
+### 2026-08-07 快捷键方案 — 第 1~2 批完成 ✅
 
-**功能确认**：
+**第 1 批（核心输入输出）**：
 - ✅ Enter/Ctrl+D 提交，Ctrl+N 换行，滚轮/翻页/跳转，Tab 不切焦点
 - ✅ Shift+Tab 模式切换（含确认栏期间）
-- ✅ 确认栏两选项（确认/返回），"返回"=拒绝+中断+回编辑，ESC/CtrlC 同行为中断
-- ✅ ESC 中断后输入框回显上次提交内容
-- ✅ ESC 中断后再次输入正常工作
-- ✅ 确认栏 Shift+Tab 透传模式切换
-- ✅ `[1;1R` CPR 残留剥离（CatchEvent 尾部 + Renderer 双重）
+- ✅ 确认栏两选项（确认/返回），"返回"/ESC/CtrlC = 拒绝+中断+回编辑
+- ✅ ESC 中断后输入框回显上次提交
+- ✅ `[1;1R` CPR 残留剥离
+
+**第 2 批（双击退出）**：
+- ✅ 空闲时 500ms 内双击 ESC → `/exit` 退出程序
+- ❌ Alt+Enter 弃用 — 终端层面触发全屏，与 FTXUI 冲突
 
 **关键修复**：
-- ESC 单次即中断：根因为 FTXUI v7 首次 ESC 生成 `Event::Special({27,27})`（双字节），不是 `Event::Special({27})`（单字节）。同时匹配两者即可
-- 移除 `input->TakeFocus()`：修复光标频繁闪烁问题
-- `m_interrupted` 在 `runTurn()` 开头重置
-- Agent 三层中断检查：流式返回后 + ToolExecutor 逐个 tool 前 + 迭代开始
-- 确认栏线程安全：`isConfirmActive()`/`setConfirmActive()` + `notify_one` 前加 `m_confirmMutex`
+- ESC 单次即中断：FTXUI v7 首次 ESC 为 `Event::Special({27,27})`，非 `Special({27})`
+- 移除 `input->TakeFocus()`：修复光标频繁闪烁
+- 确认栏线程安全 + ToolExecutor 中断注入 + Agent 三层中断检查
 
 **设计文档**: [plans/设计-快捷键方案设计.md](../plans/设计-快捷键方案设计.md)
-
-**文件变更**: `CMakeLists.txt`, `CLFRepl.hpp/cpp`, `CLFTerminal.hpp/cpp`, `CLFConfirmBar.cpp`, `CLFAgentLoop.cpp`, `CLFToolExecutor.hpp/cpp`, `CLFHttpClient.hpp/cpp`, `ICLFHttpClient.hpp`
 
 ### 2026-08-06 代码清理 + OCP 重构 + 组件提取 + CJK 缓解 ✅
 ### 2026-08-05 UI 全面重构 ✅
@@ -32,8 +30,10 @@
 
 ## 待做
 
-### 快捷键方案 — 第 2 批：Alt+Enter 换行 + 双击退出
 ### 快捷键方案 — 第 3 批：剪贴板 + 历史导航
+- Ctrl+V 粘贴 + Ctrl+Y 全量复制（上限 5000 行）
+- ↑/↓ 边界切换历史导航
+- `m_inputHistory` / `m_historyIndex` 成员已就位
 
 ## 已知问题
 

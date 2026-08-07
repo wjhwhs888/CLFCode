@@ -41,13 +41,15 @@ private:
     std::string m_historyDir;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
 
-    // 快捷键状态（第 1 批占位，第 2 批启用 Alt+Enter / 双击退出）
-    bool        m_escPending = false;
+    // 快捷键状态
+    bool        m_escPending = false;       // Alt+Enter 延迟检测中
+    std::chrono::steady_clock::time_point m_escTime;       // Alt+Enter timer 起始时间
+    std::chrono::steady_clock::time_point m_lastEscTime;   // 双击退出计时
     bool        m_justInterrupted = false;  // ESC 中断标记（Renderer 剥离 CPR 残留）
     bool        m_needRestoreInput = false; // 中断后需恢复上次提交的输入
     int         m_escCleanupFrames = 0;     // ESC 后持续剥离 CPR 的帧数
     std::string m_lastSubmittedInput;       // 上一次提交的原始输入
-    std::thread m_escTimer;
+    std::thread m_escTimer;                 // Alt+Enter 50ms 延迟线程
     // 输入历史（第 3 批启用）
     std::vector<std::string> m_inputHistory;
     int m_historyIndex = -1;
