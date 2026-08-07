@@ -41,7 +41,27 @@ void CLFTerminal::requestRefresh() {
 
 CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
     std::lock_guard lock(m_mutex);
+    // 思考缓冲按换行切割（快照中提供行列表）
+    std::vector<std::string> thinkLines;
+    if (!m_thinkingBuffer.empty()) {
+        size_t pos = 0;
+        while (pos < m_thinkingBuffer.size()) {
+            size_t nl = m_thinkingBuffer.find('\n', pos);
+            if (nl == std::string::npos) {
+                thinkLines.push_back(m_thinkingBuffer.substr(pos));
+                break;
+            }
+            thinkLines.push_back(m_thinkingBuffer.substr(pos, nl - pos));
+            pos = nl + 1;
+        }
+    }
+    int elapsed = m_thinkingElapsed;
+    if (m_thinkingActive) {
+        elapsed = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - m_thinkingStart).count());
+    }
     return {m_contentBuffer, m_pendingLine, m_statusText,
+            std::move(thinkLines), m_thinkingActive, m_thinkingBytes, elapsed,
             m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel};
 }
 
@@ -50,6 +70,13 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
 void CLFTerminal::emitContent(const std::string& text) {
     {
         std::lock_guard lock(m_mutex);
+        // 正式回复开始 → 思考阶段结束，保存耗时
+        if (!text.empty() && m_thinkingActive) {
+            m_thinkingActive = false;
+            m_thinkingElapsed = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - m_thinkingStart).count());
+        }
         for (char c : text) {
             // 实时过滤 ANSI: 防止裸 ESC 码进入 m_pendingLine 被 Renderer 渲染
             if (m_inAnsiSeq) {
@@ -131,6 +158,53 @@ void CLFTerminal::onInterrupt(std::function<void()> cb) {
 
 void CLFTerminal::emitError(const std::string& msg) {
     emitContent(red("✗ ") + msg);
+}
+
+// ---- 思考内容（与 emitContent 分离，UI 层 Ctrl+O 折叠/展开） ----
+
+void CLFTerminal::appendThinking(const std::string& text) {
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_thinkingBuffer.empty())
+            m_thinkingStart = std::chrono::steady_clock::now();
+        m_thinkingBuffer += text;
+        m_thinkingBytes += text.size();
+        m_thinkingActive = true;
+    }
+    if (!m_refreshPending.exchange(true))
+        requestRefresh();
+}
+
+void CLFTerminal::clearThinking() {
+    {
+        std::lock_guard lock(m_mutex);
+        m_thinkingBuffer.clear();
+        m_thinkingBytes = 0;
+        m_thinkingActive = false;
+    }
+}
+
+bool CLFTerminal::hasThinkingContent() const {
+    std::lock_guard lock(m_mutex);
+    return !m_thinkingBuffer.empty();
+}
+
+std::vector<std::string> CLFTerminal::getThinkingLines() const {
+    std::lock_guard lock(m_mutex);
+    std::vector<std::string> result;
+    if (m_thinkingBuffer.empty()) return result;
+    // 简单按换行分割（推理内容通常是一段连续文字）
+    size_t pos = 0;
+    while (pos < m_thinkingBuffer.size()) {
+        size_t nl = m_thinkingBuffer.find('\n', pos);
+        if (nl == std::string::npos) {
+            result.push_back(m_thinkingBuffer.substr(pos));
+            break;
+        }
+        result.push_back(m_thinkingBuffer.substr(pos, nl - pos));
+        pos = nl + 1;
+    }
+    return result;
 }
 
 } // namespace CLF::CLFUI

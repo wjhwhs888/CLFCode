@@ -125,9 +125,10 @@ int CLFRepl::run() {
 
             // 获取终端宽度用于硬换行（避免长行超出视口）
             int termW = CLFTerminal::getTerminalWidth();
-            int wrapW = (termW > 20) ? termW - 2 : 78;  // 留 2 列 margin
+            int wrapW = (termW > 20) ? termW : 78;  // 不留 margin，用满终端宽度
 
             ftxui::Elements allLines;
+
             for (auto& l : snap.lines) {
                 if (wrapW > 0) {
                     for (size_t pos = 0; pos < l.size(); pos += wrapW)
@@ -146,6 +147,17 @@ int CLFRepl::run() {
                 }
             }
 
+            // ---- 思考过程（内容区最后，Ctrl+T 折叠/展开） ----
+            if (snap.thinkingActive || !snap.thinkingLines.empty()) {
+                allLines.push_back(ftxui::dim(ftxui::text(
+                    "  Thought for " + std::to_string(snap.thinkingElapsed)
+                    + "s (ctrl+t to expand)")));
+                if (!snap.thinkingActive && m_showThinking && !snap.thinkingLines.empty()) {
+                    for (auto& tl : snap.thinkingLines)
+                        allLines.push_back(ftxui::dim(ftxui::text("  " + tl)));
+                }
+            }
+
             scrollView.update(static_cast<int>(allLines.size()),
                               CLFTerminal::getTerminalHeight(), 7);
             auto contentArea = ftxui::vbox(scrollView.renderWindow(allLines)) | ftxui::flex;
@@ -154,8 +166,15 @@ int CLFRepl::run() {
                 ? ftxui::dim(ftxui::text("  " + snap.statusText))
                 : ftxui::emptyElement();
 
+            // 状态栏：模型名 │ 目录 │ 安全模式 │ 快捷键
             auto modeLine = ftxui::dim(ftxui::hbox({
-                ftxui::text("  " + m_dispatcher->modeName() + " mode on"),
+                ftxui::text("  " + m_agent.getConfig().m_modelName),
+                ftxui::separator(),
+                ftxui::text(" 📁 " + std::filesystem::path(CLFConfigLoader::getWorkingDir()).filename().string()),
+                ftxui::separator(),
+                ftxui::text(" 🔒 " + m_dispatcher->modeName()),
+                ftxui::filler(),
+                ftxui::text("ctrl+t: 思考  "),
             }));
 
             return ftxui::vbox({
@@ -229,9 +248,15 @@ int CLFRepl::run() {
                 return true;
             }
 
-            // === 3. 换行（仅 Ctrl+N, Alt+Enter 见第 2 批）===
+            // === 3. 换行 ===
             if (e == ftxui::Event::CtrlN) {
                 input->OnEvent(ftxui::Event::Character("\n"));
+                return true;
+            }
+
+            // Ctrl+T: 切换思考过程显示/隐藏
+            if (e == ftxui::Event::CtrlT) {
+                m_showThinking = !m_showThinking;
                 return true;
             }
 
@@ -413,14 +438,7 @@ void CLFRepl::submit(const std::string& input) {
 
     if (m_output) m_output->emitContent("● " + CLFTerminal::cyan("CLFCode") + ": ");
     try {
-        auto t1 = std::chrono::steady_clock::now();
         std::string response = m_agent.runTurn(input);
-        auto t2 = std::chrono::steady_clock::now();
-        auto el = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
-        if (el > 0) {
-            if (m_output) m_output->emitContent(
-                "\n" + CLFTerminal::gray("  Thought for " + std::to_string((int)el) + "s") + "\n");
-        }
         if (!response.empty() && response != "[Interrupted]")
             if (m_output) m_output->emitContent(response + "\n");
     } catch (const std::exception& e) {

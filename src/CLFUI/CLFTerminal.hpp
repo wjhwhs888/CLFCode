@@ -44,6 +44,12 @@ public:
     void onInterrupt(std::function<void()> cb) override;
     void emitError(const std::string& m) override;
 
+    // === ICLFOutput ⑥ 思考内容 ===
+    void appendThinking(const std::string& text) override;
+    void clearThinking() override;
+    bool hasThinkingContent() const;
+    std::vector<std::string> getThinkingLines() const;
+
     // 线程安全：confirm 工作线程写 / 主线程 CatchEvent 读
     bool isConfirmActive() const { std::lock_guard lock(m_mutex); return m_confirmActive; }
     void setConfirmActive(bool v) { std::lock_guard lock(m_mutex); m_confirmActive = v; }
@@ -53,6 +59,12 @@ public:
         std::vector<std::string> lines;
         std::string pendingLine;
         std::string statusText;
+        // 思考内容（折叠/展开用）
+        std::vector<std::string> thinkingLines;
+        bool thinkingActive = false;
+        size_t thinkingBytes = 0;
+        int  thinkingElapsed = 0;  // 思考已持续秒数
+        // confirm
         bool confirmActive = false;
         std::string confirmPrompt;
         std::vector<std::string> confirmOpts;
@@ -64,6 +76,12 @@ public:
     std::vector<std::string> m_contentBuffer;
     std::string  m_pendingLine;
     bool         m_inAnsiSeq = false;
+    // 思考缓冲（与 content 分离，Ctrl+T 折叠/展开）
+    std::string  m_thinkingBuffer;
+    bool         m_thinkingActive = false;
+    size_t       m_thinkingBytes = 0;
+    int          m_thinkingElapsed = 0;  // 思考总耗时（秒）
+    std::chrono::steady_clock::time_point m_thinkingStart;
     std::string  m_statusText;
     // confirm (由 CLFTerminal::confirm + CLFConfirmBar 共同操作)
     std::string  m_confirmPrompt;

@@ -44,41 +44,43 @@ std::string extractKeyParam(const std::string& argsJson) {
 struct ToolResultDisplay {
     bool ok;
     std::string text;
+    int lines = 0;
+    int chars = 0;
 };
 ToolResultDisplay formatToolResult(const std::string& resultJson) {
     try {
         auto r = nlohmann::json::parse(resultJson);
         if (r.contains("exitCode")) {
             int code = r["exitCode"].get<int>();
-            if (code == 0) return {true, "ok"};
+            if (code == 0) return {true, "ok", 0, 0};
             std::string detail;
             if (r.contains("stderr") && !r["stderr"].get<std::string>().empty())
                 detail = r["stderr"].get<std::string>();
             else if (r.contains("stdout") && !r["stdout"].get<std::string>().empty())
                 detail = r["stdout"].get<std::string>();
             if (detail.size() > 80) detail = detail.substr(0, 77) + "...";
-            return {false, detail.empty() ? ("exit " + std::to_string(code)) : detail};
+            return {false, detail.empty() ? ("exit " + std::to_string(code)) : detail, 0, 0};
         }
         bool success = r.value("success", true);
         if (!success) {
             std::string err = r.value("error", std::string("failed"));
-            return {false, err};
+            return {false, err, 0, 0};
         }
         if (r.contains("content") && r["content"].is_string()) {
             const auto& c = r["content"].get<std::string>();
             int lines = 1;
             for (char ch : c) if (ch == '\n') ++lines;
-            return {true, std::to_string(lines) + " lines, " + std::to_string(c.size()) + " chars"};
+            return {true, std::to_string(lines) + " lines, " + std::to_string(c.size()) + " chars", lines, static_cast<int>(c.size())};
         }
         if (r.contains("stdout") && r["stdout"].is_string()) {
             const auto& out = r["stdout"].get<std::string>();
             int lines = 1;
             for (char ch : out) if (ch == '\n') ++lines;
-            return {true, std::to_string(lines) + " lines"};
+            return {true, std::to_string(lines) + " lines", lines, static_cast<int>(out.size())};
         }
-        return {true, std::to_string(resultJson.size()) + " chars"};
+        return {true, std::to_string(resultJson.size()) + " chars", 0, static_cast<int>(resultJson.size())};
     } catch (...) {
-        return {true, std::to_string(resultJson.size()) + " chars"};
+        return {true, std::to_string(resultJson.size()) + " chars", 0, static_cast<int>(resultJson.size())};
     }
 }
 
@@ -171,12 +173,32 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         try {
             result.m_content = it->m_handler(call.m_arguments);
             auto rd = formatToolResult(result.m_content);
-            if (m_output) m_output->emitContent("  ⎿ "
-                + std::string(rd.ok ? "✓ " : "✗ ")
-                + rd.text + "\n");
+            if (m_output) {
+                if (rd.ok && rd.text.size() <= 200) {
+                    // 成功小输出：绿色单行 ✓
+                    m_output->emitContent("  ✓ " + call.m_name
+                        + (keyParam.empty() ? "" : "(" + keyParam + ")") + "\n");
+                } else if (rd.ok) {
+                    // 成功大输出：折叠概要
+                    m_output->emitContent("  ✓ " + call.m_name
+                        + (keyParam.empty() ? "" : "(" + keyParam + ")")
+                        + " — " + std::to_string(rd.lines) + " lines, "
+                        + std::to_string(rd.chars) + " chars\n");
+                } else {
+                    // 失败：红色 ✗ 截断 reason
+                    auto reason = rd.text.size() > 100 ? rd.text.substr(0, 100) + "…" : rd.text;
+                    m_output->emitContent("  ✗ " + call.m_name
+                        + (keyParam.empty() ? "" : "(" + keyParam + ")")
+                        + " — " + reason + " (scroll for full detail)\n");
+                }
+            }
         } catch (const std::exception& e) {
             result.m_content = std::string("Tool execution error: ") + e.what();
-            if(m_output) m_output->emitContent(std::string("  ⎿ ✗ ") + e.what() + "\n");
+            std::string err = e.what();
+            if (err.size() > 100) err = err.substr(0, 100) + "…";
+            if(m_output) m_output->emitContent("  ✗ " + call.m_name
+                + (keyParam.empty() ? "" : "(" + keyParam + ")")
+                + " — " + err + " (scroll for full detail)\n");
         }
 
         results.push_back(std::move(result));

@@ -85,6 +85,7 @@ private:
     ToolStats                         m_lastToolStats;
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
     std::atomic<bool>                 m_interrupted{false};
+    size_t                           m_lastReasoningSize = 0;  // appendThinking 增量追踪
 };
 
 } // namespace CLF::CLFCore

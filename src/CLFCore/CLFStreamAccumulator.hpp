@@ -34,6 +34,10 @@ public:
     const std::vector<CLFToolCall>& getToolCalls() const { return m_toolCalls; }
     const std::string& getFinishReason() const { return m_finishReason; }
 
+    // 思考过程（reasoning_content，与 content 分通道，供 UI 折叠）
+    bool hasReasoning() const { return !m_reasoning.empty(); }
+    const std::string& getReasoning() const { return m_reasoning; }
+
     void reset();
 
 private:
@@ -41,6 +45,7 @@ private:
     void finalizeToolCalls();
 
     std::string m_content;
+    std::string m_reasoning;  // 独立累积推理内容
     std::string m_finishReason;
     std::vector<CLFToolCall> m_toolCalls;
     bool m_finished = false;
@@ -61,16 +66,18 @@ private:
 inline std::string CLFStreamAccumulator::feedDelta(const nlohmann::json& delta) {
     std::string contentDelta;
 
-    // 提取推理过程（DeepSeek 等模型在 thinking 模式下输出，优先于 content）
+    // 提取推理过程 → 独立累积到 m_reasoning（UI 层 Ctrl+O 折叠/展开）
     if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
-        contentDelta = delta["reasoning_content"].get<std::string>();
-        m_content += contentDelta;
+        auto rc = delta["reasoning_content"].get<std::string>();
+        if (!rc.empty()) {
+            m_reasoning += rc;
+        }
     }
-    // 提取文本增量
+    // 提取文本增量 → m_content（正式回复，正常流式显示）
     if (delta.contains("content") && delta["content"].is_string()) {
         auto c = delta["content"].get<std::string>();
         if (!c.empty()) {
-            contentDelta += c;
+            contentDelta = c;
             m_content += c;
         }
     }
@@ -122,6 +129,7 @@ inline void CLFStreamAccumulator::markDone() {
 
 inline void CLFStreamAccumulator::reset() {
     m_content.clear();
+    m_reasoning.clear();
     m_finishReason.clear();
     m_toolCalls.clear();
     m_parts.clear();

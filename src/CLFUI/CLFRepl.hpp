@@ -50,6 +50,8 @@ private:
     int         m_escCleanupFrames = 0;     // ESC 后持续剥离 CPR 的帧数
     std::string m_lastSubmittedInput;       // 上一次提交的原始输入
     std::thread m_escTimer;                 // Alt+Enter 50ms 延迟线程
+    bool        m_showThinking = false;  // Ctrl+O 切换思考过程显示
+
     // 输入历史（第 3 批）
     std::vector<std::string> m_inputHistory;
     int m_historyIndex = -1;       // -1 = 不在历史浏览中

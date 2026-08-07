@@ -6,6 +6,7 @@
 //   - 纯虚接口 (MockOutput 可替换 CLFTerminal)
 //   - 中断信号驱动 (非轮询)
 //   - 瞬时状态统一槽 (覆盖式, 防冲突)
+//   - 思考内容分离 (appendThinking/clearThinking, 与 emitContent 分通道)
 
 #pragma once
 
@@ -55,6 +56,14 @@ public:
 
     // 错误输出 — UI 标红, 不影响正常输出流, Agent 继续运行
     virtual void emitError(const std::string& message) = 0;
+
+    // ========== ⑥ 思考内容（与 emitContent 分通道，UI 层可折叠） ==========
+
+    // 追加推理过程文本（不在主内容区显示，由 UI 层 Ctrl+O 展开）
+    virtual void appendThinking(const std::string& text) = 0;
+
+    // 清空当前 turn 的推理内容（ESC 中断 / 新 turn 开始时调用）
+    virtual void clearThinking() = 0;
 };
 
 } // namespace CLF::CLFTypes
