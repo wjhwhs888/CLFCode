@@ -24,7 +24,7 @@ src/
 - **第三方库**（在 `3rdparty/` 或 `FetchContent`）:
   - [cpp-httplib](https://github.com/yhirose/cpp-httplib) — HTTP/HTTPS 客户端
   - [nlohmann/json](https://github.com/nlohmann/json) — JSON 解析
-  - [FTXUI](https://github.com/ArthurSonzogni/FTXUI) v6.1.9 — 终端 UI 框架
+  - [FTXUI](https://github.com/ArthurSonzogni/FTXUI) v7.0.0 — 终端 UI 框架
   - [Boost.UT](https://github.com/boost-ext/ut) — 单元测试
 
 ## 快速开始
@@ -42,6 +42,20 @@ cmake --build build -j6
 # 测试
 ctest --test-dir build --output-on-failure -j6
 ```
+
+## 快捷键
+
+| 功能 | 快捷键 |
+|------|--------|
+| 提交输入 | `Enter` / `Ctrl+D` |
+| 换行 | `Ctrl+N` |
+| 中断 Agent | `Esc`（单击，中断后回显上次输入） |
+| 退出程序 | `Esc Esc`（空闲时双击） |
+| 切换安全模式 | `Shift+Tab` |
+| 历史导航 | `↑` / `↓`（首行↑翻历史，尾行↓回草稿） |
+| 滚动内容 | 鼠标滚轮 / `PgUp` / `PgDn` / `Home` / `End` |
+| 粘贴 | `Ctrl+V`（终端原生） |
+| 确认弹窗 | `← →` 选择 / `Enter` 确认或返回 / `Esc` 返回 |
 
 ## 设计文档
 
