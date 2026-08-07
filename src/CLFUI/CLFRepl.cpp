@@ -77,7 +77,9 @@ int CLFRepl::run() {
         auto input = ftxui::Input(&inputText, "❯ ", inputOpt);
         auto root  = ftxui::Container::Vertical({input});
         root->SetActiveChild(input);
-        input->TakeFocus();
+        // 暂不调 TakeFocus(): FTXUI v7 可能内部发 DSR 查询光标位置，
+        //   终端 CPR 响应 \033[1;1R 会与用户 ESC 的 \033 在 stdin 合并
+        // input->TakeFocus();
 
         CLFConfirmBar confirmBar;
 
@@ -204,6 +206,11 @@ int CLFRepl::run() {
                     terminal->m_confirmSel = 1 - terminal->m_confirmSel;
                     return true;
                 }
+                // Shift+Tab: 确认栏期间仍可切换安全模式
+                if (e == ftxui::Event::TabReverse) {
+                    cycleMode();
+                    return true;
+                }
                 return true;  // 屏蔽其他所有按键
             }
 
@@ -237,7 +244,10 @@ int CLFRepl::run() {
             }
 
             // === 5. Esc: 立即中断（双击退出 + Alt+Enter 见第 2 批）===
-            if (e == ftxui::Event::Escape) {
+            // FTXUI v7 首次 ESC 生成双字节 Special({27,27})，后续生成单字节 Special({27})
+            // 两者都视为用户中断
+            if (e == ftxui::Event::Escape
+                || e == ftxui::Event::Special({27, 27})) {
                 if (terminal && terminal->m_interruptCb)
                     terminal->m_interruptCb();
                 m_justInterrupted = true;

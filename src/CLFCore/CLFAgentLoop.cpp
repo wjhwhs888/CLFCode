@@ -107,8 +107,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Error] ") + errorMsg;
                 }
                 if (interrupted || m_interrupted) {
-                    // abort() 可能直接关闭连接导致回调不再触发，局部 interrupted 未置位，
-                    // 此时需兜底检查成员 m_interrupted
+                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
+                    return std::string("[Interrupted]");
+                }
+                if (response.m_wasAborted) {
+                    // libcurl 层检测到中断 → 直接返回，不重试
                     if (m_output) m_output->emitContent("\n⏹ 已中断\n");
                     return std::string("[Interrupted]");
                 }
@@ -148,6 +151,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 thinking.stop();
 
                 if (m_interrupted) {
+                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
+                    return std::string("[Interrupted]");
+                }
+                if (response.m_wasAborted) {
                     if (m_output) m_output->emitContent("\n⏹ 已中断\n");
                     return std::string("[Interrupted]");
                 }

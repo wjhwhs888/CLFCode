@@ -12,6 +12,7 @@ struct CLFHttpResponse {
     int         m_statusCode = 0;
     std::string m_body;
     std::string m_error;
+    bool        m_wasAborted = false;  // true = 用户中断，上层应跳过重试
 };
 
 // HTTP 客户端抽象接口（L2 集成测试用 Mock 替换）
