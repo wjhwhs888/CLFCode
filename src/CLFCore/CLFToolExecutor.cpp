@@ -13,14 +13,7 @@
 namespace CLF::CLFCore {
 
 // ============================================================================
-// ANSI 颜色常量
-// ============================================================================
 namespace {
-
-constexpr const char* ANSI_GREEN  = "\033[32m";
-constexpr const char* ANSI_RED    = "\033[31m";
-constexpr const char* ANSI_GRAY   = "\033[90m";
-constexpr const char* ANSI_RESET  = "\033[0m";
 
 // 从工具参数 JSON 中提取关键参数用于显示
 std::string extractKeyParam(const std::string& argsJson) {
@@ -175,41 +168,31 @@ WritePreview prepareWritePreview(const CLFToolCall& call) {
 }
 
 // ============================================================================
-// renderDiffAnsi — 设计 §2.1 Step 3（结构化 diff → ANSI 彩色文本）
-// 两遍渲染：第一遍识别 hunk 边界，第二遍带 header 输出
+// renderDiff — 将结构化 diff 逐行 emit 到 ICLFOutput（带样式）
 // ============================================================================
 
-std::string renderDiffAnsi(const WritePreview& preview) {
-    std::string out;
+void renderDiff(CLF::CLFTypes::ICLFOutput* output, const WritePreview& preview) {
     const auto& diff  = preview.diffLines;
     const auto& stats = preview.diffStats;
+    using LS = CLF::CLFTypes::ICLFOutput::LineStyle;
 
-    if (diff.empty() && !stats.truncated) return "";
+    if (diff.empty() && !stats.truncated) return;
 
     // 摘要行
     if (stats.truncated) {
-        out += "  ";
-        out += ANSI_GRAY;
-        out += "⎿  " + stats.truncReason;
-        out += ANSI_RESET;
-        out += "\n";
+        output->emitStyledLine("  ⎿  " + stats.truncReason, LS::Context);
     } else if (stats.added + stats.removed > 0) {
-        out += "  ";
-        out += ANSI_GRAY;
-        out += "⎿  +" + std::to_string(stats.added)
-            + " -" + std::to_string(stats.removed);
-        if (stats.hunks > 0) {
-            out += " in " + std::to_string(stats.hunks) + " hunk";
-            if (stats.hunks > 1) out += "s";
-        }
-        out += ANSI_RESET;
-        out += "\n";
+        std::string info = "  ⎿  +" + std::to_string(stats.added)
+                         + " -" + std::to_string(stats.removed);
+        if (stats.hunks > 0)
+            info += " in " + std::to_string(stats.hunks) + " hunk" + (stats.hunks > 1 ? "s" : "");
+        output->emitStyledLine(info, LS::Context);
     }
 
-    if (stats.truncated && diff.empty()) return out;
-    if (diff.empty()) return out;
+    if (stats.truncated && diff.empty()) return;
+    if (diff.empty()) return;
 
-    // 第一遍：标记每个 diff 行所属的 hunk 编号（-1 = 不属于任何 hunk）
+    // 第一遍：标记 hunk 边界
     int total = static_cast<int>(diff.size());
     std::vector<int> hunkId(total, -1);
     int curHunk = 0;
@@ -218,20 +201,16 @@ std::string renderDiffAnsi(const WritePreview& preview) {
         bool isSkip = (diff[i].text == "..." ||
                        diff[i].text.find("... (") == 0);
         if (isSkip) continue;
-
         bool isChange = (diff[i].op == CLF::CLFTools::CLFDiffOp::Add ||
                          diff[i].op == CLF::CLFTools::CLFDiffOp::Remove);
         if (isChange && hunkId[i] == -1) {
-            // 新 hunk：向前扩展 context 行，向后扩展 context 行
             int lo = i;
             while (lo > 0 && (i - lo) < 5 && diff[lo - 1].op == CLF::CLFTools::CLFDiffOp::Keep && diff[lo - 1].text != "...") --lo;
             int hi = i;
             while (hi < total - 1 && diff[hi + 1].op == CLF::CLFTools::CLFDiffOp::Keep && diff[hi + 1].text != "...") ++hi;
-            // 也标记后续变更行
             int end = hi;
             for (; end < total; ++end) {
                 if (diff[end].op == CLF::CLFTools::CLFDiffOp::Keep && diff[end].text != "...") {
-                    // 检查之后是否还有变更（常规窗口）
                     bool hasNearChange = false;
                     for (int c = end + 1; c <= std::min(total - 1, end + 5); ++c) {
                         if (diff[c].op != CLF::CLFTools::CLFDiffOp::Keep) { hasNearChange = true; break; }
@@ -242,89 +221,63 @@ std::string renderDiffAnsi(const WritePreview& preview) {
                 }
             }
             if (end >= total) end = total - 1;
-            for (int k = lo; k <= end; ++k) {
+            for (int k = lo; k <= end; ++k)
                 if (hunkId[k] == -1) hunkId[k] = curHunk;
-            }
             ++curHunk;
         }
     }
 
-    // 第二遍：渲染（hunk 开始时输出 @@ header）
+    // 第二遍：逐行 emit（带样式）
     int lastHunk = -1;
     for (int i = 0; i < total; ++i) {
         const auto& line = diff[i];
 
-        // hunk header
         if (hunkId[i] != -1 && hunkId[i] != lastHunk) {
             lastHunk = hunkId[i];
-            // 找该 hunk 的第一个旧/新行号
             int oStart = 0, nStart = 0;
             for (int k = i; k < total && hunkId[k] == lastHunk; ++k) {
                 if (diff[k].oldLineNo > 0 && oStart == 0) oStart = diff[k].oldLineNo;
                 if (diff[k].newLineNo > 0 && nStart == 0) nStart = diff[k].newLineNo;
             }
             char buf[64];
-            snprintf(buf, sizeof(buf), "  @@ -%d +%d @@\n",
+            snprintf(buf, sizeof(buf), "  @@ -%d +%d @@",
                      oStart > 0 ? oStart : (nStart > 0 ? nStart : 1),
                      nStart > 0 ? nStart : (oStart > 0 ? oStart : 1));
-            out += ANSI_GRAY;
-            out += buf;
-            out += ANSI_RESET;
+            output->emitStyledLine(buf, LS::Context);
         }
 
-        // 跳过不属于任何 hunk 的行
         if (hunkId[i] == -1) continue;
 
-        // 折叠/省略行
         if (line.text == "...") {
-            out += "  ";
-            out += ANSI_GRAY;
-            out += "...\n";
-            out += ANSI_RESET;
-            lastHunk = -1; // 折叠后重新输出 header
+            output->emitStyledLine("  ...", LS::Context);
+            lastHunk = -1;
             continue;
         }
         if (line.text.find("... (") == 0) {
-            out += "  ";
-            out += ANSI_GRAY;
-            out += line.text + "\n";
-            out += ANSI_RESET;
+            output->emitStyledLine("  " + line.text, LS::Context);
             lastHunk = -1;
             continue;
         }
 
-        // 格式化行
         char numBuf[16];
+        LS style = LS::Context;
         switch (line.op) {
         case CLF::CLFTools::CLFDiffOp::Add:
             snprintf(numBuf, sizeof(numBuf), " %4d + ", line.newLineNo);
-            out += ANSI_GREEN;
-            out += numBuf;
-            out += line.text;
-            out += ANSI_RESET;
-            out += "\n";
+            style = LS::Add;
             break;
         case CLF::CLFTools::CLFDiffOp::Remove:
             snprintf(numBuf, sizeof(numBuf), " %4d - ", line.oldLineNo);
-            out += ANSI_RED;
-            out += numBuf;
-            out += line.text;
-            out += ANSI_RESET;
-            out += "\n";
+            style = LS::Remove;
             break;
         case CLF::CLFTools::CLFDiffOp::Keep:
         default:
             snprintf(numBuf, sizeof(numBuf), " %4d   ", line.newLineNo);
-            out += ANSI_GRAY;
-            out += numBuf;
-            out += line.text;
-            out += ANSI_RESET;
-            out += "\n";
+            style = LS::Context;
             break;
         }
+        output->emitStyledLine(std::string(numBuf) + line.text, style);
     }
-
-    return out;
 }
 
 } // anonymous namespace
@@ -453,10 +406,9 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
             // --- Step 3: 渲染 diff 预览 ---
             if (m_output) {
-                std::string diffAnsi = renderDiffAnsi(preview);
-                if (!diffAnsi.empty()) {
-                    m_output->emitContent(diffAnsi);
-                }
+                renderDiff(m_output, preview);
+                // 保证刷新
+                m_output->emitContent("");
             }
 
             // --- Step 4: 模式分流 ---

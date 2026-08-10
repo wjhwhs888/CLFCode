@@ -60,12 +60,13 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
         elapsed = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - m_thinkingStart).count());
     }
+    auto stylesSnap = m_lineStyles;
     std::vector<std::string> progressSnap;
     {
         std::lock_guard plock(m_progressMutex);
         progressSnap = m_progressLines;
     }
-    return {m_contentBuffer, m_pendingLine, m_statusText, std::move(progressSnap),
+    return {m_contentBuffer, m_pendingLine, std::move(stylesSnap), m_statusText, std::move(progressSnap),
             std::move(thinkLines), m_thinkingActive, m_thinkingBytes, elapsed,
             m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel};
 }
@@ -92,6 +93,7 @@ void CLFTerminal::emitContent(const std::string& text) {
             if (c == '\033') { m_inAnsiSeq = true; continue; }
             if (c == '\n') {
                 m_contentBuffer.push_back(m_pendingLine);
+                m_lineStyles.push_back(0); // Normal
                 m_pendingLine.clear();
             } else {
                 m_pendingLine += c;
@@ -113,6 +115,7 @@ void CLFTerminal::emitRaw(const std::string& data) {
         for (char c : data) {
             if (c == '\n') {
                 m_contentBuffer.push_back(m_pendingLine);
+                m_lineStyles.push_back(0); // Normal
                 m_pendingLine.clear();
             } else {
                 m_pendingLine += c;
@@ -136,6 +139,15 @@ void CLFTerminal::setStatus(const std::string& title, int cur, int total) {
         }
     }
     requestRefresh();
+}
+
+void CLFTerminal::emitStyledLine(const std::string& line, LineStyle style) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_contentBuffer.push_back(line);
+        m_lineStyles.push_back(static_cast<uint8_t>(style));
+    }
+    // 不主动 refresh，由后续 emitContent 顺带刷新
 }
 
 void CLFTerminal::setStatusTextOnly(const std::string& title) {

@@ -33,6 +33,10 @@ public:
     // [保留钩子] 当前无调用方, 待子进程输出路径接入.
     virtual void emitRaw(const std::string& data) = 0;
 
+    // 带样式的行输出（用于 diff 着色：+ 绿 / - 红 / 上下文 灰）
+    enum class LineStyle { Normal, Add, Remove, Context };
+    virtual void emitStyledLine(const std::string& line, LineStyle style) = 0;
+
     // ========== ② 瞬时状态 (统一状态槽, 覆盖式) ==========
     // cur=-1 total=-1 → 无步骤进度
     // cur>=0 total>0  → 带进度

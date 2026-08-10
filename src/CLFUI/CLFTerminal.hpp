@@ -39,6 +39,7 @@ public:
     // === ICLFOutput 实现 ===
     void emitContent(const std::string& t) override;
     void emitRaw(const std::string& d) override;
+    void emitStyledLine(const std::string& line, LineStyle style) override;
     void setStatus(const std::string& title, int cur=-1, int total=-1) override;
     void setStatusTextOnly(const std::string& title) override;
     void showProgress(const std::vector<std::string>& lines) override;
@@ -61,6 +62,7 @@ public:
     struct ContentSnapshot {
         std::vector<std::string> lines;
         std::string pendingLine;
+        std::vector<uint8_t> lineStyles; // 并行于 lines，LineStyle 枚举值
         std::string statusText;
         std::vector<std::string> progressLines; // 渐进式进度块
         // 思考内容（折叠/展开用）
@@ -78,6 +80,7 @@ public:
 
     // === 组件状态 (public — Renderer / ConfirmBar 需要访问) ===
     std::vector<std::string> m_contentBuffer;
+    std::vector<uint8_t> m_lineStyles;
     std::string  m_pendingLine;
     bool         m_inAnsiSeq = false;
     // 思考缓冲（与 content 分离，Ctrl+T 折叠/展开）

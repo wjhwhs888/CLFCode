@@ -128,14 +128,30 @@ int CLFRepl::run() {
             int wrapW = (termW > 20) ? termW : 78;  // 不留 margin，用满终端宽度
 
             ftxui::Elements allLines;
+            const bool hasStyles = (snap.lineStyles.size() == snap.lines.size());
 
-            for (auto& l : snap.lines) {
-                if (wrapW > 0) {
+            for (size_t i = 0; i < snap.lines.size(); ++i) {
+                auto& l = snap.lines[i];
+                ftxui::Element el;
+                if (wrapW > 0 && l.size() > static_cast<size_t>(wrapW)) {
+                    // 长行拆分为多个子元素，颜色统一应用
+                    ftxui::Elements parts;
                     for (size_t pos = 0; pos < l.size(); pos += wrapW)
-                        allLines.push_back(ftxui::text(l.substr(pos, wrapW)));
+                        parts.push_back(ftxui::text(l.substr(pos, wrapW)));
+                    el = ftxui::vbox(std::move(parts));
                 } else {
-                    allLines.push_back(ftxui::text(l));
+                    el = ftxui::text(l);
                 }
+                if (hasStyles && i < snap.lineStyles.size()) {
+                    auto s = static_cast<CLF::CLFTypes::ICLFOutput::LineStyle>(snap.lineStyles[i]);
+                    if (s == CLF::CLFTypes::ICLFOutput::LineStyle::Add)
+                        el = el | ftxui::color(ftxui::Color::Green);
+                    else if (s == CLF::CLFTypes::ICLFOutput::LineStyle::Remove)
+                        el = el | ftxui::color(ftxui::Color::Red);
+                    else if (s == CLF::CLFTypes::ICLFOutput::LineStyle::Context)
+                        el = ftxui::dim(el);
+                }
+                allLines.push_back(el);
             }
             if (!snap.pendingLine.empty()) {
                 auto& pl = snap.pendingLine;
