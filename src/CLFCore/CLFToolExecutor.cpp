@@ -473,6 +473,19 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                     continue;
                 }
             }
+        } else {
+            // 非 Write 类工具（execute_command 等 Command risk）的确认检查
+            if (needConfirm && m_confirmCallback) {
+                std::string prompt = "工具 [" + call.m_name + "] 需要执行高风险操作。\n"
+                                   + "参数: " + call.m_arguments;
+                if (!m_confirmCallback(prompt)) {
+                    result.m_content = "[Denied by user] 用户拒绝了该操作。";
+                    if (m_output) m_output->emitContent("  ⎿ ✗ denied\n");
+                    results.push_back(std::move(result));
+                    if (m_interruptFlag && m_interruptFlag->load()) break;
+                    continue;
+                }
+            }
         }
 
         // --- Step 6 & 7: 执行 handler + 显示结果 ---
