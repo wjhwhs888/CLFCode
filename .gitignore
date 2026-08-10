@@ -33,3 +33,4 @@ doc/contextHistory/*
 
 # 本地个人待办（用户自用，不入库）
 todo.md
+release/
