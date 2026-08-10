@@ -61,7 +61,33 @@ std::string writeFileHandler(const std::string& args) {
         std::string content = params.value("content", "");
         auto fileResult = CLF::CLFTools::writeFile(path, content);
         result["success"] = fileResult.m_success;
-        if (!fileResult.m_success) {
+        if (fileResult.m_success) {
+            result["path"]    = path;
+            result["written"] = content.size();
+        } else {
+            result["error"] = fileResult.m_error;
+        }
+    } catch (const std::exception& e) {
+        result["success"] = false;
+        result["error"]   = std::string("Handler error: ") + e.what();
+    }
+    return result.dump();
+}
+
+std::string editFileHandler(const std::string& args) {
+    using json = nlohmann::json;
+    json result;
+    try {
+        json params   = json::parse(args);
+        std::string path    = params.value("path", "");
+        std::string oldStr  = params.value("old_string", "");
+        std::string newStr  = params.value("new_string", "");
+        auto fileResult = CLF::CLFTools::editFile(path, oldStr, newStr);
+        result["success"] = fileResult.m_success;
+        if (fileResult.m_success) {
+            result["path"]    = path;
+            result["written"] = fileResult.m_content.size();
+        } else {
             result["error"] = fileResult.m_error;
         }
     } catch (const std::exception& e) {
@@ -138,7 +164,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
 
     CLFTool writeFileTool;
     writeFileTool.m_name        = "write_file";
-    writeFileTool.m_description = "将内容写入指定路径的文件（覆盖模式）";
+    writeFileTool.m_description = "将内容写入指定路径的文件（覆盖模式，原子写入）";
     writeFileTool.m_risk        = CLF::CLFCore::CLFToolRisk::Write;
     writeFileTool.m_parametersSchema = R"({
         "type": "object",
@@ -150,6 +176,22 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     })";
     writeFileTool.m_handler = writeFileHandler;
     agent.registerTool(writeFileTool);
+
+    CLFTool editFileTool;
+    editFileTool.m_name        = "edit_file";
+    editFileTool.m_description = "精确替换文件中的字符串（old_string 必须唯一匹配）";
+    editFileTool.m_risk        = CLF::CLFCore::CLFToolRisk::Write;
+    editFileTool.m_parametersSchema = R"({
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "文件路径"},
+            "old_string": {"type": "string", "description": "要替换的原字符串（必须唯一匹配）"},
+            "new_string": {"type": "string", "description": "替换后的新字符串"}
+        },
+        "required": ["path", "old_string", "new_string"]
+    })";
+    editFileTool.m_handler = editFileHandler;
+    agent.registerTool(editFileTool);
 
     CLFTool listDirTool;
     listDirTool.m_name        = "list_directory";

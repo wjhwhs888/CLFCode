@@ -31,6 +31,8 @@ add_library(clf_core STATIC
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSkillLoader.cpp
     CLFCore/CLFToolExecutor.cpp
+    CLFTools/CLFDiff.cpp          # 编入 clf_core 避免循环依赖
+    CLFTools/CLFFileOps.cpp       # 编入 clf_core（被 CLFToolExecutor 直接调用）
 )
 target_link_libraries(clf_core PUBLIC clf_types clf_network)
 target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -57,7 +59,6 @@ target_include_directories(clf_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ============================================================================
 add_library(clf_tools STATIC
     CLFTools/CLFBuiltinTools.cpp
-    CLFTools/CLFFileOps.cpp
     CLFTools/CLFCommandExec.cpp
 )
 target_link_libraries(clf_tools PUBLIC clf_core)

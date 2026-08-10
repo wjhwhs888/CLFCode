@@ -14,7 +14,7 @@ class CLFAgentLoop;
 namespace CLF::CLFTools {
 
 // 向 Agent 注册全部内置工具
-// 包括：read_file, write_file, list_directory, execute_command,
+// 包括：read_file, write_file, edit_file, list_directory, execute_command,
 //       get_current_time, echo
 void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent);
 
