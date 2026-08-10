@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(CLFCode VERSION 1.0.0 LANGUAGES CXX)
+project(CLFCode VERSION 0.1.0 LANGUAGES CXX)
 
 # 测试支持（顶层启用，src/ 下 add_test 注册）
 enable_testing()
