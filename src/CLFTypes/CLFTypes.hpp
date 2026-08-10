@@ -111,4 +111,22 @@ struct CLFTool {
     std::function<std::string(const std::string&)> m_handler; // 参数为 JSON string
 };
 
+// ============================================================================
+// 计时器标签配置
+// ============================================================================
+
+struct CLFTimerLabels {
+    std::string thinking = "thinking";
+    std::string thought   = "thought";
+    std::string working   = "Working";
+    std::string worked    = "Worked";
+};
+
+// 格式化耗时（秒 → "1m55s" / "38s"）
+inline std::string formatDurationSeconds(long long sec) {
+    if (sec >= 60)
+        return std::to_string(sec / 60) + "m" + std::to_string(sec % 60) + "s";
+    return std::to_string(sec) + "s";
+}
+
 } // namespace CLF::CLFCore

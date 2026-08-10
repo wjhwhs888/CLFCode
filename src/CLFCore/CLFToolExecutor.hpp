@@ -27,9 +27,12 @@ public:
                     std::function<bool(const std::string&)> confirmCallback,
                     ToolStats& stats,
                     CLF::CLFTypes::ICLFOutput* output = nullptr,
-                    std::atomic<bool>* interruptFlag = nullptr);
+                    std::atomic<bool>* interruptFlag = nullptr,
+                    const CLFTimerLabels* labels = nullptr,
+                    std::atomic<int>* thinkingSec = nullptr);
 
-    // 执行一组工具调用，返回结果列表（interruptFlag 置位时提前退出）
+    // 执行一组工具调用
+    // labels + thinkingSec 非空时启用渐进式显示（showProgress/finishProgress）
     std::vector<CLFToolResult> execute(const std::vector<CLFToolCall>& calls);
 
 private:
@@ -39,6 +42,8 @@ private:
     ToolStats& m_stats;
     CLF::CLFTypes::ICLFOutput* m_output;
     std::atomic<bool>* m_interruptFlag;
+    const CLFTimerLabels* m_labels = nullptr;
+    std::atomic<int>* m_thinkingSec = nullptr;
 };
 
 } // namespace CLF::CLFCore

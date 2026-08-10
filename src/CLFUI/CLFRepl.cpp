@@ -162,6 +162,15 @@ int CLFRepl::run() {
                               CLFTerminal::getTerminalHeight(), 7);
             auto contentArea = ftxui::vbox(scrollView.renderWindow(allLines)) | ftxui::flex;
 
+            // ---- 渐进式进度块（插在内容区和 statusLine 之间） ----
+            ftxui::Elements progressElements;
+            if (!snap.progressLines.empty()) {
+                for (auto& pl : snap.progressLines) {
+                    if (!pl.empty())
+                        progressElements.push_back(ftxui::text(pl));
+                }
+            }
+
             auto statusLine = !snap.statusText.empty()
                 ? ftxui::dim(ftxui::text("  " + snap.statusText))
                 : ftxui::emptyElement();
@@ -179,6 +188,7 @@ int CLFRepl::run() {
 
             return ftxui::vbox({
                 contentArea,
+                ftxui::vbox(std::move(progressElements)),
                 statusLine,
                 ftxui::separator(),
                 input->Render(),
@@ -436,7 +446,7 @@ void CLFRepl::submit(const std::string& input) {
         return;
     }
 
-    if (m_output) m_output->emitContent("● " + CLFTerminal::cyan("CLFCode") + ": ");
+    if (m_output) m_output->emitContent("\n● " + CLFTerminal::cyan("CLFCode") + ":\n ");
     try {
         std::string response = m_agent.runTurn(input);
         if (!response.empty() && response != "[Interrupted]")

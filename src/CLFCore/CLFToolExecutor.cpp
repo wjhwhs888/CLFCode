@@ -338,13 +338,17 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
                                  std::function<bool(const std::string&)> confirmCallback,
                                  ToolStats& stats,
                                  CLF::CLFTypes::ICLFOutput* output,
-                                 std::atomic<bool>* interruptFlag)
+                                 std::atomic<bool>* interruptFlag,
+                                 const CLFTimerLabels* labels,
+                                 std::atomic<int>* thinkingSec)
     : m_tools(tools)
     , m_securityPolicy(policy)
     , m_confirmCallback(std::move(confirmCallback))
     , m_stats(stats)
     , m_output(output)
-    , m_interruptFlag(interruptFlag) {
+    , m_interruptFlag(interruptFlag)
+    , m_labels(labels)
+    , m_thinkingSec(thinkingSec) {
 }
 
 // ============================================================================
@@ -356,8 +360,17 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     std::vector<CLFToolResult> results;
     results.reserve(calls.size());
 
-    int searchCount = m_stats.searchCount;
-    int readCount   = m_stats.readCount;
+    struct ProgressGuard {
+        CLF::CLFTypes::ICLFOutput* out;
+        bool committed = false;
+        ~ProgressGuard() { if (!committed) out->finishProgress(""); }
+        void commit(const std::string& s) { committed = true; out->finishProgress(s); }
+    } guard{m_output};
+
+    int searchCount   = m_stats.searchCount;
+    int readCount     = m_stats.readCount;
+    int progressReads = 0;  // 读类工具计数（用于 summary）
+    int progressEdits = 0;  // 写类工具计数
 
     for (const auto& call : calls) {
         // 中断检查
@@ -375,7 +388,10 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         if (!keyParam.empty()) {
             header += "(" + keyParam + ")";
         }
-        if (m_output) m_output->emitContent("\n" + header + "\n");
+        bool useProgressive = (m_labels && m_thinkingSec);
+        // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
+        if (m_output && (!useProgressive || call.m_name == "write_file" || call.m_name == "edit_file"))
+            m_output->emitContent("\n" + header + "\n");
 
         // 统计
         if (call.m_name.find("search") != std::string::npos) ++searchCount;
@@ -489,13 +505,18 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         }
 
         // --- Step 6 & 7: 执行 handler + 显示结果 ---
+        bool toolOk = false;
+        std::string toolResultText;
         try {
             result.m_content = it->m_handler(call.m_arguments);
             auto rd = formatToolResult(result.m_content);
+            toolOk = rd.ok;
+            toolResultText = rd.text;
 
-            if (m_output) {
+            bool useProgressive = (m_labels && m_thinkingSec);
+            if (m_output && (!useProgressive || isWriteTool)) {
+                // 渐进模式下仅写类工具走永久内容；读类工具仅 showProgress
                 if (isWriteTool && !preview.diffLines.empty()) {
-                    // Write 工具成功：摘要带 diff 统计
                     const auto& ds = preview.diffStats;
                     if (ds.added + ds.removed > 0 && !ds.truncated) {
                         m_output->emitContent(
@@ -530,14 +551,56 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             }
         } catch (const std::exception& e) {
             result.m_content = std::string("Tool execution error: ") + e.what();
-            std::string err = e.what();
-            if (err.size() > 100) err = err.substr(0, 100) + "…";
+            toolOk = false;
+            toolResultText = e.what();
+            if (toolResultText.size() > 100) toolResultText = toolResultText.substr(0, 100) + "…";
             if (m_output) m_output->emitContent("  ✗ " + call.m_name
                 + (keyParam.empty() ? "" : "(" + keyParam + ")")
-                + " — " + err + " (scroll for full detail)\n");
+                + " — " + toolResultText + " (scroll for full detail)\n");
+        }
+
+        // ---- 渐进式显示分流 ----
+        if (m_output && m_labels && m_thinkingSec) {
+            if (isWriteTool) {
+                ++progressEdits;
+            } else if (call.m_name.find("read") != std::string::npos
+                    || call.m_name.find("list") != std::string::npos
+                    || call.m_name.find("search") != std::string::npos) {
+                ++progressReads;
+            }
+            std::string prefix = "● " + m_labels->thinking + " for "
+                               + std::to_string(m_thinkingSec->load()) + "s";
+            std::string toolLine = "  ⎿ " + call.m_name
+                                 + (keyParam.empty() ? "" : "(" + keyParam + ")");
+            std::string resultLine = toolOk
+                ? "     ✓ " + call.m_name
+                : "     ✗ " + toolResultText;
+            if (!isWriteTool)
+                m_output->showProgress({prefix, toolLine, resultLine});
         }
 
         results.push_back(std::move(result));
+    }
+
+    // ---- 提交进度总结 ----
+    if (m_output && m_labels && m_thinkingSec) {
+        int elapsed = m_thinkingSec->load();
+        std::string summary;
+        summary += "● " + m_labels->thought + " for "
+                + std::to_string(elapsed) + "s";
+        if (progressReads > 0 || progressEdits > 0) {
+            summary += "，";
+            if (progressReads > 0)
+                summary += "read " + std::to_string(progressReads) + " file"
+                        + (progressReads > 1 ? "s" : "");
+            if (progressReads > 0 && progressEdits > 0)
+                summary += ", ";
+            if (progressEdits > 0)
+                summary += "edited " + std::to_string(progressEdits) + " file"
+                        + (progressEdits > 1 ? "s" : "");
+        }
+        summary += " (ctrl+t to expand)";
+        guard.commit("\n \n" + summary + "\n \n");
     }
 
     m_stats.searchCount = searchCount;

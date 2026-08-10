@@ -16,8 +16,7 @@ CLFThinkingIndicator::CLFThinkingIndicator(ICLFHttpClient* http, CLF::CLFTypes::
         while (!m_done.load(std::memory_order_relaxed)) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - m_start).count();
-            if (m_output)
-                m_output->setStatus("· Thinking… (" + std::to_string(static_cast<int>(elapsed)) + "s)");
+            // StatusLine 由 turnTimer 统一管理，此处不再更新（仅计时 + abort）
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }

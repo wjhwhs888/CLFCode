@@ -21,7 +21,8 @@ namespace CLF::CLFCore {
 class CLFAgentLoop {
 public:
     explicit CLFAgentLoop(const CLFAgentConfig& config,
-                          std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient = nullptr);
+                          std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient = nullptr,
+                          const CLFTimerLabels& labels = {});
     ~CLFAgentLoop();
 
     // 注入输出通道 + 注册中断回调.
@@ -75,6 +76,7 @@ private:
     void injectSystemPrompt();
 
     CLFAgentConfig                    m_config;
+    CLFTimerLabels                    m_labels;
     CLFContext                        m_context;
     std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> m_httpClient;
     CLFProtocolAdapter                m_protocolAdapter;

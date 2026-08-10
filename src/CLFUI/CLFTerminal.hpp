@@ -40,6 +40,9 @@ public:
     void emitContent(const std::string& t) override;
     void emitRaw(const std::string& d) override;
     void setStatus(const std::string& title, int cur=-1, int total=-1) override;
+    void setStatusTextOnly(const std::string& title) override;
+    void showProgress(const std::vector<std::string>& lines) override;
+    void finishProgress(const std::string& summary) override;
     bool confirm(const std::string& prompt) override;
     void onInterrupt(std::function<void()> cb) override;
     void emitError(const std::string& m) override;
@@ -59,6 +62,7 @@ public:
         std::vector<std::string> lines;
         std::string pendingLine;
         std::string statusText;
+        std::vector<std::string> progressLines; // 渐进式进度块
         // 思考内容（折叠/展开用）
         std::vector<std::string> thinkingLines;
         bool thinkingActive = false;
@@ -83,6 +87,8 @@ public:
     int          m_thinkingElapsed = 0;  // 思考总耗时（秒）
     std::chrono::steady_clock::time_point m_thinkingStart;
     std::string  m_statusText;
+    std::vector<std::string> m_progressLines;
+    mutable std::mutex m_progressMutex;
     // confirm (由 CLFTerminal::confirm + CLFConfirmBar 共同操作)
     std::string  m_confirmPrompt;
     std::vector<std::string> m_confirmOpts;

@@ -60,7 +60,12 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
         elapsed = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - m_thinkingStart).count());
     }
-    return {m_contentBuffer, m_pendingLine, m_statusText,
+    std::vector<std::string> progressSnap;
+    {
+        std::lock_guard plock(m_progressMutex);
+        progressSnap = m_progressLines;
+    }
+    return {m_contentBuffer, m_pendingLine, m_statusText, std::move(progressSnap),
             std::move(thinkLines), m_thinkingActive, m_thinkingBytes, elapsed,
             m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel};
 }
@@ -131,6 +136,35 @@ void CLFTerminal::setStatus(const std::string& title, int cur, int total) {
         }
     }
     requestRefresh();
+}
+
+void CLFTerminal::setStatusTextOnly(const std::string& title) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_statusText = title;
+    }
+    // 不调 requestRefresh，由其他 emitContent 调用顺便刷新
+}
+
+void CLFTerminal::showProgress(const std::vector<std::string>& lines) {
+    {
+        std::lock_guard lock(m_progressMutex);
+        m_progressLines = lines;
+    }
+    // 不主动刷新，由 emitContent 顺带刷新
+}
+
+void CLFTerminal::finishProgress(const std::string& summary) {
+    // 先写 summary 到永久缓冲（需要 m_mutex），再清除 progress
+    // 保持与 contentSnapshot 一致的锁顺序：m_mutex → m_progressMutex
+    if (!summary.empty()) {
+        emitContent(summary);
+    }
+    {
+        std::lock_guard lock(m_progressMutex);
+        m_progressLines.clear();
+    }
+    // 空摘要不调 refresh，由后续 emitContent 顺带刷新
 }
 
 bool CLFTerminal::confirm(const std::string& prompt) {

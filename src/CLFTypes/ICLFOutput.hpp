@@ -40,6 +40,9 @@ public:
     virtual void setStatus(const std::string& title,
                            int current = -1, int total = -1) = 0;
 
+    // 仅更新 status 文本，不触发 refresh（高频更新用，由 emitContent 顺带刷新）
+    virtual void setStatusTextOnly(const std::string& title) = 0;
+
     // ========== ③ 交互 ==========
 
     // 高风险确认 — 阻塞, 期间禁止状态刷新
@@ -52,7 +55,15 @@ public:
     // AgentLoop 应在 setOutput 时注册, 析构时传入 nullptr 清空.
     virtual void onInterrupt(std::function<void()> callback) = 0;
 
-    // ========== ⑤ 异常通道 ==========
+    // ========== ⑤ 渐进式进度块 ==========
+
+    // 展示可替换进度块（不进滚动区），每次调用替换上一次。空 vector 清除。
+    virtual void showProgress(const std::vector<std::string>& lines) = 0;
+
+    // 清除进度块，并将 summary 写入永久滚动区
+    virtual void finishProgress(const std::string& summary) = 0;
+
+    // ========== ⑥ 异常通道 ==========
 
     // 错误输出 — UI 标红, 不影响正常输出流, Agent 继续运行
     virtual void emitError(const std::string& message) = 0;

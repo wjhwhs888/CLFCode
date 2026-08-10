@@ -19,8 +19,10 @@
 namespace CLF::CLFCore {
 
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
-                           std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient)
+                           std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient,
+                           const CLFTimerLabels& labels)
     : m_config(config)
+    , m_labels(labels)
     , m_context(config.m_maxContextWindow)
     , m_httpClient(httpClient ? httpClient
                               : std::make_shared<CLF::CLFNetwork::CLFHttpClient>(
@@ -49,10 +51,50 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     m_context.addMessage("user", userInput);
     m_lastToolStats = {};
 
+    // Timer #2：StatusLine 持续计时
+    auto turnStart = std::chrono::steady_clock::now();
+    std::atomic<bool> turnTimerOn{true};
+    std::thread turnTimer([&]() {
+        while (turnTimerOn.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (!turnTimerOn.load(std::memory_order_relaxed)) break;
+            if (!m_output) continue;
+            auto s = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - turnStart).count();
+            // 只写值，不调 requestRefresh——避免与 emitContent 的 refresh 冲突
+            m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
+        }
+    });
+    struct TurnGuard {
+        std::atomic<bool>& on;
+        std::thread& t;
+        CLF::CLFTypes::ICLFOutput* out;
+        ~TurnGuard() {
+            on.store(false, std::memory_order_relaxed);
+            if (t.joinable()) t.join(); // 必须 join，detach 会悬空引用
+            if (out) out->setStatus("");
+        }
+    } turnGuard{turnTimerOn, turnTimer, m_output};
+
     std::string finalContent;
     int consecutiveErrors = 0;
 
     for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
+        // Timer #1：只计数（不调用 output，安全）
+        std::atomic<bool> thinkingActive{true};
+        std::atomic<int> thinkingSec{0};
+        std::thread thinkingTimer([&]() {
+            while (thinkingActive.load(std::memory_order_relaxed)) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                if (!thinkingActive.load(std::memory_order_relaxed)) break;
+                thinkingSec.fetch_add(1);
+            }
+        });
+        struct ThinkGuard {
+            std::atomic<bool>& active;
+            std::thread& t;
+            ~ThinkGuard() { active.store(false); if (t.joinable()) t.join(); }
+        } thinkGuard{thinkingActive, thinkingTimer};
         // ① 每次循环迭代前检查中断
         if (m_interrupted) {
             if (m_output) m_output->emitContent("\n⏹ 已中断\n");
@@ -230,7 +272,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
                 CLFToolExecutor executor(m_tools, m_securityPolicy,
                                          m_confirmCallback, m_lastToolStats, m_output,
-                                         &m_interrupted);
+                                         &m_interrupted, &m_labels, &thinkingSec);
                 auto results = executor.execute(parsed.m_toolCalls);
                 for (const auto& result : results) {
                     m_context.addToolResult(
@@ -246,6 +288,14 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             }
 
             // 完成
+            {
+                auto s = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - turnStart).count();
+                std::string worked = "\n \n✻ " + m_labels.worked + " for " + formatDurationSeconds(s) + "\n \n";
+                finalContent += worked;
+                if (m_output && m_config.m_stream)
+                    m_output->emitContent(worked);  // stream 路径需显式 emit
+            }
             m_context.addMessage("assistant", finalContent);
             return m_config.m_stream ? std::string() : finalContent;
 
@@ -263,6 +313,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         }
     }
 
+    {
+        auto s = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - turnStart).count();
+        finalContent += "\n \n✻ " + m_labels.worked + " for " + formatDurationSeconds(s) + "\n \n";
+    }
     return std::string("[Error] Exceeded maximum tool call iterations (")
            + std::to_string(m_config.m_maxToolCallIterations) + ")";
 }
