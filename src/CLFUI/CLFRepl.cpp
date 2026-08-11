@@ -196,23 +196,49 @@ int CLFRepl::run() {
                 : ftxui::emptyElement();
 
             // 状态栏：模型名 │ 目录 │ 安全模式 │ 快捷键
-            auto modeLine = ftxui::dim(ftxui::hbox({
-                ftxui::text("  " + m_agent.getConfig().m_modelName),
-                ftxui::separator(),
-                ftxui::text(" 📁 " + std::filesystem::path(CLFConfigLoader::getWorkingDir()).filename().string()),
-                ftxui::separator(),
-                ftxui::text(" 🔒 " + m_dispatcher->modeName()),
+            // 模式 → 颜色映射
+            auto modeColor = [&]() -> ftxui::Color {
+                std::string mode = m_dispatcher->modeName();
+                if (mode == "auto")    return ftxui::Color::GreenLight;
+                if (mode == "analyze") return ftxui::Color::CyanLight;
+                if (mode == "edit")    return ftxui::Color::Orange1;
+                if (mode == "manual")  return ftxui::Color::GrayDark;
+                return ftxui::Color::GrayDark;
+            };
+            auto sep = [] {
+                return ftxui::separatorCharacter("│")
+                     | ftxui::color(ftxui::Color::GrayDark);
+            };
+            auto modeLine = ftxui::hbox({
+                ftxui::text("  ")
+                  | ftxui::color(ftxui::Color::RedLight),  // 缩进不算
+                ftxui::text(m_agent.getConfig().m_modelName)
+                  | ftxui::color(ftxui::Color::RedLight)
+                  | ftxui::bold,
+                sep(),
+                ftxui::text(" 📁 " + std::filesystem::path(
+                    CLFConfigLoader::getWorkingDir()).filename().string())
+                  | ftxui::color(ftxui::Color::GreenLight),
+                sep(),
+                ftxui::text(" 🔒 " + m_dispatcher->modeName())
+                  | ftxui::color(modeColor()),
                 ftxui::filler(),
-                ftxui::text("/help 帮助  "),
-            }));
+                ftxui::text("/help 帮助  ")
+                  | ftxui::dim,
+            });
+
+            auto thinSep = [] {
+                return ftxui::separatorLight()
+                     | ftxui::color(ftxui::Color::CyanLight);
+            };
 
             return ftxui::vbox({
                 contentArea,
                 ftxui::vbox(std::move(progressElements)),
                 statusLine,
-                ftxui::separator(),
+                thinSep(),
                 input->Render(),
-                ftxui::separator(),
+                thinSep(),
                 modeLine,
                 confirmBar.render(*terminal),
             });
