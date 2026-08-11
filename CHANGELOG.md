@@ -10,20 +10,20 @@
 
 ---
 
-## v0.1.3 (2026-08-11)
-
-### 修复
-
-- **输入框灰色背景移除**：FTXUI `InputOption::Default().transform` 在聚焦时添加背景色，自定义 `transform` 跳过默认样式
-
----
-
 ## v0.1.4 (unreleased)
 
 ### 优化
 
 - **底部状态栏着色**：模型名红色加粗、目录绿色、安全模式按级别分色（auto绿/analyze蓝/edit橙/manual灰）
 - **输入框分割线优化**：`separatorLight()` 细线 + 浅蓝色，替代厚重默认分割线
+
+---
+
+## v0.1.3 (2026-08-11)
+
+### 修复
+
+- **输入框灰色背景移除**：FTXUI `InputOption::Default().transform` 在聚焦时添加背景色，自定义 `transform` 跳过默认样式
 
 ---
 
