@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -36,10 +37,15 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         if (loaded) configPath = defaultPath;
     }
 
-    // 2. 初始化日志系统
+    // 2. 初始化日志系统（启动时轮转：上次日志 → .old，本次重新开始）
+    std::string logPath = projectRoot + "/" + config.m_logFile;
+    std::error_code ec;
+    if (std::filesystem::exists(logPath, ec) && std::filesystem::file_size(logPath, ec) > 0) {
+        std::filesystem::rename(logPath, logPath + ".old", ec);
+    }
     CLF::CLFCore::CLFLogger::instance().init(
         CLF::CLFCore::CLFLogger::levelFromString(config.m_logLevel),
-        projectRoot + "/" + config.m_logFile,
+        logPath,
         config.m_logConsole
     );
     CLF::CLFCore::CLFLogger::instance().info("CLFCode starting, project root: " + projectRoot);
