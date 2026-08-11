@@ -2,6 +2,7 @@
 
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFStreamAccumulator.hpp"
@@ -45,6 +46,8 @@ void CLFAgentLoop::setOutput(CLF::CLFTypes::ICLFOutput* output) {
 }
 
 std::string CLFAgentLoop::runTurn(const std::string& userInput) {
+    CLFLogger::instance().info("[Turn] start, input="
+        + (userInput.size() > 80 ? userInput.substr(0, 80) + "..." : userInput));
     m_interrupted = false;  // 新 turn 开始时重置中断标志
     if (m_output) m_output->clearThinking();  // 清空上一轮推理内容
     m_lastReasoningSize = 0;  // 重置推理增量追踪
@@ -109,6 +112,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             if (m_config.m_stream) {
                 // ====== 流式路径 ======
+                CLFLogger::instance().info("[API] streaming request, iter="
+                    + std::to_string(iteration) + ", ctx_msgs="
+                    + std::to_string(m_context.getMessages().size()));
                 CLFStreamAccumulator acc;
                 CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
                 bool firstContent = true;
@@ -197,6 +203,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
                 consecutiveErrors = 0;
                 acc.markDone();
+                CLFLogger::instance().info("[API] streaming done, content="
+                    + std::to_string(acc.getContent().size()) + "chars, reasoning="
+                    + std::to_string(acc.getReasoning().size()) + "chars, finish="
+                    + acc.getFinishReason());
                 parsed.m_content      = acc.getContent();
                 parsed.m_toolCalls    = acc.getToolCalls();
                 parsed.m_finishReason = acc.getFinishReason();
@@ -297,6 +307,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     m_output->emitContent(worked);  // stream 路径需显式 emit
             }
             m_context.addMessage("assistant", finalContent);
+            CLFLogger::instance().info("[Turn] done, content="
+                + std::to_string(finalContent.size()) + "chars, tools="
+                + std::to_string(m_lastToolStats.totalCalls));
             return m_config.m_stream ? std::string() : finalContent;
 
         } catch (const std::exception& e) {

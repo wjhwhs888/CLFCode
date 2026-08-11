@@ -461,14 +461,14 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         bool toolOk = false;
         std::string toolResultText;
         try {
-            CLFLogger::instance().debug(
+            CLFLogger::instance().info(
                 "[ToolExec] executing: " + call.m_name
                 + (keyParam.empty() ? "" : "(" + keyParam + ")"));
             result.m_content = it->m_handler(call.m_arguments);
             auto rd = formatToolResult(result.m_content);
             toolOk = rd.ok;
             toolResultText = rd.text;
-            CLFLogger::instance().debug(
+            CLFLogger::instance().info(
                 "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
                 + ", result=" + std::to_string(result.m_content.size()) + " chars");
 

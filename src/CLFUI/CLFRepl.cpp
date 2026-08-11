@@ -167,7 +167,7 @@ int CLFRepl::run() {
             if (snap.thinkingActive || !snap.thinkingLines.empty()) {
                 allLines.push_back(ftxui::dim(ftxui::text(
                     "  Thought for " + std::to_string(snap.thinkingElapsed)
-                    + "s (ctrl+t to expand)")));
+                    + "s (ctrl+t 展开)")));
                 if (!snap.thinkingActive && m_showThinking && !snap.thinkingLines.empty()) {
                     for (auto& tl : snap.thinkingLines)
                         allLines.push_back(ftxui::dim(ftxui::text("  " + tl)));
@@ -199,7 +199,7 @@ int CLFRepl::run() {
                 ftxui::separator(),
                 ftxui::text(" 🔒 " + m_dispatcher->modeName()),
                 ftxui::filler(),
-                ftxui::text("ctrl+t: 思考  "),
+                ftxui::text("/help 帮助  "),
             }));
 
             return ftxui::vbox({
@@ -455,10 +455,13 @@ void CLFRepl::printBanner() {
 }
 
 void CLFRepl::submit(const std::string& input) {
+    CLFLogger::instance().info("[Submit] entry, input="
+        + (input.size() > 60 ? input.substr(0, 60) + "..." : input));
     if (m_output) m_output->emitContent("> " + CLFTerminal::bold(input) + "\n");
 
     if (m_dispatcher->handle(input)) {
         if (m_output) m_output->setStatus("");
+        CLFLogger::instance().info("[Submit] handled by dispatcher");
         return;
     }
 
@@ -478,6 +481,7 @@ void CLFRepl::submit(const std::string& input) {
     saveSession(st.totalCalls > 0);
     if (m_output) m_output->setStatus("");
     if (m_output) m_output->emitContent("\n");
+    CLFLogger::instance().info("[Submit] exit, tools=" + std::to_string(st.totalCalls));
 }
 
 bool CLFRepl::confirmDialog(const std::string& prompt) {

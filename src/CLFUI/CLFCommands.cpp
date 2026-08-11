@@ -52,6 +52,7 @@ bool cmdHelp(const std::string&, const std::string&,
         "  ⎿ 提交        enter / ctrl+d\n"
         "  ⎿ 换行        ctrl+n\n"
         "  ⎿ 粘贴        ctrl+v\n"
+        "  ⎿ 思考过程    ctrl+t（折叠/展开推理内容）\n"
         "  ⎿ 中断 Agent  esc（单击，中断后回显上次输入）\n"
         "  ⎿ 退出程序    esc esc（空闲时双击）\n"
         "  ⎿ 切换模式    shift+tab\n"
