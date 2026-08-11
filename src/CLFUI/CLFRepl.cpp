@@ -74,6 +74,10 @@ int CLFRepl::run() {
         inputOpt.multiline = true;  // 多行显示（Ctrl+N 换行后可见多行）
         ftxui::Ref<int> cursorPos = 0;
         inputOpt.cursor_position = cursorPos;  // ↑/↓ 历史导航需要光标位置
+        // 自定义渲染：去除聚焦时的背景色
+        inputOpt.transform = [](ftxui::InputState state) {
+            return state.element;
+        };
 
         std::string inputText;
         auto input = ftxui::Input(&inputText, "❯ ", inputOpt);
