@@ -16,6 +16,7 @@
 
 - **独立安装启动失败**：`findProjectRoot()` 找不到 CMakeLists.txt 时回退到 `config/agent_settings.json` 查找，解决 `irm | iex` 安装后 clfcode 无法启动
 - **安装脚本解压路径**：zip 内子目录 `CLFCode-vX.Y.Z/` 正确对正到 `%USERPROFILE%\CLFCode\`
+- **发布包缺失 MinGW 运行时 DLL**：补充 `libstdc++-6.dll` / `libgcc_s_seh-1.dll` / `libwinpthread-1.dll`
 
 ---
 
