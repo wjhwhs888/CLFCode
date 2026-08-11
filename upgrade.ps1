@@ -76,8 +76,19 @@ try {
 # ── 替换安装 ──
 Write-Host "  正在升级..." -ForegroundColor Gray
 Remove-Item -Path $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
-Expand-Archive -Path $zipPath -DestinationPath $env:USERPROFILE -Force
+
+$tempExtract = "$env:TEMP\CLFCode_extract"
+if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
+Expand-Archive -Path $zipPath -DestinationPath $tempExtract -Force
 Remove-Item -Path $zipPath -Force
+
+$innerDir = Get-ChildItem -Path $tempExtract -Directory | Select-Object -First 1
+if ($innerDir) {
+    Move-Item -Path $innerDir.FullName -Destination $INSTALL_DIR -Force
+} else {
+    Move-Item -Path $tempExtract -Destination $INSTALL_DIR -Force
+}
+if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
 
 # 恢复配置
 if ($backupConfig -and (Test-Path $backupConfig)) {

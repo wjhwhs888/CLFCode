@@ -65,8 +65,20 @@ if (Test-Path $INSTALL_DIR) {
     Remove-Item -Path $INSTALL_DIR -Recurse -Force
 }
 
-Expand-Archive -Path $zipPath -DestinationPath $env:USERPROFILE -Force
+# 解压到临时目录，再移动到目标位置（zip 内顶层是 CLFCode-v0.1.1/）
+$tempExtract = "$env:TEMP\CLFCode_extract"
+if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
+Expand-Archive -Path $zipPath -DestinationPath $tempExtract -Force
 Remove-Item -Path $zipPath -Force
+
+# 如果解压出的是 CLFCode-vX.Y.Z 子目录，取其内容
+$innerDir = Get-ChildItem -Path $tempExtract -Directory | Select-Object -First 1
+if ($innerDir) {
+    Move-Item -Path $innerDir.FullName -Destination $INSTALL_DIR -Force
+} else {
+    Move-Item -Path $tempExtract -Destination $INSTALL_DIR -Force
+}
+if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
 Write-Host "  解压完成" -ForegroundColor Green
 
 # 恢复用户配置
