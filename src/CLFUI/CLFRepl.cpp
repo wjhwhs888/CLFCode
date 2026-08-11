@@ -129,7 +129,35 @@ int CLFRepl::run() {
 
             // 获取终端宽度用于硬换行（避免长行超出视口）
             int termW = CLFTerminal::getTerminalWidth();
-            int wrapW = (termW > 20) ? termW : 78;  // 不留 margin，用满终端宽度
+            int wrapW = (termW > 20) ? termW : 78;
+
+            // CJK 字符显示宽度：ASCII/半角=1，CJK/全角=2
+            auto charWidth = [](unsigned char c) -> int {
+                if (c < 0x80) return 1;                     // ASCII
+                if (c >= 0xC0) return 2;                    // UTF-8 多字节首字节
+                return 0;                                    // UTF-8 续字节
+            };
+            auto displayWidth = [&](const std::string& s) -> int {
+                int w = 0;
+                for (size_t i = 0; i < s.size(); ++i)
+                    w += charWidth(static_cast<unsigned char>(s[i]));
+                return w;
+            };
+            // 按显示列宽截取子串（不截断 UTF-8 多字节字符）
+            auto substrByWidth = [&](const std::string& s, int maxW) -> std::string {
+                int w = 0;
+                for (size_t i = 0; i < s.size(); ) {
+                    int cw = charWidth(static_cast<unsigned char>(s[i]));
+                    if (cw == 0) { ++i; continue; }          // UTF-8 续字节，不单独算
+                    if (w + cw > maxW) return s.substr(0, i);
+                    w += cw;
+                    // 跳过 UTF-8 续字节
+                    if (cw == 2) { ++i; while (i < s.size()
+                        && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
+                    else { ++i; }
+                }
+                return s;
+            };
 
             ftxui::Elements allLines;
             const bool hasStyles = (snap.lineStyles.size() == snap.lines.size());
@@ -137,11 +165,17 @@ int CLFRepl::run() {
             for (size_t i = 0; i < snap.lines.size(); ++i) {
                 auto& l = snap.lines[i];
                 ftxui::Element el;
-                if (wrapW > 0 && l.size() > static_cast<size_t>(wrapW)) {
-                    // 长行拆分为多个子元素，颜色统一应用
+                int lineW = displayWidth(l);
+                if (wrapW > 0 && lineW > wrapW) {
+                    // CJK 感知换行：按显示列宽拆分，不截断多字节字符
                     ftxui::Elements parts;
-                    for (size_t pos = 0; pos < l.size(); pos += wrapW)
-                        parts.push_back(ftxui::text(l.substr(pos, wrapW)));
+                    std::string remaining = l;
+                    while (!remaining.empty()) {
+                        std::string part = substrByWidth(remaining, wrapW);
+                        if (part.empty()) part = remaining.substr(0, 1); // fallback
+                        parts.push_back(ftxui::text(part));
+                        remaining = remaining.substr(part.size());
+                    }
                     el = ftxui::vbox(std::move(parts));
                 } else {
                     el = ftxui::text(l);

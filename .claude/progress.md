@@ -38,6 +38,12 @@
 - 日志布点：debug/info/warn 三级全覆盖
 - /exit Unicode 崩溃修复
 
+### 2026-08-11 UI 体验优化 ✅
+- 输入框灰色背景移除：自定义 transform 跳过 FTXUI 默认样式
+- 状态栏着色：模型红/目录绿/模式分色（auto绿 analyze蓝 edit橙 manual灰）
+- 分割线细化：separatorLight + 浅蓝色
+- Markdown 表格列对齐：emitContent 层缓冲表格块，CJK 感知列宽对齐
+
 ## 已知问题
 - Ctrl+C 确认栏退出（低优先，暂缓）
 - emitRaw 钩子（设计预留）

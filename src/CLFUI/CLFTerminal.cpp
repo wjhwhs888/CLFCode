@@ -76,7 +76,6 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
 void CLFTerminal::emitContent(const std::string& text) {
     {
         std::lock_guard lock(m_mutex);
-        // 正式回复开始 → 思考阶段结束，保存耗时
         if (!text.empty() && m_thinkingActive) {
             m_thinkingActive = false;
             m_thinkingElapsed = static_cast<int>(
@@ -84,16 +83,25 @@ void CLFTerminal::emitContent(const std::string& text) {
                     std::chrono::steady_clock::now() - m_thinkingStart).count());
         }
         for (char c : text) {
-            // 实时过滤 ANSI: 防止裸 ESC 码进入 m_pendingLine 被 Renderer 渲染
             if (m_inAnsiSeq) {
                 if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
                     m_inAnsiSeq = false;
                 continue;
             }
             if (c == '\033') { m_inAnsiSeq = true; continue; }
+            if (c == '\r') continue;
             if (c == '\n') {
-                m_contentBuffer.push_back(m_pendingLine);
-                m_lineStyles.push_back(0); // Normal
+                // 行完成 → 检查是否属于表格块
+                auto trimmed = m_pendingLine;
+                size_t start = trimmed.find_first_not_of(" \t");
+                if (start != std::string::npos) trimmed = trimmed.substr(start);
+                if (!trimmed.empty() && trimmed[0] == '|') {
+                    m_tableBuffer.push_back(m_pendingLine);
+                } else {
+                    if (!m_tableBuffer.empty()) flushTable();
+                    m_contentBuffer.push_back(m_pendingLine);
+                    m_lineStyles.push_back(0);
+                }
                 m_pendingLine.clear();
             } else {
                 m_pendingLine += c;
@@ -102,6 +110,78 @@ void CLFTerminal::emitContent(const std::string& text) {
     }
     if (!m_refreshPending.exchange(true))
         requestRefresh();
+}
+
+void CLFTerminal::flushTable() {
+    if (m_tableBuffer.empty()) return;
+
+    // ① 解析每行 → cells
+    std::vector<std::vector<std::string>> rows;
+    size_t maxCols = 0;
+    for (const auto& line : m_tableBuffer) {
+        std::vector<std::string> cells;
+        size_t pos = 0;
+        // 跳过前导空白和首个 |
+        while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) ++pos;
+        if (pos < line.size() && line[pos] == '|') ++pos;
+
+        std::string cell;
+        while (pos < line.size()) {
+            if (line[pos] == '|') {
+                // trim tail spaces
+                while (!cell.empty() && (cell.back() == ' ' || cell.back() == '\t'))
+                    cell.pop_back();
+                cells.push_back(cell);
+                cell.clear();
+            } else {
+                cell += line[pos];
+            }
+            ++pos;
+        }
+        // 行尾残余（没有闭合 |）
+        while (!cell.empty() && (cell.back() == ' ' || cell.back() == '\t'))
+            cell.pop_back();
+        if (!cell.empty()) cells.push_back(cell);
+
+        size_t nCols = cells.size();
+        rows.push_back(std::move(cells));
+        if (nCols > maxCols) maxCols = nCols;
+    }
+
+    // ② 计算每列最大显示宽度
+    auto cjkWidth = [](const std::string& s) -> int {
+        int w = 0;
+        for (size_t i = 0; i < s.size(); ++i) {
+            unsigned char c = static_cast<unsigned char>(s[i]);
+            if (c < 0x80) { w += 1; }           // ASCII
+            else if (c >= 0xC0) { w += 2; }      // CJK/全角首字节
+            // 0x80~0xBF: UTF-8 续字节，跳过（已在首字节中计入）
+        }
+        return w;
+    };
+    std::vector<int> colWidths(maxCols, 0);
+    for (const auto& row : rows) {
+        for (size_t j = 0; j < row.size(); ++j) {
+            int w = cjkWidth(row[j]);
+            if (w > colWidths[j]) colWidths[j] = w;
+        }
+    }
+
+    // ③ 生成对齐行，推入 contentBuffer
+    for (const auto& row : rows) {
+        std::string aligned = "|";
+        for (size_t j = 0; j < maxCols; ++j) {
+            std::string cell = (j < row.size()) ? row[j] : "";
+            int cellW = cjkWidth(cell);
+            int pad = (j < colWidths.size()) ? colWidths[j] - cellW : 0;
+            if (pad < 0) pad = 0;  // 防御：UTF-8 宽度估算不应为负
+            if (pad > 0) cell.append(pad, ' ');
+            aligned += " " + cell + " |";
+        }
+        m_contentBuffer.push_back(aligned);
+        m_lineStyles.push_back(0);
+    }
+    m_tableBuffer.clear();
 }
 
 void CLFTerminal::emitRaw(const std::string& data) {
@@ -113,6 +193,7 @@ void CLFTerminal::emitRaw(const std::string& data) {
             m_pendingLine.clear();
         }
         for (char c : data) {
+            if (c == '\r') continue;
             if (c == '\n') {
                 m_contentBuffer.push_back(m_pendingLine);
                 m_lineStyles.push_back(0); // Normal
