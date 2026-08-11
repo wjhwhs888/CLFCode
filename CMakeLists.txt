@@ -26,18 +26,35 @@ include_directories(${CMAKE_SOURCE_DIR}/3rdparty)
 include_directories(${CMAKE_SOURCE_DIR}/3rdparty/boost-ut)
 
 # OpenSSL 检测（HTTPS 支持）
+# 优先使用 CMake find_package，失败时尝试常见安装路径 + 预生成 MinGW 导入库
 find_package(OpenSSL QUIET)
 if(OPENSSL_FOUND)
     add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
     include_directories(${OPENSSL_INCLUDE_DIR})
     set(CLF_OPENSSL_LIBS OpenSSL::SSL OpenSSL::Crypto)
-    message(STATUS "OpenSSL found — HTTPS enabled")
+    message(STATUS "OpenSSL found (find_package) — HTTPS enabled")
+elseif(WIN32)
+    # 尝试 Windows 常见安装路径（用户手动安装 + 项目 3rdparty/openssl 导入库）
+    set(OSSL_MANUAL_ROOT "C:/Program Files/OpenSSL-Win64")
+    set(OSSL_MANUAL_LIB  "${CMAKE_SOURCE_DIR}/3rdparty/openssl/lib")
+    if(EXISTS "${OSSL_MANUAL_ROOT}/include/openssl/ssl.h" AND
+       EXISTS "${OSSL_MANUAL_LIB}/libssl.a")
+        add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
+        include_directories("${OSSL_MANUAL_ROOT}/include")
+        set(CLF_OPENSSL_LIBS "${OSSL_MANUAL_LIB}/libssl.a"
+                             "${OSSL_MANUAL_LIB}/libcrypto.a"
+                             ws2_32)
+        message(STATUS "OpenSSL found (manual ${OSSL_MANUAL_ROOT}) — HTTPS enabled")
+    else()
+        set(CLF_OPENSSL_LIBS "")
+        message(WARNING "OpenSSL not found — HTTPS disabled. "
+                        "Install OpenSSL to call HTTPS APIs (e.g. DeepSeek).\n"
+                        "  Windows: vcpkg install openssl\n"
+                        "  or download from https://slproweb.com/products/Win32OpenSSL.html")
+    endif()
 else()
     set(CLF_OPENSSL_LIBS "")
-    message(WARNING "OpenSSL not found — HTTPS disabled. "
-                    "Install OpenSSL to call HTTPS APIs (e.g. DeepSeek).\n"
-                    "  Windows: vcpkg install openssl\n"
-                    "  or download from https://slproweb.com/products/Win32OpenSSL.html")
+    message(WARNING "OpenSSL not found — HTTPS disabled.")
 endif()
 
 # 输出目录
