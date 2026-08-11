@@ -29,6 +29,12 @@
 - 会话文件损坏保护：解析失败自动备份 `.bak`，不崩溃
 - 旧版 `_incomplete.json` 启动时自动迁移
 
+### 部署
+
+- **一键安装**：`irm https://gitee.com/sherlock0923/CLFCode/raw/master/install.ps1 | iex`
+- **一键升级**：`irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex`
+- **卸载**：安装目录下 `uninstall.ps1`
+
 ---
 
 ## v0.1.0 (2026-08-10)
