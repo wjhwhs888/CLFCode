@@ -70,6 +70,9 @@ target_include_directories(clf_tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ============================================================================
 add_executable(CLFCode main.cpp)
 target_link_libraries(CLFCode PRIVATE clf_core clf_network clf_tools clf_ui ${CLF_OPENSSL_LIBS})
+if(WIN32)
+    target_link_libraries(CLFCode PRIVATE ws2_32)
+endif()
 
 # ============================================================================
 # 测试（Boost.UT，L1 单元 + L2 Mock 集成）
