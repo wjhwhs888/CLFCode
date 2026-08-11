@@ -10,6 +10,15 @@
 
 ---
 
+## v0.1.2 (2026-08-11)
+
+### 修复
+
+- **独立安装启动失败**：`findProjectRoot()` 找不到 CMakeLists.txt 时回退到 `config/agent_settings.json` 查找，解决 `irm | iex` 安装后 clfcode 无法启动
+- **安装脚本解压路径**：zip 内子目录 `CLFCode-vX.Y.Z/` 正确对正到 `%USERPROFILE%\CLFCode\`
+
+---
+
 ## v0.1.1 (2026-08-11)
 
 ### 重构
@@ -22,18 +31,14 @@
 
 - `/resume` 恢复后 AI 丢失 skill 知识（`system` 消息一刀切跳过）
 - `/exit` 时 Unicode 编码异常导致崩溃无法保存（`CLFRepl::submit` 渲染异常隔离）
+- Windows Release 构建：ws2_32 链接 + NOMINMAX 重定义防护
 
 ### 工程
 
 - 日志系统 debug 级扩展：保存/恢复/压缩链路全覆盖，崩溃可追溯（每条日志即时 flush）
 - 会话文件损坏保护：解析失败自动备份 `.bak`，不崩溃
 - 旧版 `_incomplete.json` 启动时自动迁移
-
-### 部署
-
-- **一键安装**：`irm https://gitee.com/sherlock0923/CLFCode/raw/master/install.ps1 | iex`
-- **一键升级**：`irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex`
-- **卸载**：安装目录下 `uninstall.ps1`
+- **部署脚本**：install.ps1 / upgrade.ps1 / uninstall.ps1，支持 `irm | iex` 一键安装
 
 ---
 
