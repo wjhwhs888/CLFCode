@@ -42,7 +42,7 @@ std::string CLFConfigLoader::findProjectRoot() {
     }
 #endif
 
-    // 2. 从 exe 目录向上查找 CMakeLists.txt
+    // 2. 从 exe 目录向上查找 CMakeLists.txt（开发环境：项目根目录）
     fs::path dir = exeDir.empty() ? fs::current_path() : fs::path(exeDir);
     while (!dir.empty() && dir != dir.root_path()) {
         if (fs::exists(dir / "CMakeLists.txt")) {
@@ -52,7 +52,17 @@ std::string CLFConfigLoader::findProjectRoot() {
         dir = dir.parent_path();
     }
 
-    // 3. 找不到则回退到 CWD
+    // 3. 从 exe 目录向上查找 config/agent_settings.json（独立安装场景）
+    dir = exeDir.empty() ? fs::current_path() : fs::path(exeDir);
+    while (!dir.empty() && dir != dir.root_path()) {
+        if (fs::exists(dir / "config" / "agent_settings.json")) {
+            s_projectRoot = dir.string();
+            return s_projectRoot;
+        }
+        dir = dir.parent_path();
+    }
+
+    // 4. 找不到则回退到 CWD
     s_projectRoot = fs::current_path().string();
     return s_projectRoot;
 }
