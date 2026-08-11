@@ -2,6 +2,7 @@
 // 包含 Write 工具的 diff 预览、TOCTOU 校验、确认流程
 
 #include "CLFCore/CLFToolExecutor.hpp"
+#include "CLFCore/CLFLogger.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -460,10 +461,16 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         bool toolOk = false;
         std::string toolResultText;
         try {
+            CLFLogger::instance().debug(
+                "[ToolExec] executing: " + call.m_name
+                + (keyParam.empty() ? "" : "(" + keyParam + ")"));
             result.m_content = it->m_handler(call.m_arguments);
             auto rd = formatToolResult(result.m_content);
             toolOk = rd.ok;
             toolResultText = rd.text;
+            CLFLogger::instance().debug(
+                "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
+                + ", result=" + std::to_string(result.m_content.size()) + " chars");
 
             bool useProgressive = (m_labels && m_thinkingSec);
             if (m_output && (!useProgressive || isWriteTool)) {
@@ -506,6 +513,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             toolOk = false;
             toolResultText = e.what();
             if (toolResultText.size() > 100) toolResultText = toolResultText.substr(0, 100) + "…";
+            CLFLogger::instance().error(
+                "[ToolExec] " + call.m_name + " failed: " + e.what());
             if (m_output) m_output->emitContent("  ✗ " + call.m_name
                 + (keyParam.empty() ? "" : "(" + keyParam + ")")
                 + " — " + toolResultText + " (scroll for full detail)\n");

@@ -62,7 +62,7 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
     si.wShowWindow = SW_HIDE;
     si.hStdOutput = hOutWrite;
     si.hStdError  = hErrWrite;
-    si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdInput  = nullptr;  // cmd.exe /s /c 模式不需要 stdin，避免继承 FTXUI 控制台句柄
 
     PROCESS_INFORMATION pi = {};
     if (!CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr,
