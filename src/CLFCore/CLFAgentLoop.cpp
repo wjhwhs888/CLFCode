@@ -5,6 +5,7 @@
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
+#include "CLFCore/CLFSkillLoader.hpp"
 #include "CLFCore/CLFStreamAccumulator.hpp"
 #include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
@@ -28,7 +29,8 @@ CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
     , m_httpClient(httpClient ? httpClient
                               : std::make_shared<CLF::CLFNetwork::CLFHttpClient>(
                                     config.m_apiBaseUrl, config.m_apiKey))
-    , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode)) {
+    , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode))
+    , m_summarizer(std::make_unique<CLFSessionSummarizer>(m_httpClient, m_config)) {
     m_httpClient->setTimeout(config.m_maxResponseDelaySec);
     injectSystemPrompt();
 }
@@ -371,20 +373,94 @@ void CLFAgentLoop::setConfirmCallback(std::function<bool(const std::string&)> ca
     m_confirmCallback = std::move(callback);
 }
 
-std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool incomplete) const {
-    return CLFSessionManager::save(m_context.getMessages(), dirPath, incomplete);
+std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool finalize) const {
+    const auto& msgs = m_context.getMessages();
+    if (msgs.empty()) {
+        CLFLogger::instance().debug("[Save] skipped: empty context");
+        return "";
+    }
+
+    CLFLogger::instance().debug(
+        "[Save] finalize=" + std::string(finalize ? "true" : "false") +
+        ", msgs=" + std::to_string(msgs.size()) +
+        ", skills=" + std::to_string(m_loadedSkills.size()) +
+        ", summaryCached=" + std::string(m_cachedSummary.m_valid ? "yes" : "no"));
+
+    std::string path = CLFSessionManager::save(
+        msgs, dirPath, finalize, m_loadedSkills,
+        m_cachedSummary.m_valid ? &m_cachedSummary : nullptr);
+    if (path.empty()) {
+        CLFLogger::instance().warn("[Save] saveSession failed, finalize="
+                                   + std::string(finalize ? "true" : "false"));
+    }
+    return path;
+}
+
+void CLFAgentLoop::generateAndCacheSummary() {
+    if (!m_config.m_contextCompression) return;
+    m_cachedSummary = m_summarizer->generate(m_context.getMessages());
 }
 
 bool CLFAgentLoop::restoreSession(const std::string& filePath) {
+    CLFLogger::instance().info("[Restore] loading: " + filePath);
+
     std::vector<CLFMessage> messages;
-    if (!CLFSessionManager::load(filePath, messages)) return false;
+    std::vector<std::string> skills;
+    CLFSessionSummary summary;
+    if (!CLFSessionManager::load(filePath, messages, &skills, &summary)) return false;
+
+    CLFLogger::instance().info("[Restore] loaded: "
+                               + std::to_string(messages.size()) + " msgs, "
+                               + std::to_string(skills.size()) + " skills, "
+                               + "summary=" + std::string(summary.m_valid
+                                   ? "yes(" + summary.m_method + ")" : "no"));
 
     m_context.clear();
+
+    // ① 回显历史到终端
+    if (m_output) {
+        m_output->emitContent("\n● 会话已恢复\n\n");
+        int userCount = 0, assistantCount = 0;
+        for (const auto& msg : messages) {
+            if (msg.m_role == "user") {
+                m_output->emitContent("> " + msg.m_content + "\n\n");
+                ++userCount;
+            } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
+                m_output->emitContent(msg.m_content + "\n");
+                ++assistantCount;
+            }
+            // tool / system 消息跳过（终端不需要显示）
+        }
+        m_output->emitContent("──────────────\n");
+        CLFLogger::instance().debug("[Restore] echoed "
+                                    + std::to_string(userCount) + " user + "
+                                    + std::to_string(assistantCount) + " assistant messages");
+    }
+
+    // ② 恢复非 system 消息（全部跳过 system，由后续步骤重建）
     for (const auto& msg : messages) {
         if (msg.m_role == "system") continue;
         m_context.appendMessage(msg);
     }
     injectSystemPrompt();
+
+    // ③ 注入会话摘要（作为 system 消息，利用 system 永不截断特性）
+    if (!summary.isEmpty()) {
+        m_context.addMessage("system", summary.toSystemMessage());
+    }
+
+    // ④ 重新注入知识库（从文件系统加载最新版本）
+    m_loadedSkills.clear();
+    for (const auto& name : skills) {
+        std::string content = CLFSkillLoader::getContent(name);
+        if (!content.empty()) {
+            injectSkillToContext(name, content);
+            CLFLogger::instance().info("[Restore] skill '" + name + "': re-injected");
+        } else {
+            CLFLogger::instance().info("[Restore] skill '" + name + "': SKIPPED (file missing)");
+        }
+    }
+
     return true;
 }
 

@@ -18,19 +18,26 @@ namespace CLF::CLFCore {
 class CLFMessageCodec {
 public:
     // 序列化消息数组为 JSON（含 version/messageCount/saved_at/title 元字段）
+    // skills: 已加载的知识库名称列表，非空时写入 "skills" 数组
+    // summary: 会话摘要，非空且 m_valid 时写入 "summary" 对象
     // savedAt / title 为空时不写入对应字段
     static std::string serialize(const std::vector<CLFMessage>& messages,
                                   const std::string& savedAt = "",
-                                  const std::string& title = "");
+                                  const std::string& title = "",
+                                  const std::vector<std::string>& skills = {},
+                                  const CLFSessionSummary* summary = nullptr);
 
     // 从 JSON 解析消息数组（拦截 nlohmann 异常，失败返回空）
     static std::vector<CLFMessage> parse(const std::string& jsonData);
 
-    // 从 JSON 解析为可选格式（带 version/saved_at/title 解析）
+    // 从 JSON 解析为可选格式（带 version/saved_at/title/skills/summary 解析）
+    // outSkills / outSummary: 解析对应字段（nullptr = 不读取）
     static std::vector<CLFMessage> parseFull(const std::string& jsonData,
                                               int* outVersion = nullptr,
                                               std::string* outSavedAt = nullptr,
-                                              std::string* outTitle = nullptr);
+                                              std::string* outTitle = nullptr,
+                                              std::vector<std::string>* outSkills = nullptr,
+                                              CLFSessionSummary* outSummary = nullptr);
 };
 
 } // namespace CLF::CLFCore

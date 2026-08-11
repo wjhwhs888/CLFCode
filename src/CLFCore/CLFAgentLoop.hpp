@@ -14,6 +14,7 @@
 #include "CLFCore/CLFContext.hpp"
 #include "CLFCore/CLFProtocolAdapter.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
+#include "CLFCore/CLFSessionSummarizer.hpp"
 
 namespace CLF::CLFNetwork { class ICLFHttpClient; }
 namespace CLF::CLFCore {
@@ -51,11 +52,13 @@ public:
 
     // —— 会话持久化 ——
 
-    // 保存当前会话到文件（incomplete=true 存为未完成状态）
+    // 保存当前会话
+    // finalize=false: 存为 latest.json（每轮回合后调用，原子写入）
+    // finalize=true:  归档 latest.json → 时间戳.json（/exit 和 /clear 调用）
     // 返回文件路径，失败返回空串
-    std::string saveSession(const std::string& dirPath, bool incomplete) const;
+    std::string saveSession(const std::string& dirPath, bool finalize) const;
 
-    // 从会话文件恢复（跳过 system 消息，身份重新注入）
+    // 从会话文件恢复（跳过 system 消息，回显历史，重新注入 skills）
     bool restoreSession(const std::string& filePath);
 
     // —— 查询 ——
@@ -71,6 +74,9 @@ public:
     // 已注入上下文的 skill 名称列表（/skill 状态显示用）
     std::vector<std::string> getLoadedSkills() const;
 
+    // 生成并缓存会话摘要（/exit 前由 REPL 调用）
+    void generateAndCacheSummary();
+
 private:
     // 注入系统身份提示词（构造时 + /clear 后调用）
     void injectSystemPrompt();
@@ -84,6 +90,8 @@ private:
     std::function<bool(const std::string&)> m_confirmCallback;
     std::vector<CLFTool>              m_tools;
     std::vector<std::string>          m_loadedSkills;
+    std::unique_ptr<CLFSessionSummarizer> m_summarizer;
+    CLFSessionSummary                 m_cachedSummary;    // /exit 时生成，saveSession 时消费
     ToolStats                         m_lastToolStats;
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
     std::atomic<bool>                 m_interrupted{false};

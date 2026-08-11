@@ -29,6 +29,7 @@ add_library(clf_core STATIC
     CLFCore/CLFRetryPolicy.cpp
     CLFCore/CLFSecurityPolicy.cpp
     CLFCore/CLFSessionManager.cpp
+    CLFCore/CLFSessionSummarizer.cpp
     CLFCore/CLFSkillLoader.cpp
     CLFCore/CLFToolExecutor.cpp
     CLFTools/CLFDiff.cpp          # 编入 clf_core 避免循环依赖

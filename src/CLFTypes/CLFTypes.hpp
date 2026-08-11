@@ -112,6 +112,46 @@ struct CLFTool {
 };
 
 // ============================================================================
+// 会话摘要（/exit 时生成，/resume 时注入为 system 消息）
+// ============================================================================
+
+struct CLFSessionSummary {
+    std::string              m_summary;        // 总体摘要文本
+    std::string              m_currentPlan;    // 当前计划/任务描述
+    std::vector<std::string> m_keyDecisions;   // 关键决策列表
+    std::vector<std::string> m_filesModified;  // 涉及的文件路径
+    std::vector<std::string> m_pendingTasks;   // 待完成任务
+    std::string              m_method;         // "api" | "rule_based"
+    bool                     m_valid = false;
+
+    bool isEmpty() const { return !m_valid || m_summary.empty(); }
+
+    // 转换为注入上下文的 system 消息体
+    std::string toSystemMessage() const {
+        std::string msg = "[会话摘要";
+        if (m_method == "api") msg += " — API 生成";
+        msg += "]\n\n";
+        msg += "## 摘要\n" + m_summary + "\n";
+        if (!m_keyDecisions.empty()) {
+            msg += "\n## 关键决策\n";
+            for (const auto& d : m_keyDecisions) msg += "- " + d + "\n";
+        }
+        if (!m_currentPlan.empty()) {
+            msg += "\n## 当前进度\n" + m_currentPlan + "\n";
+        }
+        if (!m_filesModified.empty()) {
+            msg += "\n## 涉及文件\n";
+            for (const auto& f : m_filesModified) msg += "- `" + f + "`\n";
+        }
+        if (!m_pendingTasks.empty()) {
+            msg += "\n## 待完成\n";
+            for (const auto& t : m_pendingTasks) msg += "- [ ] " + t + "\n";
+        }
+        return msg;
+    }
+};
+
+// ============================================================================
 // 计时器标签配置
 // ============================================================================
 

@@ -8,12 +8,45 @@ namespace CLF::CLFCore {
 
 std::string CLFMessageCodec::serialize(const std::vector<CLFMessage>& messages,
                                         const std::string& savedAt,
-                                        const std::string& title) {
+                                        const std::string& title,
+                                        const std::vector<std::string>& skills,
+                                        const CLFSessionSummary* summary) {
     nlohmann::json data;
     data["version"]      = 1;
     data["messageCount"] = static_cast<int>(messages.size());
     if (!savedAt.empty()) data["saved_at"] = savedAt;
     if (!title.empty())   data["title"]    = title;
+
+    // skills 数组
+    if (!skills.empty()) {
+        nlohmann::json sk = nlohmann::json::array();
+        for (const auto& s : skills) sk.push_back(s);
+        data["skills"] = std::move(sk);
+    }
+
+    // summary 对象
+    if (summary && summary->m_valid) {
+        nlohmann::json sum;
+        sum["text"]         = summary->m_summary;
+        sum["method"]       = summary->m_method;
+        sum["current_plan"] = summary->m_currentPlan;
+        if (!summary->m_keyDecisions.empty()) {
+            nlohmann::json kd = nlohmann::json::array();
+            for (const auto& d : summary->m_keyDecisions) kd.push_back(d);
+            sum["key_decisions"] = std::move(kd);
+        }
+        if (!summary->m_filesModified.empty()) {
+            nlohmann::json fm = nlohmann::json::array();
+            for (const auto& f : summary->m_filesModified) fm.push_back(f);
+            sum["files_modified"] = std::move(fm);
+        }
+        if (!summary->m_pendingTasks.empty()) {
+            nlohmann::json pt = nlohmann::json::array();
+            for (const auto& t : summary->m_pendingTasks) pt.push_back(t);
+            sum["pending_tasks"] = std::move(pt);
+        }
+        data["summary"] = std::move(sum);
+    }
 
     nlohmann::json msgs = nlohmann::json::array();
     for (const auto& msg : messages) {
@@ -52,7 +85,9 @@ std::vector<CLFMessage> CLFMessageCodec::parse(const std::string& jsonData) {
 std::vector<CLFMessage> CLFMessageCodec::parseFull(const std::string& jsonData,
                                                      int* outVersion,
                                                      std::string* outSavedAt,
-                                                     std::string* outTitle) {
+                                                     std::string* outTitle,
+                                                     std::vector<std::string>* outSkills,
+                                                     CLFSessionSummary* outSummary) {
     std::vector<CLFMessage> result;
     try {
         nlohmann::json data = nlohmann::json::parse(jsonData);
@@ -63,6 +98,43 @@ std::vector<CLFMessage> CLFMessageCodec::parseFull(const std::string& jsonData,
         if (outVersion)  *outVersion  = data.value("version", 0);
         if (outSavedAt)  *outSavedAt  = data.value("saved_at", "");
         if (outTitle)    *outTitle    = data.value("title", "");
+
+        // skills 数组
+        if (outSkills) {
+            outSkills->clear();
+            if (data.contains("skills") && data["skills"].is_array()) {
+                for (const auto& s : data["skills"]) {
+                    if (s.is_string()) outSkills->push_back(s.get<std::string>());
+                }
+            }
+        }
+
+        // summary 对象
+        if (outSummary) {
+            *outSummary = {};
+            if (data.contains("summary") && data["summary"].is_object()) {
+                const auto& sum = data["summary"];
+                outSummary->m_summary     = sum.value("text", "");
+                outSummary->m_currentPlan = sum.value("current_plan", "");
+                outSummary->m_method      = sum.value("method", "rule_based");
+                outSummary->m_valid       = !outSummary->m_summary.empty();
+                if (sum.contains("key_decisions") && sum["key_decisions"].is_array()) {
+                    for (const auto& kd : sum["key_decisions"]) {
+                        if (kd.is_string()) outSummary->m_keyDecisions.push_back(kd.get<std::string>());
+                    }
+                }
+                if (sum.contains("files_modified") && sum["files_modified"].is_array()) {
+                    for (const auto& fm : sum["files_modified"]) {
+                        if (fm.is_string()) outSummary->m_filesModified.push_back(fm.get<std::string>());
+                    }
+                }
+                if (sum.contains("pending_tasks") && sum["pending_tasks"].is_array()) {
+                    for (const auto& pt : sum["pending_tasks"]) {
+                        if (pt.is_string()) outSummary->m_pendingTasks.push_back(pt.get<std::string>());
+                    }
+                }
+            }
+        }
 
         for (const auto& m : data["messages"]) {
             if (!m.contains("role") || !m.contains("content")) continue;

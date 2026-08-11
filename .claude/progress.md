@@ -29,6 +29,15 @@
 ## 长期观察
 - 首次运行崩溃修复（2026-08-11）：等待自然复现后根据日志定位根因
 
+### 2026-08-11 Resume 会话恢复完善 & 上下文智能压缩 ✅
+- 设计文档：[设计-Resume会话恢复完善&上下文智能压缩](../../.claude/plans/async-stargazing-boole.md)
+- 保存模型重建：latest.json 原子写入 + /exit 归档
+- 会话摘要：CLFSessionSummarizer（独立模块），API 生成 + 降级规则提取
+- Resume 修复：回显历史 + skill 重建 + 摘要注入（system 锚点）
+- 灾难保护：原子写入、损坏备份、空会话保护、旧文件迁移
+- 日志布点：debug/info/warn 三级全覆盖
+- /exit Unicode 崩溃修复
+
 ## 已知问题
 - Ctrl+C 确认栏退出（低优先，暂缓）
 - emitRaw 钩子（设计预留）

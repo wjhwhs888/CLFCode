@@ -69,6 +69,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
     // 4. 启动 REPL
     std::string historyDir = projectRoot + "/doc/contextHistory";
+    CLF::CLFCore::CLFSessionManager::migrateLegacyIncomplete(historyDir);
     CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30);
 
     CLF::CLFUI::CLFRepl repl(agent, historyDir, &terminal);

@@ -457,30 +457,57 @@ void CLFRepl::printBanner() {
 void CLFRepl::submit(const std::string& input) {
     CLFLogger::instance().info("[Submit] entry, input="
         + (input.size() > 60 ? input.substr(0, 60) + "..." : input));
-    if (m_output) m_output->emitContent("> " + CLFTerminal::bold(input) + "\n");
 
-    if (m_dispatcher->handle(input)) {
-        if (m_output) m_output->setStatus("");
+    // 回显用户输入（渲染异常不应阻塞逻辑）
+    try {
+        if (m_output) m_output->emitContent("> " + CLFTerminal::bold(input) + "\n");
+    } catch (const std::exception& e) {
+        CLFLogger::instance().warn(std::string("[Submit] echo failed: ") + e.what());
+    }
+
+    // 命令分发（/exit 须在此处执行 save，不能因渲染异常而跳过）
+    bool handled = false;
+    try {
+        handled = m_dispatcher->handle(input);
+    } catch (const std::exception& e) {
+        CLFLogger::instance().error(std::string("[Submit] dispatcher exception: ") + e.what());
+    }
+
+    if (handled) {
+        try {
+            if (m_output) m_output->setStatus("");
+        } catch (...) {}
         CLFLogger::instance().info("[Submit] handled by dispatcher");
         return;
     }
 
-    if (m_output) m_output->emitContent("\n● " + CLFTerminal::cyan("CLFCode") + ":\n ");
+    // AI 对话处理
+    try {
+        if (m_output) m_output->emitContent("\n● " + CLFTerminal::cyan("CLFCode") + ":\n ");
+    } catch (...) {}
+
     try {
         std::string response = m_agent.runTurn(input);
-        if (!response.empty() && response != "[Interrupted]")
-            if (m_output) m_output->emitContent(response + "\n");
+        if (!response.empty() && response != "[Interrupted]") {
+            try {
+                if (m_output) m_output->emitContent(response + "\n");
+            } catch (...) {}
+        }
     } catch (const std::exception& e) {
         CLFLogger::instance().error(std::string("Fatal: ") + e.what());
-        if (m_output) m_output->emitContent(
-            CLFTerminal::red("✗ 异常: ") + e.what() + "\n");
+        try {
+            if (m_output) m_output->emitContent(
+                CLFTerminal::red("✗ 异常: ") + e.what() + "\n");
+        } catch (...) {}
         m_agent.clearContext();
     }
 
     auto st = m_agent.getLastToolStats();
-    saveSession(st.totalCalls > 0);
-    if (m_output) m_output->setStatus("");
-    if (m_output) m_output->emitContent("\n");
+    saveSession(false);  // 每轮都存 latest.json
+    try {
+        if (m_output) m_output->setStatus("");
+        if (m_output) m_output->emitContent("\n");
+    } catch (...) {}
     CLFLogger::instance().info("[Submit] exit, tools=" + std::to_string(st.totalCalls));
 }
 
@@ -496,13 +523,8 @@ void CLFRepl::cycleMode() {
     m_agent.setSecurityMode(next);
 }
 
-void CLFRepl::saveSession(bool incomplete) {
-    if (incomplete) {
-        m_agent.saveSession(m_historyDir, true);
-    } else {
-        m_agent.saveSession(m_historyDir, false);
-        CLFSessionManager::removeAllIncomplete(m_historyDir);
-    }
+void CLFRepl::saveSession(bool isFinal) {
+    m_agent.saveSession(m_historyDir, isFinal);
 }
 
 } // namespace CLF::CLFUI

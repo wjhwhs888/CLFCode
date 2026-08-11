@@ -24,8 +24,8 @@ namespace {
 bool cmdExit(const std::string&, const std::string&,
              CLFAgentLoop& agent, const std::string& historyDir,
              ICLFOutput* output) {
-    agent.saveSession(historyDir, false);
-    CLFSessionManager::removeAllIncomplete(historyDir);
+    agent.generateAndCacheSummary();  // 生成会话摘要
+    agent.saveSession(historyDir, true);  // 归档 latest.json
     if (output) output->emitContent("● 会话已保存。再见 — CLFCode\n");
     return true;
 }
@@ -33,8 +33,8 @@ bool cmdExit(const std::string&, const std::string&,
 bool cmdClear(const std::string&, const std::string&,
               CLFAgentLoop& agent, const std::string& historyDir,
               ICLFOutput* output) {
-    agent.saveSession(historyDir, false);
-    CLFSessionManager::removeAllIncomplete(historyDir);
+    agent.generateAndCacheSummary();  // 生成会话摘要
+    agent.saveSession(historyDir, true);  // 归档旧会话
     agent.clearContext();
     if (output) output->emitContent("✓ 会话已保存，新会话开始\n");
     return true;
@@ -184,8 +184,10 @@ bool cmdHistory(const std::string&, const std::string&,
         if (output) output->emitContent("  ⎿ 暂无已保存的会话\n");
     } else {
         std::string out = "\n● 会话列表\n";
-        for (const auto& s : sessions)
-            out += "  ⎿ " + s.m_savedAt + "  " + s.m_title + "\n";
+        for (const auto& s : sessions) {
+            std::string prefix = s.m_isLatest ? "  ⎿ [当前] " : "  ⎿ ";
+            out += prefix + s.m_savedAt + "  " + s.m_title + "\n";
+        }
         if (output) output->emitContent(out);
     }
     return true;
@@ -201,16 +203,18 @@ bool cmdResume(const std::string&, const std::string& args,
     }
     if (args.empty()) {
         std::string out = "\n● 会话列表\n";
-        for (size_t i = 0; i < sessions.size(); ++i)
+        for (size_t i = 0; i < sessions.size(); ++i) {
+            std::string tag = sessions[i].m_isLatest ? " [当前]" : "";
             out += "  ⎿ [" + std::to_string(i + 1) + "] "
-                + sessions[i].m_savedAt + "  " + sessions[i].m_title + "\n";
+                + sessions[i].m_savedAt + "  " + sessions[i].m_title + tag + "\n";
+        }
         if (output) output->emitContent(out);
     } else {
         int idx = 0;
         try { idx = std::stoi(args); } catch (...) {}
         if (idx >= 1 && idx <= static_cast<int>(sessions.size())) {
             if (agent.restoreSession(sessions[idx - 1].m_path)) {
-                if (output) output->emitContent("✓ 会话已恢复: " + sessions[idx - 1].m_title + "\n");
+                // restoreSession 已回显历史，不再重复显示
             } else {
                 if (output) output->emitContent("✗ 恢复失败\n");
             }
