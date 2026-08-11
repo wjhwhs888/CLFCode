@@ -256,6 +256,8 @@ int CLFRepl::run() {
                 sep(),
                 ftxui::text(" 🔒 " + m_dispatcher->modeName())
                   | ftxui::color(modeColor()),
+                ftxui::text("  Shift+Tab 切换  ")
+                  | ftxui::dim,
                 ftxui::filler(),
                 ftxui::text("/help 帮助  ")
                   | ftxui::dim,
