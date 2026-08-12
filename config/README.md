@@ -159,3 +159,35 @@ CLFCode 的协议适配器输出 OpenAI 兼容格式。切换到兼容 Provider 
 ```
 
 > `chat_completions.model` 改为对应 provider 的模型名即可。
+
+---
+
+## 八、System Prompt 模板
+
+`system_prompt_template.md` 是 System Prompt 的可编辑模板文件。CLFCode 启动时读取该文件，将其中的 `{{变量}}` 替换为运行时值后注入模型。
+
+**可用变量**：
+
+| 变量 | 说明 |
+|------|------|
+| `{{model_name}}` | 当前使用的模型名 |
+| `{{interaction_language}}` | 交互语言（如"中文"） |
+| `{{os_info}}` | 操作系统信息 |
+| `{{project_context}}` | Git 状态 + 项目规则 |
+| `{{skills}}` | L1 宪法 + 已加载的 L2/L3 skill |
+
+**降级策略**：如果模板文件缺失或读取失败，使用内置默认模板（行为与 v0.1.4 一致）。
+
+---
+
+## 九、项目规则文件（PROJECTRULES.md）
+
+CLFCode 启动时会检测工作目录下的项目规则文件，并注入到 System Prompt 中。
+
+**检测优先级**：
+1. `$WORKSPACE/PROJECTRULES.md` — 推荐使用（`/init` 命令自动创建）
+2. `$WORKSPACE/CLAUDE.md` — 兼容 Claude Code 项目规则
+
+**篇幅建议**：规则文件随每轮对话注入，建议控制在 **128 行**以内（约 5000 字符）。超出部分会被截断。
+
+PROJECTRULES.md 模板可通过 `/init` 命令生成。CLAUDE.md 仅作为兼容性 fallback，不推荐直接使用。

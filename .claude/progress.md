@@ -38,6 +38,13 @@
 - 日志布点：debug/info/warn 三级全覆盖
 - /exit Unicode 崩溃修复
 
+### 2026-08-12 System Prompt 优化 ✅
+- 设计文档：[设计-SystemPrompt优化](../../.claude/plans/设计/设计-SystemPrompt优化.md)
+- CLFSystemPromptBuilder：模板加载（降级默认）/ L1 宪法 mtime 缓存 / Git TTL 30s 惰性刷新 / 项目规则加载 / token 预算
+- CLFContext::setSystemPrompt()（去重）+ removeSystemMessages()
+- CLFAgentLoop::injectSystemPrompt() → Builder，injectSkillToContext() → 重建模式
+- config/system_prompt_template.md 可编辑模板
+
 ### 2026-08-12 /init 项目初始化命令 ✅
 - `/init` → 在工作目录创建 PROJECTRULES.md 模板（已有则不覆盖）
 - 模板含 6 个区块：项目概述 / 技术栈 / 编码规范 / 架构约定 / 构建与测试 / 注意事项
@@ -53,6 +60,11 @@
 - 状态栏着色：模型红/目录绿/模式分色（auto绿 analyze蓝 edit橙 manual灰）
 - 分割线细化：separatorLight + 浅蓝色
 - Markdown 表格列对齐：emitContent 层缓冲表格块，CJK 感知列宽对齐
+
+## 已知问题
+- Ctrl+C 确认栏退出（低优先，暂缓）
+### 2026-08-12 v0.1.5 发布 ✅
+- 归档方案：[归档-SystemPrompt优化](../../.claude/plans/设计/归档/归档-SystemPrompt优化.md)
 
 ## 已知问题
 - Ctrl+C 确认栏退出（低优先，暂缓）

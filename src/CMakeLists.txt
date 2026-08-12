@@ -31,6 +31,7 @@ add_library(clf_core STATIC
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSessionSummarizer.cpp
     CLFCore/CLFSkillLoader.cpp
+    CLFCore/CLFSystemPromptBuilder.cpp
     CLFCore/CLFToolExecutor.cpp
     CLFTools/CLFDiff.cpp          # 编入 clf_core 避免循环依赖
     CLFTools/CLFFileOps.cpp       # 编入 clf_core（被 CLFToolExecutor 直接调用）

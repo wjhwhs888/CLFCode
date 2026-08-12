@@ -10,6 +10,26 @@
 
 ---
 
+## v0.1.5 (2026-08-12)
+
+### 新增
+
+- **`/init` 命令**：在当前工作目录创建 PROJECTRULES.md 项目规则模板（已有不覆盖），模板含篇幅建议（128 行以内）
+- **System Prompt 优化**：模板化/动态上下文/项目规则/合并/Token 预算
+  - `CLFSystemPromptBuilder`：可编辑模板（`config/system_prompt_template.md`）+ 降级默认
+  - **动态上下文**：Git 状态快照（分支 + 最近提交 + 工作区），30s TTL 惰性刷新
+  - **项目规则**：自动检测 `PROJECTRULES.md` → `CLAUDE.md`，注入 system prompt
+  - **System 消息合并**：所有 system 内容合并为单条消息
+  - **Token 预算保护**：system 区 30% 窗口上限，超出按完整 skill 丢弃
+  - **性能优化**：L1 宪法 mtime 缓存 + `setSystemPrompt()` 内容去重
+- **CLFContext 新接口**：`setSystemPrompt()`（含去重）/ `removeSystemMessages()`
+
+### 变更
+
+- `CLFAgentLoop::injectSystemPrompt()` 改为调用 `CLFSystemPromptBuilder`，`injectSkillToContext()` 改为记录后重建模式
+
+---
+
 ## v0.1.4 (2026-08-11)
 
 ### 优化

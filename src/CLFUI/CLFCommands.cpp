@@ -4,7 +4,6 @@
 #include "CLFUI/CLFCommandDispatcher.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
-#include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
@@ -236,7 +235,7 @@ bool cmdResume(const std::string&, const std::string& args,
 bool cmdInit(const std::string&, const std::string&,
              CLFAgentLoop&, const std::string&,
              ICLFOutput* output) {
-    std::string projectRoot = CLFConfigLoader::findProjectRoot();
+    std::string projectRoot = std::filesystem::current_path().string();
     std::string rulesPath = projectRoot + "/PROJECTRULES.md";
 
     if (std::filesystem::exists(rulesPath)) {

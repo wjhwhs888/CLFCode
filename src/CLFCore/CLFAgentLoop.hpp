@@ -13,6 +13,7 @@
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFContext.hpp"
 #include "CLFCore/CLFProtocolAdapter.hpp"
+#include "CLFCore/CLFSystemPromptBuilder.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionSummarizer.hpp"
 
@@ -80,6 +81,12 @@ public:
 private:
     // 注入系统身份提示词（构造时 + /clear 后调用）
     void injectSystemPrompt();
+
+    // 构建 Builder Context（injectSystemPrompt + rebuildSystemMessage 共用）
+    CLFSystemPromptBuilder::Context buildSystemPromptContext() const;
+
+    // 重建 system 消息（/skill 动态注入后调用）
+    void rebuildSystemMessage();
 
     CLFAgentConfig                    m_config;
     CLFTimerLabels                    m_labels;

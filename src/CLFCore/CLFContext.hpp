@@ -37,6 +37,15 @@ public:
     // 清空历史
     void clear();
 
+    // 设置/替换 system 消息为单条（system 区始终只有 1 条）
+    // - 若 m_messages 中已有 system 消息，替换第一条的 content
+    // - 若没有 system 消息，在 m_messages 头部插入
+    // - 新内容与当前内容相同时跳过（去重）
+    void setSystemPrompt(const std::string& content);
+
+    // 移除所有 system 消息（/clear 时使用，非 system 消息保留）
+    void removeSystemMessages();
+
     // 估算当前 token 数（简单按字符数 / 4 估算）
     int estimateTokens() const;
 

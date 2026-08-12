@@ -57,6 +57,7 @@ CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交�
 | `CLFProtocolAdapter` | OpenAI 兼容协议 JSON 序列化/反序列化（请求构建 + 响应解析） |
 | `CLFConfigLoader` | 配置解析 + 环境变量覆盖 + 项目根目录管理 |
 | `CLFSkillLoader` | data/skills/ 规则文件加载（L1 常驻、L2/L3 按需注入） |
+| `CLFSystemPromptBuilder` | System Prompt 构建器：模板/动态上下文/Git/项目规则/Token 预算 → 单条 system 消息 |
 | `CLFSecurityPolicy` | 四模式安全策略（auto/analyze/edit/manual） |
 | `CLFLogger` | 单例日志：级别过滤 + 时间戳 + 文件/控制台输出 |
 | `CLFStreamAccumulator` | SSE 流式 delta 累积（文本 + tool_calls 分片合并） |
@@ -91,7 +92,7 @@ CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交�
 | 配置驱动 | 全部行为参数从 agent_settings.json 读取，零硬编码 |
 | 流式/同步 | `config.stream` 切换，同一 tool-calling 循环复用 |
 | 安全四模式 | 读永不限制，写/命令按模式放行/阻断/确认 |
-| 身份提示词 | 启动注入 CLFCode 身份 + L1 编码宪法（/clear 保留） |
+| System Prompt | CLFSystemPromptBuilder 构建：模板文件（可编辑）→ 动态上下文（Git/OS/Shell）→ 项目规则（PROJECTRULES.md）→ L1 宪法 + Skills → Token 预算，合并为单条 system 消息 |
 | 路径统一 | 所有路径基于项目根目录（findProjectRoot） |
 
 ## 6. 扩展性设计

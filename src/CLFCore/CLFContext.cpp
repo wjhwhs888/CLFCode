@@ -157,6 +157,27 @@ void CLFContext::clear() {
     m_messages.clear();
 }
 
+void CLFContext::setSystemPrompt(const std::string& content) {
+    auto it = std::find_if(m_messages.begin(), m_messages.end(),
+        [](const CLFMessage& m) { return m.m_role == "system"; });
+    if (it != m_messages.end()) {
+        if (it->m_content == content) return;  // 内容未变，跳过
+        it->m_content = content;
+    } else {
+        CLFMessage msg;
+        msg.m_role    = "system";
+        msg.m_content = content;
+        m_messages.insert(m_messages.begin(), std::move(msg));
+    }
+}
+
+void CLFContext::removeSystemMessages() {
+    m_messages.erase(
+        std::remove_if(m_messages.begin(), m_messages.end(),
+            [](const CLFMessage& m) { return m.m_role == "system"; }),
+        m_messages.end());
+}
+
 int CLFContext::estimateTokens() const {
     int total = 0;
     for (const auto& msg : m_messages) {

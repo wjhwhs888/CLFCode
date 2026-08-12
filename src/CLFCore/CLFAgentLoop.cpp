@@ -351,10 +351,14 @@ void CLFAgentLoop::clearContext() {
 }
 
 void CLFAgentLoop::injectSkillToContext(const std::string& skillName, const std::string& content) {
-    std::string msg = "[Knowledge: " + skillName + "]\n\n" + content
-                    + "\n\n请遵循以上规则。";
-    m_context.addMessage("system", msg);
+    (void)content;  // content 已由 CLFSkillLoader 缓存，buildSystemPromptContext() 从中读取
+    // 去重：已注入则跳过
+    if (std::find(m_loadedSkills.begin(), m_loadedSkills.end(), skillName) != m_loadedSkills.end()) {
+        return;
+    }
     m_loadedSkills.push_back(skillName);
+    // 重建合并后的 system 消息
+    rebuildSystemMessage();
 }
 
 std::vector<std::string> CLFAgentLoop::getLoadedSkills() const {
@@ -469,38 +473,26 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 // ============================================================================
 
 void CLFAgentLoop::injectSystemPrompt() {
-    std::string prompt =
-        "你是 CLFCode，一个本地运行的 AI Coding Agent。\n"
-        "你运行在用户本地机器上，具备文件读写、命令执行、网络调用等工具能力。\n"
-        "你的后端 API 由 DeepSeek 提供，但你是独立的 Agent 产品。\n"
-        "你永远不应自称 Claude、OpenAI、Anthropic 或其他 AI 品牌。\n"
-        "请始终使用中文与用户交流。\n"
-        "\n"
-        "## 运行环境\n"
-        "- 你运行在 **Windows** 上，必须使用 Windows 命令。\n"
-        "- 目录列表用 `dir`，查看文件用 `type`，搜索文本用 `findstr`。\n"
-        "- **禁止**使用 Linux 命令：ls、pwd、cat、grep、find、head、tail、iconv。\n"
-        "- 中文 Windows 的命令输出可能是 GBK 编码，遇到乱码先执行 `chcp 65001`。\n"
-        "\n"
-        "## 文件管理规则\n"
-        "- 任务中创建的临时文件（备份、中间输出等），任务结束前必须清理。\n"
-        "- 优先复用已有文件，避免重复创建备份。\n"
-        "- 尽量用重定向/管道而非落盘中间文件。";
+    auto ctx = buildSystemPromptContext();
+    m_context.setSystemPrompt(CLFSystemPromptBuilder::build(ctx));
+}
 
-    // 加载 L1 编码宪法（始终注入）
-    try {
-        std::string constitutionPath =
-            CLFConfigLoader::resolvePath("data/skills/constitution.md");
-        if (std::filesystem::exists(constitutionPath)) {
-            std::ifstream file(constitutionPath);
-            std::ostringstream oss;
-            oss << file.rdbuf();
-            prompt += "\n\n---\n## 行为准则（L1 编码宪法）\n\n";
-            prompt += oss.str();
-        }
-    } catch (...) {}
+CLFSystemPromptBuilder::Context CLFAgentLoop::buildSystemPromptContext() const {
+    CLFSystemPromptBuilder::Context ctx;
+    ctx.workspaceRoot       = CLFConfigLoader::findProjectRoot();
+    ctx.interactionLanguage = m_config.m_interactionLanguage;
+    ctx.modelName           = m_config.m_modelName;
+    ctx.maxContextWindow    = m_config.m_maxContextWindow;
+    for (const auto& name : m_loadedSkills) {
+        std::string content = CLFSkillLoader::getContent(name);
+        if (!content.empty()) ctx.skills.emplace_back(name, content);
+    }
+    return ctx;
+}
 
-    m_context.addMessage("system", prompt);
+void CLFAgentLoop::rebuildSystemMessage() {
+    auto ctx = buildSystemPromptContext();
+    m_context.setSystemPrompt(CLFSystemPromptBuilder::build(ctx));
 }
 
 } // namespace CLF::CLFCore
