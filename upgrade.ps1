@@ -36,8 +36,9 @@ if (Test-Path $versionFile) {
 }
 
 if ($currentVersion -eq $latestVersion) {
-    Write-Host "  已是最新版本 ($currentVersion)，无需升级" -ForegroundColor Green
-    exit 0
+    Write-Host ""
+    Write-Host "✔ 已是最新版本 ($currentVersion)" -ForegroundColor Green
+    return
 }
 
 Write-Host "  当前版本: $currentVersion  →  最新版本: $latestVersion" -ForegroundColor Yellow

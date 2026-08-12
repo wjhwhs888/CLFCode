@@ -26,13 +26,25 @@ try {
 
 # ── 1.5 检查本地已安装版本 ──
 $localVersionPath = "$INSTALL_DIR\VERSION"
+$localVersion = ""
+$updateAvailable = $true
 if (Test-Path $localVersionPath) {
     $localVersion = (Get-Content $localVersionPath -Raw).Trim()
     if ($localVersion -eq $latestVersion) {
-        Write-Host "  已是最新版本 ($localVersion)，无需安装" -ForegroundColor Yellow
-        exit 0
+        Write-Host ""
+        Write-Host "✔ 已是最新版本 ($localVersion)" -ForegroundColor Green
+        Write-Host "  升级: irm https://gitee.com/$REPO_OWNER/$REPO_NAME/raw/master/upgrade.ps1 | iex" -ForegroundColor Gray
+        Write-Host "  卸载: & `$env:USERPROFILE\CLFCode\uninstall.ps1" -ForegroundColor Gray
+        $updateAvailable = $false
+    } else {
+        Write-Host "  本地版本: $localVersion → 更新到 $latestVersion" -ForegroundColor Yellow
     }
-    Write-Host "  本地版本: $localVersion → 更新到 $latestVersion" -ForegroundColor Gray
+}
+if (-not $updateAvailable) { return }
+
+# 如果本地已有版本但不同，提示升级
+if ($localVersion -and $localVersion -ne $latestVersion) {
+    Write-Host "  建议使用升级脚本: irm https://gitee.com/$REPO_OWNER/$REPO_NAME/raw/master/upgrade.ps1 | iex" -ForegroundColor Yellow
 }
 
 # ── 2. 下载发布包 ──
