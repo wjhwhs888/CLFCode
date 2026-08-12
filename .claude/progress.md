@@ -65,6 +65,7 @@
 - Ctrl+C 确认栏退出（低优先，暂缓）
 ### 2026-08-12 v0.1.5 发布 ✅
 - 归档方案：[归档-SystemPrompt优化](../../.claude/plans/设计/归档/归档-SystemPrompt优化.md)
+- tag: v0.1.5，release: CLFCode-v0.1.5-win64.zip (13M)
 
 ## 已知问题
 - Ctrl+C 确认栏退出（低优先，暂缓）
