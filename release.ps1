@@ -137,13 +137,12 @@ if (-not $GT) {
         $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
         $Rel = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases" `
             -Method Post -Body $BodyBytes -ContentType "application/json; charset=utf-8" -TimeoutSec 30
-        $curlArgs = @(
-            "-X", "POST",
-            "-H", "accept: application/json",
-            "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($Rel.id)/attach_files?access_token=$GT",
-            "-F", "file=@$ZipPath"
-        )
-        curl.exe @curlArgs 2>&1 | Out-Null
+        $uploadUrl = "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($Rel.id)/attach_files?access_token=$GT"
+        $curlResult = curl.exe -X POST -H "accept: application/json" $uploadUrl -F "file=@$ZipPath" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  curl exit code: $LASTEXITCODE" -ForegroundColor Red
+            Write-Host "  $curlResult" -ForegroundColor Red
+        }
         Write-Host "  Done" -ForegroundColor Green
     } catch { Write-Host "  FAILED: $_" -ForegroundColor Red }
 }
