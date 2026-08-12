@@ -10,15 +10,25 @@
 
 ---
 
-## v0.1.7 (unreleased)
+## v0.2.0 (2026-08-12)
+
+### 新增
+
+- **CLI 参数解析**：`--help` / `--version` / `--prompt` / `--prompt-file` / `--allow-write` / `--config` / `--project-root`
+- **非交互模式**：`--prompt` 单次执行后退出，安全策略 Analyze（block 写），`--allow-write` 提升 Auto
+- **`search_content` 工具**：纯文本匹配，跳过 `.git`/`node_modules` 等目录，1MB 文件上限，扩展名过滤，500 行截断
 
 ### 修复
 
-- **安装/升级脚本终端闪退**：`exit 0` → `return`，保留终端窗口
+- **安装/升级脚本终端闪退**：`exit 0` → `return`
+- **ProgressGuard 空指针**：非交互模式 `m_output=null` 导致崩溃
+- **非交互模式流式响应丢失**：`--prompt` 强制关流式
 
 ### 文档
 
-- README 补充卸载命令
+- README 补充卸载命令 + 安装升级卸载格式化
+- 整体功能审查方案（26 问题，3 批实施计划）
+- P0 第一批测试方案（13 条用例）
 
 ---
 
