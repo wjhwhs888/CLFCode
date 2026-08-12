@@ -24,6 +24,17 @@ try {
     exit 1
 }
 
+# ── 1.5 检查本地已安装版本 ──
+$localVersionPath = "$INSTALL_DIR\VERSION"
+if (Test-Path $localVersionPath) {
+    $localVersion = (Get-Content $localVersionPath -Raw).Trim()
+    if ($localVersion -eq $latestVersion) {
+        Write-Host "  已是最新版本 ($localVersion)，无需安装" -ForegroundColor Yellow
+        exit 0
+    }
+    Write-Host "  本地版本: $localVersion → 更新到 $latestVersion" -ForegroundColor Gray
+}
+
 # ── 2. 下载发布包 ──
 $zipUrl = "https://gitee.com/$REPO_OWNER/$REPO_NAME/releases/download/$latestVersion/CLFCode-$latestVersion-win64.zip"
 $zipPath = "$env:TEMP\CLFCode-$latestVersion.zip"
