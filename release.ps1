@@ -123,6 +123,15 @@ if (-not $GT) {
     Write-Host "  GITEE_TOKEN not set, skipped" -ForegroundColor Yellow
 } else {
     try {
+        # 删除同 tag 旧 Release（如果存在）
+        $existingUrl = "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/tags/$Tag"
+        try {
+            $existing = Invoke-RestMethod -Uri "$existingUrl?access_token=$GT" -Method Get -TimeoutSec 10
+            if ($existing.id) {
+                Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($existing.id)?access_token=$GT" -Method Delete -TimeoutSec 10 | Out-Null
+                Write-Host "  Deleted old release (id=$($existing.id))" -ForegroundColor Gray
+            }
+        } catch {}
         $Body = @{ access_token = $GT; tag_name = $Tag; name = $Tag;
                    body = $ReleaseBody; target_commitish = "master" } | ConvertTo-Json
         $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
