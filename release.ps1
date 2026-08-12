@@ -123,27 +123,26 @@ if (-not $GT) {
     Write-Host "  GITEE_TOKEN not set, skipped" -ForegroundColor Yellow
 } else {
     try {
-        # 删除同 tag 旧 Release（如果存在）
+        # 删除同 tag 旧 Release
         $existingUrl = "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/tags/$Tag"
         try {
             $existing = Invoke-RestMethod -Uri "$existingUrl?access_token=$GT" -Method Get -TimeoutSec 10
             if ($existing.id) {
                 Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($existing.id)?access_token=$GT" -Method Delete -TimeoutSec 10 | Out-Null
-                Write-Host "  Deleted old release (id=$($existing.id))" -ForegroundColor Gray
+                Write-Host "  Deleted old release id=$($existing.id)" -ForegroundColor Gray
             }
-        } catch {}
+        } catch { Write-Host "  No old release to delete" -ForegroundColor Gray }
+
         $Body = @{ access_token = $GT; tag_name = $Tag; name = $Tag;
                    body = $ReleaseBody; target_commitish = "master" } | ConvertTo-Json
         $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
         $Rel = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases" `
             -Method Post -Body $BodyBytes -ContentType "application/json; charset=utf-8" -TimeoutSec 30
+        Write-Host "  Release created" -ForegroundColor Green
         $uploadUrl = "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($Rel.id)/attach_files?access_token=$GT"
-        $curlResult = curl.exe -X POST -H "accept: application/json" $uploadUrl -F "file=@$ZipPath" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  curl exit code: $LASTEXITCODE" -ForegroundColor Red
-            Write-Host "  $curlResult" -ForegroundColor Red
-        }
-        Write-Host "  Done" -ForegroundColor Green
+        $curlCmd = "curl.exe -s -X POST -H accept:application/json ""$uploadUrl"" -F ""file=@$ZipPath"""
+        cmd.exe /c $curlCmd 2>&1 | Out-Null
+        Write-Host "  Attachment uploaded ($ZipSize MB)" -ForegroundColor Green
     } catch { Write-Host "  FAILED: $_" -ForegroundColor Red }
 }
 
