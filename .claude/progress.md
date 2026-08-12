@@ -38,6 +38,16 @@
 - 日志布点：debug/info/warn 三级全覆盖
 - /exit Unicode 崩溃修复
 
+### 2026-08-12 /init 项目初始化命令 ✅
+- `/init` → 在工作目录创建 PROJECTRULES.md 模板（已有则不覆盖）
+- 模板含 6 个区块：项目概述 / 技术栈 / 编码规范 / 架构约定 / 构建与测试 / 注意事项
+
+### 2026-08-12 渐进式工具显示细化 ✅
+- 执行中：只显示当前工具（一条隐藏一条），空行隔离
+- 完成后：折叠为 summary（thought for Xs, read N files），Ctrl+T 展开查看
+- 文件更新不隐藏，直接展示 diff
+- 状态栏：执行中显示 "Working for Xs…"，完成后追加 "Cooked for Xs"
+
 ### 2026-08-11 UI 体验优化 ✅
 - 输入框灰色背景移除：自定义 transform 跳过 FTXUI 默认样式
 - 状态栏着色：模型红/目录绿/模式分色（auto绿 analyze蓝 edit橙 manual灰）

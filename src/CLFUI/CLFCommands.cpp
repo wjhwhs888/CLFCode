@@ -4,11 +4,14 @@
 #include "CLFUI/CLFCommandDispatcher.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace CLF::CLFUI {
@@ -74,6 +77,7 @@ bool cmdHelp(const std::string&, const std::string&,
         "  ⎿ /skill      知识库管理\n"
         "  ⎿ /history    显示最近会话\n"
         "  ⎿ /resume     恢复指定会话\n"
+        "  ⎿ /init       初始化项目规则 PROJECTRULES.md\n"
         "  ⎿ /help       显示此帮助\n");
     return true;
 }
@@ -225,6 +229,69 @@ bool cmdResume(const std::string&, const std::string& args,
     return true;
 }
 
+// ============================================================================
+// 项目初始化
+// ============================================================================
+
+bool cmdInit(const std::string&, const std::string&,
+             CLFAgentLoop&, const std::string&,
+             ICLFOutput* output) {
+    std::string projectRoot = CLFConfigLoader::findProjectRoot();
+    std::string rulesPath = projectRoot + "/PROJECTRULES.md";
+
+    if (std::filesystem::exists(rulesPath)) {
+        if (output) output->emitContent(
+            "● PROJECTRULES.md 已存在: " + rulesPath + "\n");
+        return true;
+    }
+
+    // 生成初始模板
+    std::string projectName = std::filesystem::path(projectRoot).filename().string();
+    std::string templateContent =
+        "# " + projectName + " 项目规则\n"
+        "\n"
+        "> 此文件由 `/init` 自动生成，用于告诉 CLFCode 该项目的约定和规范。\n"
+        "> 模型会在每次对话中读取此文件，请根据项目实际情况修改。\n"
+        "> **建议控制在 128 行以内**，超过部分可能被截断，无法被模型感知。\n"
+        "\n"
+        "## 项目概述\n"
+        "<!-- 简要描述项目目标和范围 -->\n"
+        "\n"
+        "## 技术栈\n"
+        "<!-- 例如：C++17 / CMake / Ninja -->\n"
+        "\n"
+        "## 编码规范\n"
+        "<!-- 命名规则、代码风格、lint 规则等 -->\n"
+        "\n"
+        "## 架构约定\n"
+        "<!-- 模块划分、依赖方向、设计模式等 -->\n"
+        "\n"
+        "## 构建与测试\n"
+        "<!-- 构建命令、测试框架、CI 流程等 -->\n"
+        "\n"
+        "## 注意事项\n"
+        "<!-- 容易踩坑的地方、特殊约束等 -->\n";
+
+    std::error_code ec;
+    if (!std::filesystem::exists(projectRoot, ec)) {
+        std::filesystem::create_directories(projectRoot, ec);
+    }
+
+    std::ofstream file(rulesPath);
+    if (!file.is_open()) {
+        if (output) output->emitContent(
+            "✗ 无法创建 PROJECTRULES.md: " + rulesPath + "\n");
+        return true;
+    }
+    file << templateContent;
+    file.close();
+
+    if (output) output->emitContent(
+        "✓ 已创建 PROJECTRULES.md → " + rulesPath + "\n"
+        "  请根据项目情况编辑此文件。\n");
+    return true;
+}
+
 } // anonymous namespace
 
 // ============================================================================
@@ -249,6 +316,7 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
     reg("/skill",   "知识库管理 /skill [list|<name>]",     cmdSkill);
     reg("/history", "显示最近保存的会话",                   cmdHistory);
     reg("/resume",  "恢复指定会话 /resume <n>",             cmdResume);
+    reg("/init",    "初始化项目规则 PROJECTRULES.md",        cmdInit);
 }
 
 } // namespace CLF::CLFUI
