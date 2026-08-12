@@ -4,6 +4,7 @@
 #include "CLFUI/CLFCommandDispatcher.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
@@ -67,17 +68,18 @@ bool cmdHelp(const std::string&, const std::string&,
         "  ⎿ esc      返回（中断 Agent）\n"
         "\n"
         "● 命令\n"
-        "  ⎿ /exit       退出并保存会话\n"
         "  ⎿ /clear      保存并开始新会话\n"
-        "  ⎿ /mode       切换安全模式\n"
-        "  ⎿ /model      显示当前模型\n"
         "  ⎿ /config     显示配置信息\n"
         "  ⎿ /context    显示上下文用量\n"
-        "  ⎿ /skill      知识库管理\n"
+        "  ⎿ /exit       退出并保存会话\n"
+        "  ⎿ /help       显示此帮助\n"
         "  ⎿ /history    显示最近会话\n"
-        "  ⎿ /resume     恢复指定会话\n"
         "  ⎿ /init       初始化项目规则 PROJECTRULES.md\n"
-        "  ⎿ /help       显示此帮助\n");
+        "  ⎿ /mode       切换安全模式\n"
+        "  ⎿ /model      显示当前模型\n"
+        "  ⎿ /resume     恢复指定会话\n"
+        "  ⎿ /skill      知识库管理\n"
+        "  ⎿ /version    显示版本号\n");
     return true;
 }
 
@@ -229,6 +231,26 @@ bool cmdResume(const std::string&, const std::string& args,
 }
 
 // ============================================================================
+// 版本信息
+// ============================================================================
+
+bool cmdVersion(const std::string&, const std::string&,
+                CLFAgentLoop&, const std::string&,
+                ICLFOutput* output) {
+    std::string verPath = CLFConfigLoader::resolvePath("VERSION");
+    std::error_code ec;
+    std::string version = "unknown";
+    if (std::filesystem::exists(verPath, ec)) {
+        std::ifstream file(verPath);
+        if (file.is_open()) {
+            std::getline(file, version);
+        }
+    }
+    if (output) output->emitContent("● CLFCode " + version + "\n");
+    return true;
+}
+
+// ============================================================================
 // 项目初始化
 // ============================================================================
 
@@ -316,6 +338,7 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
     reg("/history", "显示最近保存的会话",                   cmdHistory);
     reg("/resume",  "恢复指定会话 /resume <n>",             cmdResume);
     reg("/init",    "初始化项目规则 PROJECTRULES.md",        cmdInit);
+    reg("/version", "显示 CLFCode 版本号",                  cmdVersion);
 }
 
 } // namespace CLF::CLFUI
