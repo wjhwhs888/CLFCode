@@ -8,7 +8,17 @@
 irm https://gitee.com/sherlock0923/CLFCode/raw/master/install.ps1 | iex
 ```
 
-升级：`irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex`
+升级：
+
+```powershell
+irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex
+```
+
+卸载：
+
+```powershell
+& "$env:USERPROFILE\CLFCode\uninstall.ps1"
+```
 
 首次运行前编辑 `%USERPROFILE%\CLFCode\config\agent_settings.json` 填入 API Key。
 
