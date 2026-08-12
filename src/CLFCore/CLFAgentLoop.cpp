@@ -479,7 +479,7 @@ void CLFAgentLoop::injectSystemPrompt() {
 
 CLFSystemPromptBuilder::Context CLFAgentLoop::buildSystemPromptContext() const {
     CLFSystemPromptBuilder::Context ctx;
-    ctx.workspaceRoot       = CLFConfigLoader::findProjectRoot();
+    ctx.workspaceRoot       = std::filesystem::current_path().string();
     ctx.interactionLanguage = m_config.m_interactionLanguage;
     ctx.modelName           = m_config.m_modelName;
     ctx.maxContextWindow    = m_config.m_maxContextWindow;
