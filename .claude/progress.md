@@ -2,6 +2,12 @@
 
 ## 已完成
 
+### 2026-08-12 v0.2.0 发布 ✅
+- CLI 参数 + 非交互模式 + search_content 工具
+- release.ps1 一键双平台发布脚本
+- tag: v0.2.0，release: CLFCode-v0.2.0-win64.zip (11M)
+- CHANGELOG 写作规范：面向用户，描述功能变更
+
 ### 2026-08-12 System Prompt 优化 ✅
 - 设计文档：[归档-SystemPrompt优化](../../.claude/plans/设计/归档/归档-SystemPrompt优化.md)
 - CLFSystemPromptBuilder：模板加载（降级默认）/ L1 宪法 mtime 缓存 / Git TTL 30s 惰性刷新 / 项目规则加载 / token 预算
@@ -51,12 +57,18 @@
 - 01-04: Harness 架构重构
 - 01-03: FTXUI 终端 UI 重构 / 全量优化 P0-P3
 
+## 进行中 / 待做
+
+- P1-P3 批次（方案：[设计-整体功能审查与修复](../../.claude/plans/设计/设计-整体功能审查与修复.md)）
+  - P1：/model 切换 / token 统计 / 长会话自动摘要 / edit_file 备份
+  - P2：路径安全 / 命令危险检测 / 重试策略 / 配置校验 / 多个 bugfix
+  - P3：信号处理器 / Session 并发锁 / 配置热重载 / web_fetch
+
 ## 长期观察
 
 - 首次运行崩溃修复（2026-08-11）：等待自然复现后根据日志定位根因
 
 ## 已知问题
 
-- **install.ps1 版本检测闪退** ✅ 已修复（`exit 0` → `return`）
 - Ctrl+C 确认栏退出（低优先，暂缓）
 - emitRaw 钩子（设计预留）
