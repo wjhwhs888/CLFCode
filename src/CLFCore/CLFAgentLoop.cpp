@@ -290,7 +290,6 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     m_context.addToolResult(
                         result.m_toolCallId, result.m_name, result.m_content);
                 }
-                // ② 工具执行后检查中断 (工具可能耗时数秒)
                 if (m_interrupted) {
                     if (m_output) m_output->emitContent("\n⏹ 已中断\n");
                     if (m_output) m_output->clearThinking();

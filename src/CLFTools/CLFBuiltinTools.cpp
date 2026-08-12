@@ -8,6 +8,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFTools/CLFCommandExec.hpp"
 #include "CLFTools/CLFFileOps.hpp"
+#include "CLFTools/CLFSearchContent.hpp"
 
 namespace CLF::CLFTools {
 
@@ -249,6 +250,46 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     })";
     echoTool.m_handler = echoHandler;
     agent.registerTool(echoTool);
+
+    // —— search_content ——
+    CLFTool searchTool;
+    searchTool.m_name        = "search_content";
+    searchTool.m_description = "在目录中搜索文件内容（纯文本匹配），跳过 .git/node_modules 等目录，跳过 >1MB 文件，结果上限 500 行";
+    searchTool.m_parametersSchema = R"({
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "要搜索的文本（纯文本，非正则）"
+            },
+            "directory": {
+                "type": "string",
+                "description": "搜索根目录（相对于工作区）"
+            },
+            "fileTypes": {
+                "type": "string",
+                "description": "逗号分隔的扩展名过滤（如 .cpp,.h），省略则不过滤"
+            }
+        },
+        "required": ["pattern", "directory"]
+    })";
+    searchTool.m_handler = [](const std::string& args) -> std::string {
+        using json = nlohmann::json;
+        json result;
+        try {
+            json params     = json::parse(args);
+            std::string pattern   = params.value("pattern", "");
+            std::string directory = params.value("directory", ".");
+            std::string fileTypes = params.value("fileTypes", "");
+            result["success"] = true;
+            result["content"] = searchContent(pattern, directory, fileTypes);
+        } catch (const std::exception& e) {
+            result["success"] = false;
+            result["error"]   = std::string("search_content failed: ") + e.what();
+        }
+        return result.dump();
+    };
+    agent.registerTool(searchTool);
 }
 
 } // namespace CLF::CLFTools

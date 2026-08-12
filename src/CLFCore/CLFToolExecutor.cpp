@@ -317,8 +317,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     struct ProgressGuard {
         CLF::CLFTypes::ICLFOutput* out;
         bool committed = false;
-        ~ProgressGuard() { if (!committed) out->finishProgress(""); }
-        void commit(const std::string& s) { committed = true; out->finishProgress(s); }
+        ~ProgressGuard() { if (!committed && out) out->finishProgress(""); }
+        void commit(const std::string& s) { committed = true; if (out) out->finishProgress(s); }
     } guard{m_output};
 
     int searchCount   = m_stats.searchCount;

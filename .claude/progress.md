@@ -13,6 +13,12 @@
 - `/init` → 在工作目录创建 PROJECTRULES.md 模板（已有则不覆盖）
 - 模板含 6 个区块，128 行限制提示
 
+### 2026-08-12 P0 第一批 CLI 参数 + 非交互模式 + search_content ✅
+- CLI 参数解析：`--help`/`--version`/`--prompt`/`--prompt-file`/`--allow-write`/`--config`/`--project-root`
+- 非交互模式：`--prompt` 直接执行后退出，安全策略 Analyze（block 写），`--allow-write` 提升为 Auto
+- `search_content` 工具：纯文本匹配/跳过 ignore 目录/1MB 上限/扩展名过滤/500 行截断
+- bugfix: `ProgressGuard` 析构 null 检查 + `config.m_stream=false` 非交互模式
+
 ### 2026-08-12 v0.1.6 发布 ✅
 - `/version` 命令 + `/help` 字母序排列
 - install.ps1 本地版本检测（已是最新则跳过）

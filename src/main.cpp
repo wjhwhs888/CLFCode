@@ -1,5 +1,7 @@
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #ifdef _WIN32
@@ -10,36 +12,75 @@
 #endif
 
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFArgParser.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
-#include "CLFUI/CLFRepl.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
+#include "CLFCore/CLFSecurityPolicy.hpp"
+#include "CLFUI/CLFRepl.hpp"
 #include "CLFUI/CLFTerminal.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
+namespace {
+
+void printHelp() {
+    std::cout << "CLFCode — CLI Agent Framework for Code\n\n"
+              << "Usage: CLFCode [options]\n\n"
+              << "Options:\n"
+              << "  --help, -h            Show this help\n"
+              << "  --version, -v         Show version\n"
+              << "  --config <path>       Config file path\n"
+              << "  --project-root <path> Workspace root directory\n"
+              << "  --prompt <text>       Non-interactive mode, single prompt\n"
+              << "  --prompt-file <path>  Read prompt from file (non-interactive)\n"
+              << "  --allow-write         Allow write/exec in non-interactive mode\n";
+}
+
+void printVersion() {
+    std::error_code ec;
+    std::string verPath = CLF::CLFCore::CLFConfigLoader::resolvePath("VERSION");
+    if (std::filesystem::exists(verPath, ec)) {
+        std::ifstream f(verPath);
+        std::string v;
+        std::getline(f, v);
+        std::cout << v << std::endl;
+    } else {
+        std::cout << "unknown" << std::endl;
+    }
+}
+
+} // anonymous namespace
+
+int main(int argc, char* argv[]) {
 #ifdef _WIN32
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
 #endif
-    CLF::CLFUI::CLFTerminal::enableAnsi();
 
-    // 1. 加载配置（优先 .local.json → 环境变量 → agent_settings.json）
+    // 0. 解析 CLI 参数
+    CLF::CLFCore::CLFLaunchArgs args;
+    if (!CLF::CLFCore::CLFArgParser::parse(argc, argv, args)) {
+        return 1;
+    }
+    if (args.showHelp)    { printHelp();    return 0; }
+    if (args.showVersion) { printVersion(); return 0; }
+
+    // 1. 加载配置
     CLF::CLFCore::CLFAgentConfig config;
-    std::string projectRoot = CLF::CLFCore::CLFConfigLoader::findProjectRoot();
-    std::string configPath;
+    std::string projectRoot = args.projectRoot.empty()
+        ? CLF::CLFCore::CLFConfigLoader::findProjectRoot()
+        : args.projectRoot;
 
-    std::string localPath = projectRoot + "/config/agent_settings.local.json";
-    bool loaded = CLF::CLFCore::CLFConfigLoader::loadFromFileWithEnv(localPath, config);
-    if (loaded) {
-        configPath = localPath;
-    } else {
-        std::string defaultPath = projectRoot + "/config/agent_settings.json";
-        loaded = CLF::CLFCore::CLFConfigLoader::loadFromFileWithEnv(defaultPath, config);
-        if (loaded) configPath = defaultPath;
+    std::string configPath = args.configPath.empty()
+        ? projectRoot + "/config/agent_settings.local.json"
+        : args.configPath;
+    bool loaded = CLF::CLFCore::CLFConfigLoader::loadFromFileWithEnv(configPath, config);
+    if (!loaded) {
+        configPath = projectRoot + "/config/agent_settings.json";
+        loaded = CLF::CLFCore::CLFConfigLoader::loadFromFileWithEnv(configPath, config);
     }
 
-    // 2. 初始化日志系统（启动时轮转：上次日志 → .old，本次重新开始）
+    // 2. 日志
     std::string logPath = projectRoot + "/" + config.m_logFile;
     std::error_code ec;
     if (std::filesystem::exists(logPath, ec) && std::filesystem::file_size(logPath, ec) > 0) {
@@ -59,17 +100,47 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     if (config.m_apiKey.empty()) {
         CLF::CLFCore::CLFLogger::instance().error(
             "API Key is required. Set CLF_API_KEY or create config/agent_settings.local.json");
-        std::cout << "[Error] API Key is required. Exiting." << std::endl;
+        std::cerr << "[Error] API Key is required. Exiting." << std::endl;
         return 1;
     }
 
-    // 3. 创建 Terminal (ICLFOutput 实现) + Agent + 注入
-    CLF::CLFUI::CLFTerminal terminal;
+    // 3. 非交互模式判定 + prompt 来源
+    bool nonInteractive = !args.oneShotPrompt.empty() || !args.promptFilePath.empty();
+    std::string prompt;
+    if (nonInteractive) {
+        if (!args.oneShotPrompt.empty()) {
+            prompt = args.oneShotPrompt;
+        } else {
+            std::ifstream file(args.promptFilePath);
+            if (!file.is_open()) {
+                std::cerr << "[Error] Cannot open prompt file: " << args.promptFilePath << std::endl;
+                return 1;
+            }
+            std::ostringstream oss;
+            oss << file.rdbuf();
+            prompt = oss.str();
+        }
+        // 非交互模式关流式（流式路径内容走 m_output，无 output 会丢失返回值）
+        config.m_stream = false;
+    }
+
+    // 4. 创建 Agent
     CLF::CLFCore::CLFAgentLoop agent(config);
-    agent.setOutput(&terminal);               // Agent → ICLFOutput
     CLF::CLFTools::registerBuiltinTools(agent);
 
-    // 4. 启动 REPL
+    if (nonInteractive) {
+        agent.setSecurityMode(args.allowWrite
+            ? CLF::CLFCore::CLFSecurityMode::Auto
+            : CLF::CLFCore::CLFSecurityMode::Analyze);
+        std::string response = agent.runTurn(prompt);
+        if (!response.empty()) std::cout << response << std::endl;
+        return 0;
+    }
+
+    // 交互模式
+    CLF::CLFUI::CLFTerminal terminal;
+    agent.setOutput(&terminal);
+
     std::string historyDir = projectRoot + "/doc/contextHistory";
     CLF::CLFCore::CLFSessionManager::migrateLegacyIncomplete(historyDir);
     CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30);

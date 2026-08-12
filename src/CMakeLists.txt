@@ -15,12 +15,16 @@ add_library(clf_network STATIC
 )
 target_link_libraries(clf_network PUBLIC clf_types)
 target_include_directories(clf_network PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(clf_network PRIVATE -Wno-error=deprecated-declarations -Wno-error=conversion-null)
+endif()
 
 # ============================================================================
 # CLFCore — Agent 核心逻辑 (依赖 CLFTypes + CLFNetwork)
 # ============================================================================
 add_library(clf_core STATIC
     CLFCore/CLFAgentLoop.cpp
+    CLFCore/CLFArgParser.cpp
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
     CLFCore/CLFLogger.cpp
@@ -62,6 +66,7 @@ target_include_directories(clf_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(clf_tools STATIC
     CLFTools/CLFBuiltinTools.cpp
     CLFTools/CLFCommandExec.cpp
+    CLFTools/CLFSearchContent.cpp
 )
 target_link_libraries(clf_tools PUBLIC clf_core)
 target_include_directories(clf_tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
