@@ -13,10 +13,11 @@
 - `/init` → 在工作目录创建 PROJECTRULES.md 模板（已有则不覆盖）
 - 模板含 6 个区块，128 行限制提示
 
-### 2026-08-12 /version 命令 + /help 字母序 ✅
-- `/version`：读取 VERSION 文件显示版本号
-- `/help`：命令列表按首字母排序
-- 归入 v0.1.6 (unreleased)，待后续功能一起发布
+### 2026-08-12 v0.1.6 发布 ✅
+- `/version` 命令 + `/help` 字母序排列
+- install.ps1 本地版本检测（已是最新则跳过）
+- 发布包新增 VERSION 文件，使用说明重写
+- tag: v0.1.6，release: CLFCode-v0.1.6-win64.zip (12M)
 
 ### 2026-08-12 v0.1.5 发布 ✅
 - 归档方案：[归档-SystemPrompt优化](../../.claude/plans/设计/归档/归档-SystemPrompt优化.md)
@@ -43,10 +44,6 @@
 - 01-05: UI 全面重构 (FTXUI)
 - 01-04: Harness 架构重构
 - 01-03: FTXUI 终端 UI 重构 / 全量优化 P0-P3
-
-## 进行中 / 待做
-
-- v0.1.6 功能攒量，下次一起打 tag 发布
 
 ## 长期观察
 
