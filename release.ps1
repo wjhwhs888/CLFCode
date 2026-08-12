@@ -100,7 +100,7 @@ Write-Host "  Zip: $ZipSize MB" -ForegroundColor Green
 # 3. Release notes from CHANGELOG
 # ========================================
 Write-Host "[3/5] Extracting release notes..." -ForegroundColor Cyan
-$Changelog = Get-Content "$ScriptDir\CHANGELOG.md" -Raw
+$Changelog = Get-Content "$ScriptDir\CHANGELOG.md" -Raw -Encoding UTF8
 $EscapedTag = [regex]::Escape($Tag)
 $Pattern = '(?s)## ' + $EscapedTag + '.*?(?=## v\d|$)'
 $Match = [regex]::Match($Changelog, $Pattern)
@@ -125,11 +125,16 @@ if (-not $GT) {
     try {
         $Body = @{ access_token = $GT; tag_name = $Tag; name = $Tag;
                    body = $ReleaseBody; target_commitish = "master" } | ConvertTo-Json
+        $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
         $Rel = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases" `
-            -Method Post -Body $Body -ContentType "application/json" -TimeoutSec 30
-        Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($Rel.id)/attach_files" `
-            -Method Post -Headers @{ "access_token" = $GT } `
-            -Form @{ file = Get-Item $ZipPath } -TimeoutSec 120 | Out-Null
+            -Method Post -Body $BodyBytes -ContentType "application/json; charset=utf-8" -TimeoutSec 30
+        $curlArgs = @(
+            "-X", "POST",
+            "-H", "accept: application/json",
+            "https://gitee.com/api/v5/repos/sherlock0923/CLFCode/releases/$($Rel.id)/attach_files?access_token=$GT",
+            "-F", "file=@$ZipPath"
+        )
+        curl.exe @curlArgs 2>&1 | Out-Null
         Write-Host "  Done" -ForegroundColor Green
     } catch { Write-Host "  FAILED: $_" -ForegroundColor Red }
 }
@@ -145,8 +150,9 @@ if (-not $GH) {
     try {
         $Headers = @{ Authorization = "Bearer $GH"; Accept = "application/vnd.github+json" }
         $Body = @{ tag_name = $Tag; name = $Tag; body = $ReleaseBody } | ConvertTo-Json
+        $BodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
         $Rel = Invoke-RestMethod -Uri "https://api.github.com/repos/wjhwhs888/CLFCode/releases" `
-            -Method Post -Body $Body -Headers $Headers -ContentType "application/json" -TimeoutSec 30
+            -Method Post -Body $BodyBytes -Headers $Headers -ContentType "application/json; charset=utf-8" -TimeoutSec 30
         $UploadUrl = $Rel.upload_url -replace '\{.*\}', "?name=$ZipName"
         Invoke-RestMethod -Uri $UploadUrl -Method Post `
             -Headers @{ Authorization = "Bearer $GH"; "Content-Type" = "application/zip" } `
