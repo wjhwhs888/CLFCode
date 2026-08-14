@@ -321,6 +321,12 @@ bool CLFTerminal::confirm(const std::string& prompt) {
     std::unique_lock lock(m_confirmMutex);
     m_confirmCv.wait(lock, [this] { return !m_confirmActive; });
 
+    // P2-2: 确认结束后清 prompt（防残影）
+    {
+        std::lock_guard plock(m_mutex);
+        m_confirmPrompt.clear();
+    }
+
     return m_confirmResult;
 }
 

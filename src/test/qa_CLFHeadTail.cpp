@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "CLFTypes/CLFTypes.hpp"
+#include "CLFUI/CLFConfirmBar.hpp"
 #include "CLFUI/CLFTerminal.hpp"
 
 using namespace boost::ut;
@@ -138,6 +139,23 @@ const boost::ut::suite<"CLFHeadTail"> tests = [] {
         auto ds = CLF::CLFCore::localDateStamp();
         expect(ds.size() == 10);
         expect(ds[4] == '-' && ds[7] == '-');
+    };
+
+    // ========== T8: 审批卡 prompt 拆分（P2-2） ==========
+
+    "T8a splitPrompt：单行 → headline 全量，detail 空"_test = [] {
+        auto p = CLF::CLFUI::CLFConfirmBar::splitPrompt(
+            "工具 [write_file] 将修改文件: a.txt");
+        expect(p.headline == "工具 [write_file] 将修改文件: a.txt");
+        expect(p.detail.empty());
+    };
+
+    "T8b splitPrompt：首行 headline，其余 detail"_test = [] {
+        auto p = CLF::CLFUI::CLFConfirmBar::splitPrompt(
+            "工具 [execute_command] 需要执行高风险操作。\n参数: {\"cmd\":\"rm -rf\"}");
+        expect(p.headline == "工具 [execute_command] 需要执行高风险操作。");
+        expect(p.detail.find("参数:") != std::string::npos);
+        expect(p.detail.find("rm -rf") != std::string::npos);
     };
 };
 
