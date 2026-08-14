@@ -339,6 +339,65 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Error);
     };
 
+    "T10a 同步响应 usage → 会话累计"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = false;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 90, "completion_tokens": 60, "total_tokens": 150}
+        })");
+
+        agent->runTurn("hello");
+        expect(agent->getTotalTokensUsed() == 150);
+    };
+
+    "T10c 流式 usage chunk（choices 空数组）穿透 lambda → 会话累计"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = true;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
+            "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}",
+            // 真实形态：usage chunk 的 choices 为空数组——必须穿透 lambda 的 choices 过滤
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":70,\"completion_tokens\":30,\"total_tokens\":100}}",
+            "data: [DONE]"
+        });
+
+        agent->runTurn("hello");
+        expect(agent->getTotalTokensUsed() == 100);
+    };
+
+    "T10b 中断于流式中：usage 未到达不累计（R3）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = true;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->hookAfterLine = 0;  // 第 1 行后中断，usage chunk 不会到达
+        mock->onLineHook = [&] { out.fireInterrupt(); };
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}",
+            "data: [DONE]"
+        });
+
+        std::string result = agent->runTurn("hi");
+        expect(result == "[Interrupted]");
+        expect(agent->getTotalTokensUsed() == 0);  // 落定规则：中断不累计
+    };
+
     "T7 /resume 回显走折叠块：历史不进滚动区（P2-1）"_test = [] {
         auto dir = std::filesystem::temp_directory_path()
                  / ("clf_restore_test_" + std::to_string(

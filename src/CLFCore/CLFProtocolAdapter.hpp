@@ -24,6 +24,10 @@ struct CLFAssistantResponse {
     std::string              m_content;      // 文本内容（tool_calls 存在时可能为空）
     std::vector<CLFToolCall> m_toolCalls;    // 模型请求的工具调用列表
     std::string              m_finishReason; // "stop" | "tool_calls" | "length" | "content_filter"
+    // P2-4: usage（默认 0 = 未返回——R3 不估猜，缺失时上层跳过统计）
+    int                      m_usagePrompt     = 0;
+    int                      m_usageCompletion = 0;
+    int                      m_usageTotal      = 0;
 };
 
 class CLFProtocolAdapter {

@@ -579,6 +579,9 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             if (!detail.empty())
                 summary += " (" + detail + ")";
         }
+        // P2-4: usage 缺失（totalTokens==0）时字段省略——不估猜
+        if (m_stats.totalTokens > 0)
+            summary += " · " + formatTokenCount(m_stats.totalTokens) + " tok";
         summary += " (ctrl+t to expand)";
         guard.commit("\n \n" + summary + "\n \n");
     }

@@ -72,6 +72,9 @@ public:
 
     ToolStats getLastToolStats() const { return m_lastToolStats; }
 
+    // P2-4: 本次会话累计 token（仅统计已落定的 usage）
+    long long getTotalTokensUsed() const { return m_totalTokensUsed; }
+
     // 已注入上下文的 skill 名称列表（/skill 状态显示用）
     std::vector<std::string> getLoadedSkills() const;
 
@@ -104,6 +107,7 @@ private:
     std::unique_ptr<CLFSessionSummarizer> m_summarizer;
     CLFSessionSummary                 m_cachedSummary;    // /exit 时生成，saveSession 时消费
     ToolStats                         m_lastToolStats;
+    long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
     std::atomic<bool>                 m_interrupted{false};
     size_t                           m_lastReasoningSize = 0;  // appendThinking 增量追踪

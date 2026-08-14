@@ -163,6 +163,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                             try {
                                 auto delta = nlohmann::json::parse(payload);
                                 if (delta.contains("error")) { hadError = true; errorMsg = delta["error"].dump(); return; }
+                                // P2-4: usage chunk 的 choices 为空数组，须在 choices 过滤之前单独投喂
+                                if (delta.contains("usage"))
+                                    acc.feedUsage(delta["usage"]);
                                 if (delta.contains("choices") && !delta["choices"].empty()) {
                                     const auto& choice = delta["choices"][0];
                                     if (choice.contains("delta")) {
@@ -235,6 +238,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 parsed.m_content      = acc.getContent();
                 parsed.m_toolCalls    = acc.getToolCalls();
                 parsed.m_finishReason = acc.getFinishReason();
+                // P2-4: 流式 usage（缺失保持 0——不估猜）
+                parsed.m_usagePrompt     = acc.getUsagePrompt();
+                parsed.m_usageCompletion = acc.getUsageCompletion();
+                parsed.m_usageTotal      = acc.getUsageTotal();
 
             } else {
                 // ====== 同步路径 ======
@@ -277,6 +284,13 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
                 consecutiveErrors = 0;
                 parsed = m_protocolAdapter.parseAssistantResponse(response.m_body);
+            }
+
+            // P2-4/R3: 只累计已落定的 usage（正常解析路径；
+            // 中断/错误路径在此之前已 return，usage 未到达则不累计）
+            if (parsed.m_usageTotal > 0) {
+                m_totalTokensUsed += parsed.m_usageTotal;
+                m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
             }
 
             // finish_reason 检查

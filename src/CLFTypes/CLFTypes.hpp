@@ -64,6 +64,7 @@ struct ToolStats {
     int searchCount = 0;
     int readCount   = 0;
     int totalCalls  = 0;
+    int totalTokens = 0;  // P2-4/R4: 会话累计 token（0 = 未统计，不估猜）
 };
 
 // ============================================================================
@@ -203,6 +204,14 @@ inline std::string localDateStamp() {
     char buf[16];
     snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
              lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
+    return buf;
+}
+
+// token 数格式化（P2-4 summary 用）：<1000 原样，否则 "X.Xk"
+inline std::string formatTokenCount(long long n) {
+    if (n < 1000) return std::to_string(n);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.1fk", n / 1000.0);
     return buf;
 }
 

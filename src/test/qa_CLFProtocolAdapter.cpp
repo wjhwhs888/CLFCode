@@ -16,6 +16,41 @@ using CLF::CLFCore::CLFToolCall;
 using CLF::CLFCore::CLFAgentConfig;
 
 const boost::ut::suite<"CLFProtocolAdapter"> tests = [] {
+    "T10 同步响应 usage 解析"_test = [] {
+        CLFProtocolAdapter adapter;
+        auto parsed = adapter.parseAssistantResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+        })");
+        expect(parsed.m_usagePrompt == 100);
+        expect(parsed.m_usageCompletion == 50);
+        expect(parsed.m_usageTotal == 150);
+    };
+
+    "T10 usage 缺失：保持 0（不估猜）"_test = [] {
+        CLFProtocolAdapter adapter;
+        auto parsed = adapter.parseAssistantResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }]
+        })");
+        expect(parsed.m_usageTotal == 0);
+    };
+
+    "T10 流式请求携带 stream_options.include_usage"_test = [] {
+        CLFProtocolAdapter adapter;
+        CLFAgentConfig config;
+        config.m_stream = true;
+        std::vector<CLFMessage> msgs;
+        msgs.push_back({"user", "hi"});
+        auto body = json::parse(adapter.buildChatRequest(msgs, {}, config));
+        expect(body["stream_options"]["include_usage"] == true);
+    };
+
     "请求体包含 model/messages/stream 核心字段"_test = [] {
         CLFProtocolAdapter adapter;
         CLFAgentConfig config;

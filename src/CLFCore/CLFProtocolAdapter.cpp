@@ -25,6 +25,11 @@ std::string CLFProtocolAdapter::buildChatRequest(
     body["top_p"]       = config.m_topP;
     body["stream"]      = config.m_stream;
 
+    // P2-4: 流式请求显式请求 usage（DeepSeek 默认流式不返回 usage）
+    if (config.m_stream) {
+        body["stream_options"]["include_usage"] = true;
+    }
+
     // 可选参数（非默认值时才发送，减少请求体大小）
     if (config.m_frequencyPenalty != 0.0f) {
         body["frequency_penalty"] = config.m_frequencyPenalty;
@@ -114,6 +119,14 @@ CLFAssistantResponse CLFProtocolAdapter::parseAssistantResponse(
     // 提取 finish_reason
     if (choice.contains("finish_reason") && choice["finish_reason"].is_string()) {
         result.m_finishReason = choice["finish_reason"].get<std::string>();
+    }
+
+    // P2-4: usage 提取（同步响应默认携带；缺失保持 0——不估猜）
+    if (respJson.contains("usage") && respJson["usage"].is_object()) {
+        const auto& u = respJson["usage"];
+        result.m_usagePrompt     = u.value("prompt_tokens", 0);
+        result.m_usageCompletion = u.value("completion_tokens", 0);
+        result.m_usageTotal      = u.value("total_tokens", 0);
     }
 
     return result;

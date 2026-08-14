@@ -126,6 +126,13 @@ bool cmdContext(const std::string&, const std::string&,
     std::string bar;
     for (int i = 0; i < 20; ++i)
         bar += (i < bars) ? "█" : "░";
+    // P2-4: 累计 token（仅统计已落定的 usage；0 = 尚未统计，不显示）
+    std::string cumulative;
+    long long usedTotal = agent.getTotalTokensUsed();
+    if (usedTotal > 0) {
+        cumulative = "  ⎿ 本次会话累计: "
+                   + CLF::CLFCore::formatTokenCount(usedTotal) + " tokens\n";
+    }
     if (output) output->emitContent(
         "\n● 上下文用量\n"
         "  ⎿ 用量: " + std::to_string(used) + " / "
@@ -133,7 +140,8 @@ bool cmdContext(const std::string&, const std::string&,
             + " (" + std::to_string(pct) + "%)\n"
         "  ⎿ [" + bar + "]\n"
         "  ⎿ 剩余: ~" + std::to_string(max - used) + " tokens"
-            + (pct >= 80 ? "  ⚠ 建议 /clear" : "") + "\n");
+            + (pct >= 80 ? "  ⚠ 建议 /clear" : "") + "\n"
+        + cumulative);
     return true;
 }
 

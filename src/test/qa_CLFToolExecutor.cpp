@@ -127,6 +127,37 @@ const boost::ut::suite<"CLFToolExecutor"> tests = [] {
 
         expect(!out.anyContentContains("✓"));
     };
+
+    "T11 summary token 字段：有 usage 追加 12.3k tok / 无 usage 省略"_test = [] {
+        std::vector<CLFTool> tools;
+        CLFTool okRead;
+        okRead.m_name = "read_file";
+        okRead.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        okRead.m_handler = [](const std::string&) { return "{\"success\":true,\"content\":\"data\"}"; };
+        tools.push_back(okRead);
+
+        // 有 usage：预置 totalTokens=12345 → "12.3k tok"
+        {
+            MockOutput out;
+            std::atomic<int> thinkingSec{2};
+            CLF::CLFCore::ToolStats stats;
+            stats.totalTokens = 12345;
+            auto executor = makeExecutor(tools, out, thinkingSec, stats);
+            CLF::CLFCore::CLFToolCall c1; c1.m_name = "read_file";
+            executor.execute({c1});
+            expect(out.progressSummary.find("12.3k tok") != std::string::npos);
+        }
+        // 无 usage：totalTokens=0 → 字段整体省略
+        {
+            MockOutput out;
+            std::atomic<int> thinkingSec{2};
+            CLF::CLFCore::ToolStats stats;
+            auto executor = makeExecutor(tools, out, thinkingSec, stats);
+            CLF::CLFCore::CLFToolCall c1; c1.m_name = "read_file";
+            executor.execute({c1});
+            expect(out.progressSummary.find(" tok") == std::string::npos);
+        }
+    };
 };
 
 int main() {}

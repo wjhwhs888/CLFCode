@@ -2,6 +2,15 @@
 
 ## 已完成
 
+### 2026-08-14 P2-UI M2+M3（审批卡强化 + usage 打通） ✅
+- P2-2 审批卡：splitPrompt 纯函数 + headline 琥珀加粗/参数 dim 分层 + 确认结束清 prompt 防残影
+- P2-4 usage 打通：同步解析 + 流式 `stream_options.include_usage` + **feedUsage 独立投喂**（usage chunk 的 choices 为空数组，须在 lambda 的 choices 过滤前提取——首版把提取放 feedDelta 被过滤挡死，用户验收当场发现，T10c 集成测试钉死）
+- summary 行追加 `· X.Xk tok`（缺失省略）+ /context "本次会话累计"（条形仪表早已存在）
+- 落定规则 R3：仅正常解析路径累计，中断/错误不累计（T10b）
+- 测试：T10×5 + T10a/b/c + T11；ctest 8/9（SessionManager 既有环境失败不变）
+- 人工验收：summary tok 计数 / context 累计 全部通过
+- ⚠ 随机崩溃观察：19:16 交互式流式中崩溃一次（M3 代码在流式中无执行路径，疑似 08-11 长期观察 bug 自然复现）；已开启 HKCU LocalDumps 全量转储 + debug 日志待复现
+
 ### 2026-08-14 P2-UI M1（恢复回显折叠 + 时间戳） ✅
 - 依据：《设计-P2-UI展示完善.md》（两轮外部审查 R1-R5 定稿）
 - P2-1 恢复回显折叠：ICLFOutput 增 showFoldedBlock（默认空实现）/ CLFTerminal 折叠态 / Ctrl+R 切换 / restoreSession 改走折叠路径
