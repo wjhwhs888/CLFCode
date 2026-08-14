@@ -5,6 +5,13 @@
 
 namespace CLF::CLFUI {
 
+CLFConfirmBar::PromptParts CLFConfirmBar::splitPrompt(const std::string& prompt) {
+    size_t nl = prompt.find('\n');
+    if (nl == std::string::npos)
+        return {prompt, ""};
+    return {prompt.substr(0, nl), prompt.substr(nl + 1)};
+}
+
 ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
     if (!terminal.isConfirmActive())
         return ftxui::emptyElement();
@@ -30,12 +37,23 @@ ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
         ftxui::dim(ftxui::text("← → 选择  Enter 确认/返回  Esc 返回"))
     );
 
-    return ftxui::vbox({
-        ftxui::separator(),
-        ftxui::color(ftxui::Color::Yellow,
-                     ftxui::paragraph("  ⚠ " + terminal.m_confirmPrompt)),
-        opts,
-    });
+    // P2-2: headline 琥珀加粗 / 参数 detail dim（dsh 审批卡模式）
+    auto parts = splitPrompt(terminal.m_confirmPrompt);
+    ftxui::Elements body;
+    body.push_back(ftxui::hbox({
+        ftxui::text("  ⚠ "),
+        ftxui::text(parts.headline)
+            | ftxui::bold
+            | ftxui::color(ftxui::Color::Orange1),
+    }));
+    if (!parts.detail.empty())
+        body.push_back(ftxui::dim(ftxui::paragraph("    " + parts.detail)));
+    body.push_back(std::move(opts));
+
+    ftxui::Elements all;
+    all.push_back(ftxui::separator());
+    all.insert(all.end(), body.begin(), body.end());
+    return ftxui::vbox(std::move(all));
 }
 
 } // namespace CLF::CLFUI

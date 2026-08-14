@@ -39,6 +39,8 @@ bool cmdClear(const std::string&, const std::string&,
     agent.generateAndCacheSummary();  // 生成会话摘要
     agent.saveSession(historyDir, true);  // 归档旧会话
     agent.clearContext();
+    // F18: 新会话语义从干净状态开始
+    if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
     if (output) output->emitContent("✓ 会话已保存，新会话开始\n");
     return true;
 }
@@ -124,6 +126,13 @@ bool cmdContext(const std::string&, const std::string&,
     std::string bar;
     for (int i = 0; i < 20; ++i)
         bar += (i < bars) ? "█" : "░";
+    // P2-4: 累计 token（仅统计已落定的 usage；0 = 尚未统计，不显示）
+    std::string cumulative;
+    long long usedTotal = agent.getTotalTokensUsed();
+    if (usedTotal > 0) {
+        cumulative = "  ⎿ 本次会话累计: "
+                   + CLF::CLFCore::formatTokenCount(usedTotal) + " tokens\n";
+    }
     if (output) output->emitContent(
         "\n● 上下文用量\n"
         "  ⎿ 用量: " + std::to_string(used) + " / "
@@ -131,7 +140,8 @@ bool cmdContext(const std::string&, const std::string&,
             + " (" + std::to_string(pct) + "%)\n"
         "  ⎿ [" + bar + "]\n"
         "  ⎿ 剩余: ~" + std::to_string(max - used) + " tokens"
-            + (pct >= 80 ? "  ⚠ 建议 /clear" : "") + "\n");
+            + (pct >= 80 ? "  ⚠ 建议 /clear" : "") + "\n"
+        + cumulative);
     return true;
 }
 
@@ -220,6 +230,8 @@ bool cmdResume(const std::string&, const std::string& args,
         if (idx >= 1 && idx <= static_cast<int>(sessions.size())) {
             if (agent.restoreSession(sessions[idx - 1].m_path)) {
                 // restoreSession 已回显历史，不再重复显示
+                // F18: 恢复后状态点回到干净状态
+                if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
             } else {
                 if (output) output->emitContent("✗ 恢复失败\n");
             }

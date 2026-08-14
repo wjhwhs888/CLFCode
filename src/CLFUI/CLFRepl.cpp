@@ -203,38 +203,121 @@ int CLFRepl::run() {
 
             // ---- 思考过程（内容区最后，Ctrl+T 折叠/展开） ----
             if (snap.thinkingActive || !snap.thinkingLines.empty()) {
-                allLines.push_back(ftxui::dim(ftxui::text(
-                    "  Thought for " + std::to_string(snap.thinkingElapsed)
-                    + "s (ctrl+t 展开)")));
+                // P1-3: 折叠行摘要——running 取实时尾行，完成取首行（UTF-8 边界截断）
+                auto truncateUtf8 = [&](const std::string& s, size_t maxBytes) -> std::string {
+                    if (s.size() <= maxBytes) return s;
+                    size_t cut = maxBytes;
+                    while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80) --cut;
+                    return s.substr(0, cut) + "…";
+                };
+                std::string fold = "  Thought for " + std::to_string(snap.thinkingElapsed) + "s";
+                if (!snap.thinkingLines.empty()) {
+                    const std::string& src = snap.thinkingActive
+                        ? snap.thinkingLines.back() : snap.thinkingLines.front();
+                    fold += " · " + truncateUtf8(src, 80);
+                }
+                fold += " (ctrl+t 展开)";
+                allLines.push_back(ftxui::dim(ftxui::text(fold)));
                 if (!snap.thinkingActive && m_showThinking && !snap.thinkingLines.empty()) {
                     for (auto& tl : snap.thinkingLines)
                         allLines.push_back(ftxui::dim(ftxui::text("  " + tl)));
                 }
             }
 
-            scrollView.update(static_cast<int>(allLines.size()),
-                              CLFTerminal::getTerminalHeight(), 7);
-            auto contentArea = ftxui::vbox(scrollView.renderWindow(allLines)) | ftxui::flex;
-
-            // ---- 渐进式进度块（插在内容区和 statusLine 之间） ----
-            ftxui::Elements progressElements;
-            if (!snap.progressLines.empty()) {
-                for (auto& pl : snap.progressLines) {
-                    if (!pl.empty())
-                        progressElements.push_back(ftxui::text(pl));
+            // ---- P2-1: 恢复回显折叠块（滚动区末尾） ----
+            size_t foldLineIdx = 0;
+            if (!snap.foldedSummary.empty()) {
+                foldLineIdx = allLines.size();
+                std::string marker = snap.foldedExpanded ? "▾" : "▸";
+                allLines.push_back(ftxui::dim(ftxui::text(
+                    "  " + marker + " " + snap.foldedSummary)));
+                if (snap.foldedExpanded) {
+                    for (const auto& fl : snap.foldedLines) {
+                        // 与主内容一致的 CJK 感知硬换行
+                        std::string remaining = "  " + fl;
+                        int lw = displayWidth(remaining);
+                        if (wrapW > 0 && lw > wrapW) {
+                            ftxui::Elements parts;
+                            while (!remaining.empty()) {
+                                std::string part = substrByWidth(remaining, wrapW);
+                                if (part.empty()) part = remaining.substr(0, 1);
+                                parts.push_back(ftxui::dim(ftxui::text(part)));
+                                remaining = remaining.substr(part.size());
+                            }
+                            allLines.push_back(ftxui::vbox(std::move(parts)));
+                        } else {
+                            allLines.push_back(ftxui::dim(ftxui::text(remaining)));
+                        }
+                    }
                 }
             }
 
-            auto statusLine = !snap.statusText.empty()
-                ? ftxui::dim(ftxui::text("  " + snap.statusText))
-                : ftxui::emptyElement();
+            scrollView.update(static_cast<int>(allLines.size()),
+                              CLFTerminal::getTerminalHeight(), 7);
+            // R5: 折叠/展开切换后保持折叠行可见（防顶出视口）
+            if (m_foldJustToggled) {
+                m_foldJustToggled = false;
+                if (!snap.foldedSummary.empty())
+                    scrollView.keepLineVisible(static_cast<int>(foldLineIdx));
+            }
+            auto contentArea = ftxui::vbox(scrollView.renderWindow(allLines)) | ftxui::flex;
+
+            // ---- 渐进式进度块（插在内容区和 statusLine 之间） ----
+            // D4: 动画帧按时间差推进（事件驱动，无定时器线程——流静止则动画静止）
+            // P1-1: 帧计算上提，进度块与 running 状态点共用
+            static const char* kSpinFrames[] = {"⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"};
+            auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            size_t frame = static_cast<size_t>(nowMs / 100) % 10;
+            ftxui::Elements progressElements;
+            if (!snap.progressLines.empty()) {
+                for (size_t pi = 0; pi < snap.progressLines.size(); ++pi) {
+                    const auto& pl = snap.progressLines[pi];
+                    if (pl.empty()) continue;
+                    std::string line = pl;
+                    // 仅末行附加动画帧（P0-4 单行进度的执行中态）
+                    if (pi == snap.progressLines.size() - 1)
+                        line += " " + std::string(kSpinFrames[frame]);
+                    progressElements.push_back(ftxui::text(line));
+                }
+            }
+
+            // P1-1: 状态点 + 文本（渲染条件：文本非空 || kind != None，F5）
+            ftxui::Element statusLine = ftxui::emptyElement();
+            if (!snap.statusText.empty()
+                || snap.statusKind != CLF::CLFTypes::ICLFOutput::StatusKind::None) {
+                ftxui::Elements statusParts;
+                switch (snap.statusKind) {
+                case CLF::CLFTypes::ICLFOutput::StatusKind::Running:
+                    statusParts.push_back(ftxui::text("  " + std::string(kSpinFrames[frame]))
+                                          | ftxui::color(ftxui::Color::CyanLight));
+                    break;
+                case CLF::CLFTypes::ICLFOutput::StatusKind::Done:
+                    statusParts.push_back(ftxui::text("  ●")
+                                          | ftxui::color(ftxui::Color::GreenLight));
+                    break;
+                case CLF::CLFTypes::ICLFOutput::StatusKind::Warn:
+                    statusParts.push_back(ftxui::text("  ●")
+                                          | ftxui::color(ftxui::Color::Orange1));
+                    break;
+                case CLF::CLFTypes::ICLFOutput::StatusKind::Error:
+                    statusParts.push_back(ftxui::text("  ✕")
+                                          | ftxui::color(ftxui::Color::RedLight));
+                    break;
+                default:
+                    break;
+                }
+                if (!snap.statusText.empty())
+                    statusParts.push_back(ftxui::dim(ftxui::text(snap.statusText)));
+                statusLine = ftxui::hbox(std::move(statusParts));
+            }
 
             // 状态栏：模型名 │ 目录 │ 安全模式 │ 快捷键
             // 模式 → 颜色映射
             auto modeColor = [&]() -> ftxui::Color {
                 std::string mode = m_dispatcher->modeName();
                 if (mode == "auto")    return ftxui::Color::GreenLight;
-                if (mode == "analyze") return ftxui::Color::CyanLight;
+                if (mode == "analyze") return ftxui::Color::Magenta;  // D1: 蓝让给 running
                 if (mode == "edit")    return ftxui::Color::Orange1;
                 if (mode == "manual")  return ftxui::Color::GrayDark;
                 return ftxui::Color::GrayDark;
@@ -349,6 +432,15 @@ int CLFRepl::run() {
             // Ctrl+T: 切换思考过程显示/隐藏
             if (e == ftxui::Event::CtrlT) {
                 m_showThinking = !m_showThinking;
+                return true;
+            }
+
+            // Ctrl+R: 恢复回显折叠块展开/收起（P2-1）
+            if (e == ftxui::Event::CtrlR) {
+                if (terminal) {
+                    terminal->toggleFoldedBlock();
+                    m_foldJustToggled = true;
+                }
                 return true;
             }
 
@@ -526,7 +618,14 @@ void CLFRepl::submit(const std::string& input) {
 
     // 回显用户输入（渲染异常不应阻塞逻辑）
     try {
-        if (m_output) m_output->emitContent("> " + CLFTerminal::bold(input) + "\n");
+        if (m_output) {
+            // P2-3: 用户消息行尾时间戳（跨日带日期；状态与发射点同驻 CLFRepl——R2）
+            std::string tsDate = CLF::CLFCore::localDateStamp();
+            bool withDate = (tsDate != m_lastTsDate);
+            m_lastTsDate = tsDate;
+            m_output->emitContent("> " + CLFTerminal::bold(input)
+                                  + "  " + CLF::CLFCore::localTimeStamp(withDate) + "\n");
+        }
     } catch (const std::exception& e) {
         CLFLogger::instance().warn(std::string("[Submit] echo failed: ") + e.what());
     }
@@ -565,6 +664,8 @@ void CLFRepl::submit(const std::string& input) {
             if (m_output) m_output->emitContent(
                 CLFTerminal::red("✗ 异常: ") + e.what() + "\n");
         } catch (...) {}
+        // F19: 异常路径无 return 点接线，Repl 侧兜底 Error
+        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
         m_agent.clearContext();
     }
 

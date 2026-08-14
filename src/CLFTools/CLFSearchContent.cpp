@@ -21,6 +21,9 @@ namespace {
 constexpr size_t kMaxFileSize   = 1 * 1024 * 1024;  // 1MB
 constexpr int    kMaxResults    = 500;
 constexpr int    kMaxDepth      = 20;
+// P0-2: head/tail 截断（dsh 模式）——head 固定 + tail 环形缓冲，总预算不变
+constexpr int    kHeadLines     = 240;
+constexpr int    kTailLines     = 240;
 
 const std::set<std::string> kIgnoreDirs = {
     ".git", "node_modules", "__pycache__", "build", "dist",
@@ -67,7 +70,9 @@ bool matchesExtension(const fs::path& p, const std::vector<std::string>& exts) {
 
 void searchDir(const fs::path& dir, const std::string& pattern,
                const std::vector<std::string>& fileTypes,
-               int depth, int& resultCount, std::ostringstream& output,
+               int depth, int& resultCount,
+               std::vector<std::string>& headLines,
+               std::vector<std::string>& tailRing,
                std::vector<std::pair<std::string, std::string>>& skippedLarge) {
     if (depth > kMaxDepth || resultCount >= kMaxResults) return;
 
@@ -79,7 +84,7 @@ void searchDir(const fs::path& dir, const std::string& pattern,
         if (entry.is_directory(ec)) {
             if (!isIgnoredDir(entry.path())) {
                 searchDir(entry.path(), pattern, fileTypes,
-                          depth + 1, resultCount, output, skippedLarge);
+                          depth + 1, resultCount, headLines, tailRing, skippedLarge);
             }
         } else if (entry.is_regular_file(ec)) {
             if (!matchesExtension(entry.path(), fileTypes)) continue;
@@ -97,7 +102,15 @@ void searchDir(const fs::path& dir, const std::string& pattern,
             while (std::getline(file, line) && resultCount < kMaxResults) {
                 ++lineNum;
                 if (line.find(pattern) != std::string::npos) {
-                    output << relative << ":" << lineNum << ": " << line << "\n";
+                    // P0-2: 前 kHeadLines 条进 head；其余进 tail 环形（容量 kTailLines，挤掉最旧）
+                    std::string entry = relative + ":" + std::to_string(lineNum) + ": " + line;
+                    if (resultCount < kHeadLines) {
+                        headLines.push_back(std::move(entry));
+                    } else {
+                        tailRing.push_back(std::move(entry));
+                        if (static_cast<int>(tailRing.size()) > kTailLines)
+                            tailRing.erase(tailRing.begin());
+                    }
                     ++resultCount;
                 }
             }
@@ -121,15 +134,26 @@ std::string searchContent(const std::string& pattern,
     auto exts = parseFileTypes(fileTypes);
     int resultCount = 0;
     std::ostringstream output;
+    std::vector<std::string> headLines;
+    std::vector<std::string> tailRing;
     std::vector<std::pair<std::string, std::string>> skippedLarge;
 
-    searchDir(dir, pattern, exts, 0, resultCount, output, skippedLarge);
+    searchDir(dir, pattern, exts, 0, resultCount, headLines, tailRing, skippedLarge);
 
-    if (resultCount == 0 && output.str().empty()) {
+    if (resultCount == 0 && headLines.empty()) {
         output << "(no matches)";
+    } else {
+        for (const auto& h : headLines) output << h << "\n";
+        int omitted = resultCount - static_cast<int>(headLines.size())
+                    - static_cast<int>(tailRing.size());
+        if (omitted > 0) {
+            // 行尾已带换行，不加前导 \n（否则产生多余空行）
+            output << "[中间省略 " << omitted << " 行]\n";
+        }
+        for (const auto& t : tailRing) output << t << "\n";
     }
     if (resultCount >= kMaxResults) {
-        output << "\n[结果超过 " << kMaxResults << " 行，已截断]";
+        output << "[结果超过 " << kMaxResults << " 行，已截断]";
     }
     if (!skippedLarge.empty()) {
         output << "\n[跳过 " << skippedLarge.size() << " 个大文件:";

@@ -11,6 +11,22 @@ using namespace boost::ut;
 using json = nlohmann::json;
 
 suite qa_CLFStreamAccumulator = [] {
+    "T10 流式 usage chunk（choices 空数组）经 feedUsage 提取"_test = [] {
+        CLF::CLFCore::CLFStreamAccumulator acc;
+        // 真实形态：usage chunk 的 choices 为空数组，调用方在 choices 过滤前投喂 feedUsage
+        acc.feedUsage(json::parse(R"({"prompt_tokens": 80, "completion_tokens": 20, "total_tokens": 100})"));
+        expect(acc.getUsagePrompt() == 80);
+        expect(acc.getUsageCompletion() == 20);
+        expect(acc.getUsageTotal() == 100);
+    };
+
+    "T10 reset 清空 usage"_test = [] {
+        CLF::CLFCore::CLFStreamAccumulator acc;
+        acc.feedUsage(json::parse(R"({"total_tokens":100})"));
+        acc.reset();
+        expect(acc.getUsageTotal() == 0);
+    };
+
     "text_delta"_test = [] {
         CLF::CLFCore::CLFStreamAccumulator acc;
         auto chunk = acc.feedDelta(json::parse(R"({"content":"Hello"})"));

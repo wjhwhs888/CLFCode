@@ -26,6 +26,10 @@ public:
     // 返回本块的 content 增量文本（用于实时显示），无内容返回空字符串
     std::string feedDelta(const nlohmann::json& delta);
 
+    // P2-4: 输入 usage 对象——流式 usage chunk 的 choices 为空数组，
+    // 调用方（AgentLoop 流式 lambda）须在 choices 过滤之前单独投喂
+    void feedUsage(const nlohmann::json& usage);
+
     // 标记流结束（收到 [DONE] 时调用）
     void markDone();
 
@@ -37,6 +41,12 @@ public:
     // 思考过程（reasoning_content，与 content 分通道，供 UI 折叠）
     bool hasReasoning() const { return !m_reasoning.empty(); }
     const std::string& getReasoning() const { return m_reasoning; }
+
+    // P2-4: usage（流式 usage chunk 的 choices 为空数组，delta 层独立提取；
+    // 未到达时保持 0——不估猜）
+    int getUsagePrompt() const { return m_usagePrompt; }
+    int getUsageCompletion() const { return m_usageCompletion; }
+    int getUsageTotal() const { return m_usageTotal; }
 
     void reset();
 
@@ -50,6 +60,9 @@ private:
     std::vector<CLFToolCall> m_toolCalls;
     bool m_finished = false;
     bool m_toolCallsFinalized = false;
+    int m_usagePrompt = 0;      // P2-4
+    int m_usageCompletion = 0;  // P2-4
+    int m_usageTotal = 0;       // P2-4
 
     struct Part {
         std::string id;
@@ -117,6 +130,17 @@ inline std::string CLFStreamAccumulator::feedDelta(const nlohmann::json& delta) 
     return contentDelta;
 }
 
+inline void CLFStreamAccumulator::feedUsage(const nlohmann::json& usage) {
+    // P2-4: usage 提取（缺失字段保持原值——不估猜）
+    if (!usage.is_object()) return;
+    if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number())
+        m_usagePrompt = usage["prompt_tokens"].get<int>();
+    if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number())
+        m_usageCompletion = usage["completion_tokens"].get<int>();
+    if (usage.contains("total_tokens") && usage["total_tokens"].is_number())
+        m_usageTotal = usage["total_tokens"].get<int>();
+}
+
 inline void CLFStreamAccumulator::markDone() {
     m_finished = true;
     if (m_finishReason.empty()) {
@@ -135,6 +159,9 @@ inline void CLFStreamAccumulator::reset() {
     m_parts.clear();
     m_finished = false;
     m_toolCallsFinalized = false;
+    m_usagePrompt = 0;
+    m_usageCompletion = 0;
+    m_usageTotal = 0;
 }
 
 inline void CLFStreamAccumulator::finalizeToolCalls() {

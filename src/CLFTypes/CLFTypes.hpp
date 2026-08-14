@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <chrono>
+#include <cstdio>
+#include <ctime>
 #include <functional>
 #include <string>
 #include <vector>
@@ -61,6 +64,7 @@ struct ToolStats {
     int searchCount = 0;
     int readCount   = 0;
     int totalCalls  = 0;
+    int totalTokens = 0;  // P2-4/R4: 会话累计 token（0 = 未统计，不估猜）
 };
 
 // ============================================================================
@@ -167,6 +171,68 @@ inline std::string formatDurationSeconds(long long sec) {
     if (sec >= 60)
         return std::to_string(sec / 60) + "m" + std::to_string(sec % 60) + "s";
     return std::to_string(sec) + "s";
+}
+
+// UI 侧 head/tail 截断（dsh 模式）：前 n 条 + marker + 后 n 条
+// 条目数 <= 2n 时原样返回；按"条"操作，天然不劈半多字节字符
+template <typename T>
+std::vector<T> headTailCapWithMarker(const std::vector<T>& items,
+                                     const T& marker, size_t n = 16) {
+    if (items.size() <= n * 2) return items;
+    std::vector<T> out;
+    out.reserve(n * 2 + 1);
+    out.insert(out.end(), items.begin(), items.begin() + n);
+    out.push_back(marker);
+    out.insert(out.end(), items.end() - n, items.end());
+    return out;
+}
+
+// ============================================================================
+// 本地时间戳（P2-3，双平台——顺带覆盖整体审查 P2-8 的平台分支）
+// ============================================================================
+
+// 日期戳 "YYYY-MM-DD"（跨日判定用）
+inline std::string localDateStamp() {
+    std::time_t t = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now());
+    std::tm lt{};
+#ifdef _WIN32
+    localtime_s(&lt, &t);
+#else
+    localtime_r(&t, &lt);
+#endif
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
+             lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
+    return buf;
+}
+
+// token 数格式化（P2-4 summary 用）：<1000 原样，否则 "X.Xk"
+inline std::string formatTokenCount(long long n) {
+    if (n < 1000) return std::to_string(n);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.1fk", n / 1000.0);
+    return buf;
+}
+
+// 时间戳：withDate=false → "HH:mm"；withDate=true → "MM-DD HH:mm"
+inline std::string localTimeStamp(bool withDate = false) {
+    std::time_t t = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now());
+    std::tm lt{};
+#ifdef _WIN32
+    localtime_s(&lt, &t);
+#else
+    localtime_r(&t, &lt);
+#endif
+    char buf[32];
+    if (withDate) {
+        snprintf(buf, sizeof(buf), "%02d-%02d %02d:%02d",
+                 lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min);
+    } else {
+        snprintf(buf, sizeof(buf), "%02d:%02d", lt.tm_hour, lt.tm_min);
+    }
+    return buf;
 }
 
 } // namespace CLF::CLFCore

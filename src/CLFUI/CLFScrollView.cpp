@@ -91,6 +91,14 @@ bool CLFScrollView::handleEvent(ftxui::Event e) {
     return false;
 }
 
+void CLFScrollView::keepLineVisible(int lineIndex) {
+    // offset 为距底部行数：startLine = totalLines - viewH - offset
+    // 令 lineIndex 落在窗口顶部 → offset = totalLines - viewH - lineIndex
+    m_scrollOffset = m_lastTotalLines - m_viewH - lineIndex;
+    if (m_scrollOffset < 0) m_scrollOffset = 0;  // 行已在底部窗口内
+    m_autoScroll = false;
+}
+
 void CLFScrollView::reset() {
     m_scrollOffset = 0;
     m_autoScroll   = true;
