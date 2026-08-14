@@ -24,7 +24,7 @@ public:
 
     // === FTXUI 入口 ===
     void setScreen(ftxui::ScreenInteractive* screen) { m_screen = screen; }
-    void requestRefresh();
+    void requestRefresh() override;  // ⑦ ICLFOutput：PostEvent(Custom)，m_screen 为空时安全跳过
 
     // === 静态工具 (委托 CLFAnsi) ===
     static void enableAnsi();
@@ -48,6 +48,9 @@ public:
     void onInterrupt(std::function<void()> cb) override;
     void emitError(const std::string& m) override;
 
+    // === ICLFOutput ⑦ 状态点 ===
+    void setStatusKind(ICLFOutput::StatusKind kind) override;
+
     // === ICLFOutput ⑥ 思考内容 ===
     void appendThinking(const std::string& text) override;
     void clearThinking() override;
@@ -64,6 +67,7 @@ public:
         std::string pendingLine;
         std::vector<uint8_t> lineStyles; // 并行于 lines，LineStyle 枚举值
         std::string statusText;
+        ICLFOutput::StatusKind statusKind = ICLFOutput::StatusKind::None; // 状态点种类
         std::vector<std::string> progressLines; // 渐进式进度块
         // 思考内容（折叠/展开用）
         std::vector<std::string> thinkingLines;
@@ -92,6 +96,7 @@ public:
     int          m_thinkingElapsed = 0;  // 思考总耗时（秒）
     std::chrono::steady_clock::time_point m_thinkingStart;
     std::string  m_statusText;
+    ICLFOutput::StatusKind m_statusKind = ICLFOutput::StatusKind::None;
     std::vector<std::string> m_progressLines;
     mutable std::mutex m_progressMutex;
     // confirm (由 CLFTerminal::confirm + CLFConfirmBar 共同操作)

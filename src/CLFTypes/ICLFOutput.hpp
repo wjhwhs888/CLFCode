@@ -79,6 +79,17 @@ public:
 
     // 清空当前 turn 的推理内容（ESC 中断 / 新 turn 开始时调用）
     virtual void clearThinking() = 0;
+
+    // ========== ⑦ 状态点 + 刷新（带默认实现，Mock 零破坏） ==========
+
+    // 状态点种类（渲染层着色显示：None/Running/Done/Warn/Error）
+    // 与 setStatus 文本通道独立，互不联动——调用方需显式清各自通道
+    enum class StatusKind { None, Running, Done, Warn, Error };
+    virtual void setStatusKind(StatusKind kind) { (void)kind; }
+
+    // 主动刷新请求（CLFTerminal 覆写为 PostEvent(Custom)）
+    // turnTimer 1Hz 驱动用：修复工具执行期界面冻结 + 动画最低帧率
+    virtual void requestRefresh() {}
 };
 
 } // namespace CLF::CLFTypes

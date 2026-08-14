@@ -169,4 +169,18 @@ inline std::string formatDurationSeconds(long long sec) {
     return std::to_string(sec) + "s";
 }
 
+// UI 侧 head/tail 截断（dsh 模式）：前 n 条 + marker + 后 n 条
+// 条目数 <= 2n 时原样返回；按"条"操作，天然不劈半多字节字符
+template <typename T>
+std::vector<T> headTailCapWithMarker(const std::vector<T>& items,
+                                     const T& marker, size_t n = 16) {
+    if (items.size() <= n * 2) return items;
+    std::vector<T> out;
+    out.reserve(n * 2 + 1);
+    out.insert(out.end(), items.begin(), items.begin() + n);
+    out.push_back(marker);
+    out.insert(out.end(), items.end() - n, items.end());
+    return out;
+}
+
 } // namespace CLF::CLFCore

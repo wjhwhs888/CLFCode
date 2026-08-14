@@ -217,11 +217,21 @@ int CLFRepl::run() {
             auto contentArea = ftxui::vbox(scrollView.renderWindow(allLines)) | ftxui::flex;
 
             // ---- 渐进式进度块（插在内容区和 statusLine 之间） ----
+            // D4: 动画帧按时间差推进（事件驱动，无定时器线程——流静止则动画静止）
+            static const char* kSpinFrames[] = {"⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"};
             ftxui::Elements progressElements;
             if (!snap.progressLines.empty()) {
-                for (auto& pl : snap.progressLines) {
-                    if (!pl.empty())
-                        progressElements.push_back(ftxui::text(pl));
+                auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                size_t frame = static_cast<size_t>(nowMs / 100) % 10;
+                for (size_t pi = 0; pi < snap.progressLines.size(); ++pi) {
+                    const auto& pl = snap.progressLines[pi];
+                    if (pl.empty()) continue;
+                    std::string line = pl;
+                    // 仅末行附加动画帧（P0-4 单行进度的执行中态）
+                    if (pi == snap.progressLines.size() - 1)
+                        line += " " + std::string(kSpinFrames[frame]);
+                    progressElements.push_back(ftxui::text(line));
                 }
             }
 

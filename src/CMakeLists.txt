@@ -84,7 +84,8 @@ endif()
 # 测试（Boost.UT，L1 单元 + L2 Mock 集成）
 # ============================================================================
 set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
-                     qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator)
+                     qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator
+                     qa_CLFHeadTail qa_CLFSearchContent)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -109,6 +110,14 @@ add_test(NAME qa_CLFAgentLoop COMMAND qa_CLFAgentLoop)
 add_executable(qa_CLFStreamAccumulator test/qa_CLFStreamAccumulator.cpp)
 target_link_libraries(qa_CLFStreamAccumulator PRIVATE clf_core clf_ui)
 add_test(NAME qa_CLFStreamAccumulator COMMAND qa_CLFStreamAccumulator)
+
+add_executable(qa_CLFHeadTail test/qa_CLFHeadTail.cpp)
+target_link_libraries(qa_CLFHeadTail PRIVATE clf_core clf_ui)
+add_test(NAME qa_CLFHeadTail COMMAND qa_CLFHeadTail)
+
+add_executable(qa_CLFSearchContent test/qa_CLFSearchContent.cpp)
+target_link_libraries(qa_CLFSearchContent PRIVATE clf_tools)
+add_test(NAME qa_CLFSearchContent COMMAND qa_CLFSearchContent)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

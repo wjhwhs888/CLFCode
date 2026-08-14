@@ -228,7 +228,12 @@ void renderDiff(CLF::CLFTypes::ICLFOutput* output, const WritePreview& preview) 
         }
     }
 
-    // 第二遍：逐行 emit（带样式）
+    // 第二遍：收集渲染条目（@@ 头、... 分隔、行号+内容），再统一截断与发射
+    struct RenderEntry {
+        std::string text;
+        LS style;
+    };
+    std::vector<RenderEntry> entries;
     int lastHunk = -1;
     for (int i = 0; i < total; ++i) {
         const auto& line = diff[i];
@@ -244,18 +249,18 @@ void renderDiff(CLF::CLFTypes::ICLFOutput* output, const WritePreview& preview) 
             snprintf(buf, sizeof(buf), "  @@ -%d +%d @@",
                      oStart > 0 ? oStart : (nStart > 0 ? nStart : 1),
                      nStart > 0 ? nStart : (oStart > 0 ? oStart : 1));
-            output->emitStyledLine(buf, LS::Context);
+            entries.push_back({buf, LS::Context});
         }
 
         if (hunkId[i] == -1) continue;
 
         if (line.text == "...") {
-            output->emitStyledLine("  ...", LS::Context);
+            entries.push_back({"  ...", LS::Context});
             lastHunk = -1;
             continue;
         }
         if (line.text.find("... (") == 0) {
-            output->emitStyledLine("  " + line.text, LS::Context);
+            entries.push_back({"  " + line.text, LS::Context});
             lastHunk = -1;
             continue;
         }
@@ -277,8 +282,17 @@ void renderDiff(CLF::CLFTypes::ICLFOutput* output, const WritePreview& preview) 
             style = LS::Context;
             break;
         }
-        output->emitStyledLine(std::string(numBuf) + line.text, style);
+        entries.push_back({std::string(numBuf) + line.text, style});
     }
+
+    // P0-2B: UI 侧 head/tail 截断（dsh 模式：前 16 + 标记 + 后 16，公共 headTailCapWithMarker）
+    if (entries.size() > 32) {
+        size_t omitted = entries.size() - 32;
+        entries = headTailCapWithMarker(
+            entries, RenderEntry{"  … 其余 " + std::to_string(omitted) + " 行", LS::Context});
+    }
+    for (const auto& e : entries)
+        output->emitStyledLine(e.text, e.style);
 }
 
 } // anonymous namespace
@@ -457,6 +471,13 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             }
         }
 
+        // P0-4: 执行中单行进度（动画帧由 Renderer 附加）——读类工具执行期可见
+        if (m_output && (m_labels && m_thinkingSec) && !isWriteTool) {
+            std::string toolLine = "  ⎿ " + call.m_name
+                                 + (keyParam.empty() ? "" : "(" + keyParam + ")");
+            m_output->showProgress({toolLine});
+        }
+
         // --- Step 6 & 7: 执行 handler + 显示结果 ---
         bool toolOk = false;
         std::string toolResultText;
@@ -473,8 +494,9 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 + ", result=" + std::to_string(result.m_content.size()) + " chars");
 
             bool useProgressive = (m_labels && m_thinkingSec);
-            if (m_output && (!useProgressive || isWriteTool)) {
-                // 渐进模式下仅写类工具走永久内容；读类工具仅 showProgress
+            // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
+            if (m_output && (!useProgressive || isWriteTool || !toolOk)) {
+                // 渐进模式下仅写类工具/失败走永久内容；读类工具成功仅 showProgress
                 if (isWriteTool && !preview.diffLines.empty()) {
                     const auto& ds = preview.diffStats;
                     if (ds.added + ds.removed > 0 && !ds.truncated) {
@@ -520,8 +542,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 + " — " + toolResultText + " (scroll for full detail)\n");
         }
 
-        // ---- 渐进式显示分流 ----
-        if (m_output && m_labels && m_thinkingSec) {
+        // ---- 渐进式统计（summary 数据源；执行中单行进度已在执行前发射） ----
+        if (m_labels && m_thinkingSec) {
             if (isWriteTool) {
                 ++progressEdits;
             } else if (call.m_name.find("read") != std::string::npos
@@ -529,15 +551,6 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                     || call.m_name.find("search") != std::string::npos) {
                 ++progressReads;
             }
-            std::string prefix = "● " + m_labels->thinking + " for "
-                               + std::to_string(m_thinkingSec->load()) + "s";
-            std::string toolLine = "  ⎿ " + call.m_name
-                                 + (keyParam.empty() ? "" : "(" + keyParam + ")");
-            std::string resultLine = toolOk
-                ? "     ✓ " + call.m_name
-                : "     ✗ " + toolResultText;
-            if (!isWriteTool)
-                m_output->showProgress({prefix, toolLine, resultLine});
         }
 
         results.push_back(std::move(result));

@@ -66,8 +66,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (!m_output) continue;
             auto s = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - turnStart).count();
-            // 只写值，不调 requestRefresh——避免与 emitContent 的 refresh 冲突
+            // 只写值（文本刷新交给下方 requestRefresh 统一驱动）
             m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
+            // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
+            m_output->requestRefresh();
         }
     });
     struct TurnGuard {
@@ -102,9 +104,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         } thinkGuard{thinkingActive, thinkingTimer};
         // ① 每次循环迭代前检查中断
         if (m_interrupted) {
-            if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-            if (m_output) m_output->clearThinking();
-                    return std::string("[Interrupted]");
+            emitInterrupted();
+            return std::string("[Interrupted]");
         }
         try {
             std::string body = m_protocolAdapter.buildChatRequest(
@@ -170,14 +171,12 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Error] ") + errorMsg;
                 }
                 if (interrupted || m_interrupted) {
-                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-                    if (m_output) m_output->clearThinking();
+                    emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 if (response.m_wasAborted) {
                     // libcurl 层检测到中断 → 直接返回，不重试
-                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-                    if (m_output) m_output->clearThinking();
+                    emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
@@ -196,9 +195,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     if (m_interrupted) {
-                        if (m_output) m_output->emitContent("⏹ 已中断\n");
-                        if (m_output) m_output->clearThinking();
-                    return std::string("[Interrupted]");
+                        emitInterrupted();
+                        return std::string("[Interrupted]");
                     }
                     continue;
                 }
@@ -221,13 +219,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 thinking.stop();
 
                 if (m_interrupted) {
-                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-                    if (m_output) m_output->clearThinking();
+                    emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 if (response.m_wasAborted) {
-                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-                    if (m_output) m_output->clearThinking();
+                    emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
@@ -246,9 +242,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
                     if (m_interrupted) {
-                        if (m_output) m_output->emitContent("⏹ 已中断\n");
-                        if (m_output) m_output->clearThinking();
-                    return std::string("[Interrupted]");
+                        emitInterrupted();
+                        return std::string("[Interrupted]");
                     }
                     continue;
                 }
@@ -277,8 +272,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (CLFProtocolAdapter::hasToolCalls(parsed)) {
                 // 中断检查：流式被 abort 后可能累积了 tool call，执行前再检查
                 if (m_interrupted) {
-                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-                    if (m_output) m_output->clearThinking();
+                    emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
@@ -291,8 +285,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         result.m_toolCallId, result.m_name, result.m_content);
                 }
                 if (m_interrupted) {
-                    if (m_output) m_output->emitContent("\n⏹ 已中断\n");
-                    if (m_output) m_output->clearThinking();
+                    emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 continue;
@@ -470,6 +463,15 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 // ============================================================================
 // 私有方法
 // ============================================================================
+
+void CLFAgentLoop::emitInterrupted() {
+    // P0-5: 统一文案（原 9 处两版文案）+ clearThinking + Warn 状态点
+    // 所有调用点后立即 return——一轮内不可重复发射（F17 裁决）
+    if (!m_output) return;
+    m_output->emitContent("\n⏹ 已中断\n");
+    m_output->clearThinking();
+    m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+}
 
 void CLFAgentLoop::injectSystemPrompt() {
     auto ctx = buildSystemPromptContext();

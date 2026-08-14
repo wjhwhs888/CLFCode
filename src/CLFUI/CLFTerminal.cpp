@@ -12,6 +12,20 @@ namespace CLF::CLFUI {
 
 using namespace ftxui;
 
+namespace {
+
+// 取首行，超过 maxBytes 截断加 "…"（不劈半 UTF-8 多字节字符）
+std::string firstLineCapped(const std::string& text, size_t maxBytes) {
+    std::string first = text.substr(0, text.find('\n'));
+    if (first.size() <= maxBytes) return first;
+    size_t cut = maxBytes;
+    // 回退到 UTF-8 字符边界（跳过续字节 0x80-0xBF）
+    while (cut > 0 && (static_cast<unsigned char>(first[cut]) & 0xC0) == 0x80) --cut;
+    return first.substr(0, cut) + "…";
+}
+
+} // anonymous namespace
+
 // ========== 静态工具 (委托 CLFAnsi) ==========
 
 void CLFTerminal::enableAnsi() { CLFAnsi::enable(); }
@@ -35,6 +49,15 @@ CLFTerminal::~CLFTerminal() {
 
 void CLFTerminal::requestRefresh() {
     if (m_screen) m_screen->PostEvent(Event::Custom);
+}
+
+void CLFTerminal::setStatusKind(ICLFOutput::StatusKind kind) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_statusKind = kind;
+    }
+    if (!m_refreshPending.exchange(true))
+        requestRefresh();
 }
 
 // ---- 线程安全快照 ----
@@ -66,9 +89,9 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
         std::lock_guard plock(m_progressMutex);
         progressSnap = m_progressLines;
     }
-    return {m_contentBuffer, m_pendingLine, std::move(stylesSnap), m_statusText, std::move(progressSnap),
-            std::move(thinkLines), m_thinkingActive, m_thinkingBytes, elapsed,
-            m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel};
+    return {m_contentBuffer, m_pendingLine, std::move(stylesSnap), m_statusText, m_statusKind,
+            std::move(progressSnap), std::move(thinkLines), m_thinkingActive, m_thinkingBytes,
+            elapsed, m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel};
 }
 
 // ---- ICLFOutput 实现 ----
@@ -284,7 +307,8 @@ void CLFTerminal::onInterrupt(std::function<void()> cb) {
 }
 
 void CLFTerminal::emitError(const std::string& msg) {
-    emitContent(red("✗ ") + msg);
+    // P0-1: 错误折叠摘要 = 首行 + 截断（dsh "错误首行即摘要"模式）
+    emitContent(red("✗ ") + firstLineCapped(msg, 200));
 }
 
 // ---- 思考内容（与 emitContent 分离，UI 层 Ctrl+O 折叠/展开） ----

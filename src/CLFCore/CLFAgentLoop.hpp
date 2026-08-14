@@ -79,6 +79,10 @@ public:
     void generateAndCacheSummary();
 
 private:
+    // P0-5: turn 级中断消息单点收敛——统一文案 + clearThinking + Warn 状态点
+    // （9 处内联收敛至此；工具层 "⎿ ⏹ 已中断" 保持层级区分不走此路径）
+    void emitInterrupted();
+
     // 注入系统身份提示词（构造时 + /clear 后调用）
     void injectSystemPrompt();
 
