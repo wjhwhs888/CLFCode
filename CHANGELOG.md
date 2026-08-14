@@ -10,6 +10,33 @@
 
 ---
 
+## v0.3.0 (2026-08-14)
+
+### 新增
+
+- **UI 信息降噪**（借鉴 dsh 展示设计）：错误首行摘要、head/tail 截断（搜索 240+240 环形缓冲、diff 16+16）、工具执行中单行显示 + 旋转动画、读工具失败保留永久 ✗ 行
+- **四态状态点**：running 蓝色动画 / done 绿 / warn 琥珀 / error 红；计时 ≥15s 才显示；analyze 模式改紫色（蓝让给 running）
+- **中断消息单点收敛**：9 处内联 → `emitInterrupted()` 统一（文案 + 思考清空 + Warn 状态点）
+- **恢复回显折叠**：`/resume` 历史折叠为一行（`Ctrl+R` 展开/收起），不再全量灌屏
+- **消息级时间戳**：用户消息行尾 `HH:mm`（跨日自动带日期）
+- **审批卡强化**：headline 琥珀加粗 + 参数 dim 分层 + 确认结束防残影
+- **token 统计**：API usage 打通（流式 `include_usage` + 独立投喂），工具摘要显示 `X.Xk tok`，`/context` 显示会话累计
+- **统计摘要增强**：summary 显示总工具数 + read/search/edited 分桶计数
+
+### 修复
+
+- **工具执行期界面冻结**（潜伏缺陷）：状态与进度更新不触发刷新，执行期显示静止——turnTimer 1Hz 驱动
+- **search 工具双计数**：同时计入 read 与 search 桶
+- **get_current_time 仅 Windows**：补充 POSIX 分支（`localtime_r`）
+- useProgressive 同作用域遮蔽警告、Ctrl+O 注释错误等清理
+
+### 测试
+
+- 新增 3 个测试套件（UI 工具 / 搜索截断 / 工具执行器），累计 9 套件 20+ 新用例
+- 集成测试覆盖：三时点中断、usage 穿透流式过滤、折叠回显、状态点不被 TurnGuard 覆盖
+
+---
+
 ## v0.2.0 (2026-08-12)
 
 ### 新增
