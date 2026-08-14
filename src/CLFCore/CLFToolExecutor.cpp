@@ -493,8 +493,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
                 + ", result=" + std::to_string(result.m_content.size()) + " chars");
 
-            bool useProgressive = (m_labels && m_thinkingSec);
             // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
+            // （useProgressive 沿用上方 :345 声明，同作用域不重复声明）
             if (m_output && (!useProgressive || isWriteTool || !toolOk)) {
                 // 渐进模式下仅写类工具/失败走永久内容；读类工具成功仅 showProgress
                 if (isWriteTool && !preview.diffLines.empty()) {
@@ -543,12 +543,12 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         }
 
         // ---- 渐进式统计（summary 数据源；执行中单行进度已在执行前发射） ----
+        // P1-2: search 独立成桶（searchCount 在 :351 计数），不再重复计入 read
         if (m_labels && m_thinkingSec) {
             if (isWriteTool) {
                 ++progressEdits;
             } else if (call.m_name.find("read") != std::string::npos
-                    || call.m_name.find("list") != std::string::npos
-                    || call.m_name.find("search") != std::string::npos) {
+                    || call.m_name.find("list") != std::string::npos) {
                 ++progressReads;
             }
         }
@@ -556,22 +556,28 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         results.push_back(std::move(result));
     }
 
-    // ---- 提交进度总结 ----
+    // ---- 提交进度总结（P1-2: 增强——总工具数 + search 计数，数据为局部计数器） ----
     if (m_output && m_labels && m_thinkingSec) {
         int elapsed = m_thinkingSec->load();
         std::string summary;
         summary += "● " + m_labels->thought + " for "
                 + std::to_string(elapsed) + "s";
-        if (progressReads > 0 || progressEdits > 0) {
-            summary += "，";
+        int total = static_cast<int>(calls.size());
+        if (total > 0) {
+            summary += "，" + std::to_string(total) + " 工具";
+            std::string detail;
             if (progressReads > 0)
-                summary += "read " + std::to_string(progressReads) + " file"
-                        + (progressReads > 1 ? "s" : "");
-            if (progressReads > 0 && progressEdits > 0)
-                summary += ", ";
-            if (progressEdits > 0)
-                summary += "edited " + std::to_string(progressEdits) + " file"
-                        + (progressEdits > 1 ? "s" : "");
+                detail += "read " + std::to_string(progressReads);
+            if (searchCount > 0) {
+                if (!detail.empty()) detail += " · ";
+                detail += "search " + std::to_string(searchCount);
+            }
+            if (progressEdits > 0) {
+                if (!detail.empty()) detail += " · ";
+                detail += "edited " + std::to_string(progressEdits);
+            }
+            if (!detail.empty())
+                summary += " (" + detail + ")";
         }
         summary += " (ctrl+t to expand)";
         guard.commit("\n \n" + summary + "\n \n");

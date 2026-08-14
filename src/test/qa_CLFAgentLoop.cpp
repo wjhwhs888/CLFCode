@@ -286,6 +286,48 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     };
 
+    // ========== T4: 状态点状态机（P1-1 接线全表） ==========
+
+    "T4a 正常完成：Running → Done 序列，Done 常亮不自动清"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = false;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }]
+        })");
+
+        std::string result = agent->runTurn("hello");
+        expect(!result.empty());
+        expect(out.kinds.size() >= 2);
+        expect(out.kinds.front() == CLF::CLFTypes::ICLFOutput::StatusKind::Running);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+        // F14: turn 结束后 Done 常亮（无自动清除）
+    };
+
+    "T4b 致命错误 return：Error 不被 TurnGuard 覆盖（F20）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = false;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse("", "HTTP 401 unauthorized");
+
+        std::string result = agent->runTurn("hi");
+        expect(result.find("[Error]") != std::string::npos);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+    };
+
     "T6c 中断于工具执行中：恰好一条中断消息 + Warn"_test = [] {
         auto mock = std::make_shared<MockHttpClient>();
         CLFAgentConfig config;

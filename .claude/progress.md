@@ -2,6 +2,15 @@
 
 ## 已完成
 
+### 2026-08-14 UI 信息展示借鉴 M2 ✅
+- P1-1 四态状态点：接线全表（Running/Done/Warn/Error×7 + Repl catch 兜底 + /resume /clear 的 None）+ 渲染（running=蓝动画帧、done=绿●、warn=琥珀●、error=红✕）+ 计时 ≥15s 才显示
+- D1 色语义落地：analyze 模式改紫，蓝让给 running
+- P1-2 summary 增强："N 工具 (read A · search B · edited C)"——顺手修 search 双计数（原逻辑 search 同时计入 read 桶，T5 测试当场抓住）
+- P1-3 思考折叠摘要：执行中=实时尾行、完成=首行（UTF-8 安全截断）+ Ctrl+O 注释修正
+- 清理 useProgressive 同作用域遮蔽警告（C4456）
+- 测试：T4a/T4b（含 F20 不被覆盖断言）+ qa_CLFToolExecutor 新套件（T5/F10/降噪保持）；ctest 8/9（SessionManager 既有环境失败不变）
+- 人工验收：状态点四态 / 动画 / 15s 计时 / 折叠摘要 / analyze 紫 全部通过
+
 ### 2026-08-14 UI 信息展示借鉴 M1 ✅
 - 依据：`设计/设计-UI信息展示借鉴.md`（四轮审查定稿 F1-F21）+ `分析/分析-UI信息展示借鉴.md`（dsh 展示设计对照）
 - P0-1 错误首行摘要（emitError 单点收敛 + UTF-8 安全截断）

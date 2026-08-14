@@ -55,6 +55,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     m_lastReasoningSize = 0;  // 重置推理增量追踪
     m_context.addMessage("user", userInput);
     m_lastToolStats = {};
+    // P1-1: 状态点接线——Running 于 turn 开始
+    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
 
     // Timer #2：StatusLine 持续计时
     auto turnStart = std::chrono::steady_clock::now();
@@ -66,8 +68,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (!m_output) continue;
             auto s = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - turnStart).count();
-            // 只写值（文本刷新交给下方 requestRefresh 统一驱动）
-            m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
+            // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）
+            if (s >= 15)
+                m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
             // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
             m_output->requestRefresh();
         }
@@ -168,6 +171,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 // 错误处理
                 if (hadError) {
                     if (m_output) m_output->emitError("Stream error: " + errorMsg);
+                    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                     return std::string("[Error] ") + errorMsg;
                 }
                 if (interrupted || m_interrupted) {
@@ -182,9 +186,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
                         if (m_output) m_output->emitError(response.m_error);
+                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
+                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
                     if (m_output) m_output->emitContent(
@@ -229,9 +235,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 if (!response.m_error.empty()) {
                     if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
                         if (m_output) m_output->emitError(response.m_error);
+                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] ") + response.m_error;
                     }
                     if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
+                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
                     if (m_output) m_output->emitContent(
@@ -254,6 +262,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             // finish_reason 检查
             if (!CLFProtocolAdapter::isValidFinish(parsed)) {
+                if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                 return std::string("[Error] Unexpected finish_reason: '")
                        + parsed.m_finishReason + "'";
             }
@@ -301,6 +310,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     m_output->emitContent(worked);  // stream 路径需显式 emit
             }
             m_context.addMessage("assistant", finalContent);
+            // P1-1: 正常完成点——Done 显式接线（TurnGuard 不设 kind，F20）
+            if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Done);
             CLFLogger::instance().info("[Turn] done, content="
                 + std::to_string(finalContent.size()) + "chars, tools="
                 + std::to_string(m_lastToolStats.totalCalls));
@@ -308,6 +319,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
         } catch (const std::exception& e) {
             if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
+                if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                 return std::string("[Error] Exception: ") + e.what();
             }
             if (m_output) m_output->emitContent(
@@ -325,6 +337,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             std::chrono::steady_clock::now() - turnStart).count();
         finalContent += "\n \n✻ " + m_labels.worked + " for " + formatDurationSeconds(s) + "\n \n";
     }
+    // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
+    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     return std::string("[Error] Exceeded maximum tool call iterations (")
            + std::to_string(m_config.m_maxToolCallIterations) + ")";
 }

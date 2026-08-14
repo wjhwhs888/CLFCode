@@ -39,6 +39,8 @@ bool cmdClear(const std::string&, const std::string&,
     agent.generateAndCacheSummary();  // 生成会话摘要
     agent.saveSession(historyDir, true);  // 归档旧会话
     agent.clearContext();
+    // F18: 新会话语义从干净状态开始
+    if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
     if (output) output->emitContent("✓ 会话已保存，新会话开始\n");
     return true;
 }
@@ -220,6 +222,8 @@ bool cmdResume(const std::string&, const std::string& args,
         if (idx >= 1 && idx <= static_cast<int>(sessions.size())) {
             if (agent.restoreSession(sessions[idx - 1].m_path)) {
                 // restoreSession 已回显历史，不再重复显示
+                // F18: 恢复后状态点回到干净状态
+                if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
             } else {
                 if (output) output->emitContent("✗ 恢复失败\n");
             }
