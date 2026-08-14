@@ -20,6 +20,25 @@
 
 namespace CLF::CLFCore {
 
+namespace {
+
+// 按 \n 拆分为多行追加（折叠块渲染按行处理）
+void appendSplitLines(std::vector<std::string>& out, const std::string& text) {
+    if (text.empty()) { out.emplace_back(); return; }
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t nl = text.find('\n', pos);
+        if (nl == std::string::npos) {
+            out.push_back(text.substr(pos));
+            break;
+        }
+        out.push_back(text.substr(pos, nl - pos));
+        pos = nl + 1;
+    }
+}
+
+} // anonymous namespace
+
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
                            std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient,
                            const CLFTimerLabels& labels)
@@ -427,22 +446,25 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 
     m_context.clear();
 
-    // ① 回显历史到终端
+    // ① 回显历史到终端（P2-1：折叠块，不再直灌滚动区；内容全量传入，
+    //    messages 已驻留 m_context，回显只是显示投影——R1 裁决不做懒加载）
     if (m_output) {
-        m_output->emitContent("\n● 会话已恢复\n\n");
+        std::vector<std::string> echoLines;
         int userCount = 0, assistantCount = 0;
         for (const auto& msg : messages) {
             if (msg.m_role == "user") {
-                m_output->emitContent("> " + msg.m_content + "\n\n");
+                appendSplitLines(echoLines, "> " + msg.m_content);
                 ++userCount;
             } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                m_output->emitContent(msg.m_content + "\n");
+                appendSplitLines(echoLines, msg.m_content);
                 ++assistantCount;
             }
             // tool / system 消息跳过（终端不需要显示）
         }
-        m_output->emitContent("──────────────\n");
-        CLFLogger::instance().debug("[Restore] echoed "
+        m_output->showFoldedBlock(
+            "● 会话已恢复 · " + std::to_string(userCount + assistantCount)
+                + " 条消息（ctrl+r 展开）", echoLines);
+        CLFLogger::instance().debug("[Restore] folded echo "
                                     + std::to_string(userCount) + " user + "
                                     + std::to_string(assistantCount) + " assistant messages");
     }

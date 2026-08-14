@@ -4,14 +4,18 @@
 #include <boost/ut.hpp>
 #include <chrono>
 #include <deque>
+#include <filesystem>
 #include <thread>
 
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFSessionManager.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
 
 using namespace boost::ut;
 using CLF::CLFCore::CLFAgentLoop;
 using CLF::CLFCore::CLFAgentConfig;
+using CLF::CLFCore::CLFMessage;
+using CLF::CLFCore::CLFSessionManager;
 using CLF::CLFCore::CLFTool;
 using CLF::CLFCore::CLFSecurityMode;
 using CLF::CLFNetwork::ICLFHttpClient;
@@ -115,6 +119,13 @@ public:
     void appendThinking(const std::string&) override {}
     void clearThinking() override {}
     void setStatusKind(StatusKind k) override { kinds.push_back(k); }
+    void showFoldedBlock(const std::string& summary,
+                         const std::vector<std::string>& lines) override {
+        foldedSummary = summary;
+        foldedLines = lines;
+    }
+    std::string foldedSummary;
+    std::vector<std::string> foldedLines;
 
     void fireInterrupt() { if (m_cb) m_cb(); }
     int interruptEmissions() const {
@@ -326,6 +337,49 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         std::string result = agent->runTurn("hi");
         expect(result.find("[Error]") != std::string::npos);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+    };
+
+    "T7 /resume 回显走折叠块：历史不进滚动区（P2-1）"_test = [] {
+        auto dir = std::filesystem::temp_directory_path()
+                 / ("clf_restore_test_" + std::to_string(
+                        std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(dir);
+
+        std::vector<CLFMessage> messages;
+        messages.push_back({"user", "hello"});
+        messages.push_back({"assistant", "world"});
+        std::string path = CLFSessionManager::save(messages, dir.string(), false);
+
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        bool ok = agent->restoreSession(path);
+        expect(ok);
+
+        // 历史内容不进滚动区（emitContent 直灌路径已废除）
+        bool leaked = false;
+        for (const auto& c : out.contents)
+            if (c.find("hello") != std::string::npos
+                || c.find("world") != std::string::npos)
+                leaked = true;
+        expect(!leaked);
+
+        // 折叠块：摘要含消息计数、展开行含内容
+        expect(out.foldedSummary.find("2 条消息") != std::string::npos);
+        bool hasUser = false, hasAssistant = false;
+        for (const auto& l : out.foldedLines) {
+            if (l.find("> hello") != std::string::npos) hasUser = true;
+            if (l.find("world") != std::string::npos) hasAssistant = true;
+        }
+        expect(hasUser);
+        expect(hasAssistant);
+
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
     };
 
     "T6c 中断于工具执行中：恰好一条中断消息 + Warn"_test = [] {

@@ -2,6 +2,15 @@
 
 ## 已完成
 
+### 2026-08-14 P2-UI M1（恢复回显折叠 + 时间戳） ✅
+- 依据：《设计-P2-UI展示完善.md》（两轮外部审查 R1-R5 定稿）
+- P2-1 恢复回显折叠：ICLFOutput 增 showFoldedBlock（默认空实现）/ CLFTerminal 折叠态 / Ctrl+R 切换 / restoreSession 改走折叠路径
+- R5 视口保持：CLFScrollView::keepLineVisible（offset 计算），切换后折叠行不被顶出
+- P2-3 时间戳：localDateStamp/localTimeStamp 双平台 helper + 用户消息行尾 HH:mm（跨日带日期）
+- 顺带修复整体审查 P2-8：get_current_time POSIX 分支（localtime_r）
+- 测试：T7（折叠回显不进滚动区）+ T9a/T9b（时间戳格式）；ctest 8/9（SessionManager 既有环境失败不变）
+- 人工验收：折叠行/展开/时间戳/get_current_time 全部通过
+
 ### 2026-08-14 UI 信息展示借鉴 M2 ✅
 - P1-1 四态状态点：接线全表（Running/Done/Warn/Error×7 + Repl catch 兜底 + /resume /clear 的 None）+ 渲染（running=蓝动画帧、done=绿●、warn=琥珀●、error=红✕）+ 计时 ≥15s 才显示
 - D1 色语义落地：analyze 模式改紫，蓝让给 running

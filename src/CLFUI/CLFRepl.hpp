@@ -56,6 +56,10 @@ private:
     std::vector<std::string> m_inputHistory;
     int m_historyIndex = -1;       // -1 = 不在历史浏览中
     std::string m_historyDraft;     // 进入历史前正在编辑的文字（↓到底时恢复）
+    // P2-1/R5: 折叠块切换后保持折叠行可见
+    bool        m_foldJustToggled = false;
+    // P2-3: 时间戳跨日判定（"YYYY-MM-DD"）
+    std::string m_lastTsDate;
 };
 
 } // namespace CLF::CLFUI

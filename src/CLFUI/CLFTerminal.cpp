@@ -60,6 +60,27 @@ void CLFTerminal::setStatusKind(ICLFOutput::StatusKind kind) {
         requestRefresh();
 }
 
+void CLFTerminal::showFoldedBlock(const std::string& summary,
+                                  const std::vector<std::string>& lines) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_foldedSummary = summary;
+        m_foldedLines   = lines;
+        m_foldedExpanded = false;  // 新折叠块默认收起
+    }
+    if (!m_refreshPending.exchange(true))
+        requestRefresh();
+}
+
+void CLFTerminal::toggleFoldedBlock() {
+    {
+        std::lock_guard lock(m_mutex);
+        m_foldedExpanded = !m_foldedExpanded;
+    }
+    if (!m_refreshPending.exchange(true))
+        requestRefresh();
+}
+
 // ---- 线程安全快照 ----
 
 CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
@@ -91,7 +112,8 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
     }
     return {m_contentBuffer, m_pendingLine, std::move(stylesSnap), m_statusText, m_statusKind,
             std::move(progressSnap), std::move(thinkLines), m_thinkingActive, m_thinkingBytes,
-            elapsed, m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel};
+            elapsed, m_confirmActive, m_confirmPrompt, m_confirmOpts, m_confirmSel,
+            m_foldedSummary, m_foldedLines, m_foldedExpanded};
 }
 
 // ---- ICLFOutput 实现 ----

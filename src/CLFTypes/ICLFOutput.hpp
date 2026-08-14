@@ -90,6 +90,15 @@ public:
     // 主动刷新请求（CLFTerminal 覆写为 PostEvent(Custom)）
     // turnTimer 1Hz 驱动用：修复工具执行期界面冻结 + 动画最低帧率
     virtual void requestRefresh() {}
+
+    // ========== ⑧ 恢复回显折叠块（P2-1，带默认实现，Mock 零破坏） ==========
+
+    // summary 常显折叠行，lines 为展开内容（UI 层快捷键切换展开态）
+    virtual void showFoldedBlock(const std::string& summary,
+                                 const std::vector<std::string>& lines) {
+        (void)summary;
+        (void)lines;
+    }
 };
 
 } // namespace CLF::CLFTypes

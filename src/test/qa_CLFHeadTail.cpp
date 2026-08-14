@@ -120,6 +120,25 @@ const boost::ut::suite<"CLFHeadTail"> tests = [] {
         expect(contains("…"));
         expect(!contains("tail-must-not-appear"));
     };
+
+    // ========== T9: 本地时间戳（P2-3） ==========
+
+    "T9a localTimeStamp 无日期：HH:mm 格式"_test = [] {
+        auto ts = CLF::CLFCore::localTimeStamp();
+        expect(ts.size() == 5);
+        expect(ts[2] == ':');
+        for (size_t i = 0; i < ts.size(); ++i)
+            if (i != 2) expect(ts[i] >= '0' && ts[i] <= '9');
+    };
+
+    "T9b 带日期 MM-DD HH:mm + localDateStamp YYYY-MM-DD"_test = [] {
+        auto ts = CLF::CLFCore::localTimeStamp(true);
+        expect(ts.size() == 11);
+        expect(ts[2] == '-' && ts[5] == ' ' && ts[8] == ':');
+        auto ds = CLF::CLFCore::localDateStamp();
+        expect(ds.size() == 10);
+        expect(ds[4] == '-' && ds[7] == '-');
+    };
 };
 
 int main() {}

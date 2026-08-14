@@ -19,6 +19,10 @@ public:
     // 处理滚动相关事件（wheel/PageUp/PageDown/Home/End），返回 true=已消费
     bool handleEvent(ftxui::Event e);
 
+    // P2-1/R5: 保持指定行可见（折叠块切换后防顶出视口）
+    // lineIndex 为 allLines 下标；须在 update() 之后调用
+    void keepLineVisible(int lineIndex);
+
     // 重置（/clear 时调用）
     void reset();
 

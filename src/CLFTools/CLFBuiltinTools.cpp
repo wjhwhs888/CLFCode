@@ -21,9 +21,16 @@ namespace {
 std::string getCurrentTimeHandler(const std::string& /*args*/) {
     std::time_t now = std::time(nullptr);
     std::tm localTime{};
+    // 双平台（整体审查 P2-8）：Windows localtime_s / POSIX localtime_r
+#ifdef _WIN32
     if (localtime_s(&localTime, &now) != 0) {
         return "[Error] Failed to get local time";
     }
+#else
+    if (localtime_r(&now, &localTime) == nullptr) {
+        return "[Error] Failed to get local time";
+    }
+#endif
     char buf[64];
     std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &localTime);
     return std::string(buf);
