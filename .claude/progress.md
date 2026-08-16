@@ -1,5 +1,16 @@
 # CLFCode 任务进度
 
+## 进行中
+
+### 2026-08-16 dsh 后端接入 Spike 方案设计 ✅（待执行）
+- 产出：《设计/设计-dsh后端接入-Spike方案.md》（S0-S5 六步，时间盒 1-2 天；dsh/ 子目录为用户建的外部参考目录，咱们的产物不入内）
+- 现场核实：dsh 克隆 F:\wjh_work\deepseek-harness @ 47f9438（=钉住）、node_modules 已装、bin 已构建、Node 24 达标、Python 不可用（驱动改用 Node 直写 wire protocol）
+- 新核实协议事实：bin 配置发现顺序 / llm-deepseek 凭据 env 与 initialize 传模型 / !!js 表达式官方自用
+- 决策定稿：subagent UI 合同从简（root 工具调用走现有 showProgress/finishProgress，子会话事件只收不渲染，ICLFOutput 零新增）
+- 外部评审四批共 13 条意见（dsh 会话 flash 产出）：逐条核实裁决——全部采纳（部分带修正），已合入方案附录；核实收获：tool-pwsh 沙箱拒绝/升级机制真实形态（无 [sandbox: escalation available] 字面串，升级=参数重试+审批提示=待澄清#5 实测入口）、官方两处快照占位约定不一致、workspaceRoot 无默认回退 process.cwd()、windows-acl runner 懒裁决不预 probe，均已写入方案
+- 开工前深检（Claude Code 复核 8 项）：抓到一个真缺陷——**draft-cordis-win64.yml 装配错误**（pwsh-sandbox 无 mode 字段 + 缺 sandbox-local/sandbox-policy 两件，原样必启动失败），修正已写入冒烟版 cordis 规格；initialize/session-prompt 签名、文本块形态、toolBash:false 合法性等 7 项全过
+- 下一步：S0 启动冒烟 → S1 驱动脚本
+
 ## 已完成
 
 ### 2026-08-14 P2-UI M2+M3（审批卡强化 + usage 打通） ✅
