@@ -64,7 +64,7 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 
 ### S1 帧驱动脚本（~0.5 天）
 
-新增 `.claude/plans/测试/spike/spike_driver.mjs`（Node，无第三方依赖）。**按 M1 类骨架分五模块写**（"脚本即对译模板"——每个函数头部注释标注对应 M1 类方法，M1 逐函数对译，不做平铺脚本）：
+新增 `tools/spike/spike_driver.mjs`（Node，无第三方依赖）。**按 M1 类骨架分五模块写**（"脚本即对译模板"——每个函数头部注释标注对应 M1 类方法，M1 逐函数对译，不做平铺脚本）：
 
 | spike 模块 | 职责 | M1 对译目标 |
 |---|---|---|
@@ -74,7 +74,7 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 | `runTurn()` | 轮次循环（照抄双客户端语义）：initialize（**首条，验证握手 + serverInfo**）→ session/prompt → receipt 门控（`agent/inbox/spliced` 含 messageId 才起收）→ 本会话 `session.status: idle` 判定结束 → shutdown → 等回包 → 关 stdin → 超时强杀。**两个超时（Python 缺失，必须自补）**：整轮 idle 等待（默认 10 min，可参数化）；shutdown 后 5s 未退 → 强杀 | `CLFHarnessSession::run` |
 | `normalizeFrames()` | 归一化（见下） | M1 测试工具（fixture 生成） |
 
-**frames 双轨落盘** `.claude/plans/测试/spike/frames/`：
+**frames 双轨落盘** `tools/spike/frames/`：
 
 - 原始帧：全部帧逐行原样存 `raw/*.jsonl`（协议证据，M1 联调参照）
 - 归一化副本 `norm/*.jsonl`：**占位符命名自定、字段宁多勿少**——官方两处快照约定已核实不一致（`scripts/snapshots/python-sdk-single-exe/` 用 `{{parent}}`/`{{messageId}}`；`examples/jsonrpc-agent/tests/snapshots/` 用 `{{sessionId}}`/`{{cwd}}`/`{{system}}`/`{{tools}}`），M1 断言由咱们自己消费，不追官方命名；sessionId/messageId/cwd/system/tools 等标识性字段全占位，**父子会话分离**——root 会话 → `{{rootSessionId}}`，子会话按 `subagent.started` 出现序 → `{{childSessionId-N}}`，messageId 同理区分 root 收据与子会话消息；**不可把所有 sessionId 塌成一个占位符**，否则会话树过滤/事件隔离测试（M2 核心语义）没有可用 fixture；time/seq/createdAt 全归零（seq 本就 per-session 从 0 起，归零不影响父子区分）。**M1 回放断言的 fixture 只用归一化副本**（真实模型每跑必变的字段不可进断言）
@@ -132,8 +132,8 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 ### S5 产出与决策（~0.5h）
 
 - spike 报告：全链路结论 + 工具对照表 + 与蓝本报告的出入清单
-- `.claude/plans/测试/spike/frames/` 归档为 M1 fake runtime 回放素材
-- **产出咱们自己的 cordis 定稿**（新文件，放 `.claude/plans/测试/spike/` 或后续归入 `config/`；**不动 dsh 参考目录**）
+- `tools/spike/frames/` 归档为 M1 fake runtime 回放素材
+- **产出咱们自己的 cordis 定稿**（新文件，放 `tools/spike/` 或后续归入 `config/`；**不动 dsh 参考目录**）
 - 回填分析文档"待澄清认知问题"（#1 工具面、#4 会话映射、#5 生命周期等）
 - 立项决策：按 P1-P4 给出 go / no-go
 
@@ -150,7 +150,7 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 ## 涉及文件
 
 - `F:\wjh_work\deepseek-harness`：只读使用，**不改源码**（决策 1）
-- 新增：`.claude/plans/测试/spike/`（spike_driver.mjs + cordis-smoke.yml + frames/（raw + norm）+ cordis 定稿 + spike 报告）
+- 新增：`tools/spike/`（spike_driver.mjs + cordis-smoke.yml + cordis-final.yml + frames/（raw + norm）+ Spike报告.md，自包含）
 - 修订：分析文档回填（`.claude/plans/分析/分析-dsh终端客户端接入.md`）
 - **不涉及 src/**（spike 不动 C++ 代码）；**不动 `.claude/plans/设计/dsh/`、`.claude/plans/分析/dsh/` 参考目录**
 
@@ -161,7 +161,7 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 
 ## Spike 执行总结果（2026-08-16，S0-S5 全部完成，go）
 
-详见 `../../测试/spike/Spike报告.md`。要点：
+详见 `../../../tools/spike/Spike报告.md`。要点：
 
 **P1-P4 通过标准全部达成**：
 

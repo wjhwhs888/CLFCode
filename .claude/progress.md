@@ -14,14 +14,14 @@
 ## 已完成
 
 ### 2026-08-16 dsh 后端接入 Spike S1-S5 全部完成 ✅（go，M1 立项）
-- 产出：《测试/spike/Spike报告.md》+ `tools/spike/`（spike_driver.mjs 五模块 + cordis-smoke/final.yml + frames raw/norm 8 组）
+- 产出：`tools/spike/`（Spike报告.md + spike_driver.mjs 五模块 + cordis-smoke/final.yml + frames raw/norm 8 组，自包含）
 - P1-P4 全过：全链路 8 轮跑通（流式/reasoning/usage/shutdown/exit 0）；工具面五类实测可用（fs 写不受沙箱约束、pwsh 写被拒+升级无审批服务）；subagent 四断言全过（父子会话隔离 731/644）；frames 双轨就绪
 - 关键协议事实（M1/M2 必读）：事件先于响应（receipt 门控须缓冲回溯）/ sessionId 复用碰撞 / assistant/message 在 data.message.content / 双 finish 枚举 / tool-call 参数为 JSON 字符串 / spliced 带 removedCount
 - 回填分析文档 #1/#4/#5（确认链 UX：审批请求不进 JSON-RPC 协议）
 - 决策点 3 实测输入齐备：read-only 只约束 pwsh 通道、升级需装配审批服务
 
 ### 2026-08-16 dsh 后端接入 Spike S0 启动冒烟 ✅（四项全过）
-- 产出：`.claude/plans/测试/spike/cordis-smoke.yml`（零 !!js + 修正装配 + junction node_modules）
+- 产出：`tools/spike/cordis-smoke.yml`（零 !!js + 修正装配 + junction node_modules；后已移至 tools/）
 - 四项清单全过：缺配置 exit(1) / 畸形行静默跳过 / 20 插件全树加载 / 持开 stdin 存活 10s stderr 零行
 - 执行中抓出草案缺陷 3+4：pwsh-local 与 pwsh-sandbox 的 ctx.shell 服务冲突（只挂 sandbox 版即可，三件套实为两件）；缺 dsh-shell-env（tool-pwsh 挂起不激活）
 - 部署事实实测：bare 包名自配置文件目录向上解析（"configuration project" 语义）→ M2/M3 部署时 cordis.yml 须与 runtime 闭包同目录；npm 发布版 0.0.1-rc.5 ≠ 钉住 0.1.0-rc.5（M3 核实项）

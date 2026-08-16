@@ -1,6 +1,6 @@
 # dsh 后端接入 Spike 报告（2026-08-16）
 
-> 配套：方案《设计/设计-dsh后端接入-Spike方案.md》、执行代码 `tools/spike/`、frames 素材 `tools/spike/frames/`
+> 配套：方案《.claude/plans/设计/设计-dsh后端接入-Spike方案.md》；本目录即执行代码 + frames 素材所在（自包含）
 > 结论：**go** —— 通过标准 P1-P4 全部达成，M1 传输层立项。
 
 ## 执行摘要
