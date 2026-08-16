@@ -48,6 +48,20 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
   3. 畸形行容忍：`printf 'not-json\n' | node ... bin.js <配置>`（one-shot pipe，EOF 紧随可接受）→ 静默跳过不崩，进程正常退出
 - 回退链：smoke 版加载失败 → 官方示例对照（注意其含 `dsh-bash-local`，Windows 下可能加载失败，仅用于定位加载器问题）→ 单点替换 bash→pwsh 后重试
 
+**S0 执行结果（2026-08-16，四项全过）**：
+
+1. 缺配置 → stderr usage + exit(1) ✓（与 README 一致）
+2. 畸形行 `not-json` + EOF → 静默跳过、干净 exit(0) ✓
+3. 全插件树（20 件）加载成功 ✓
+4. 持开 stdin + 凭据 env 存活 10s，stderr 0 行 ✓
+
+执行中新增发现（草案第三处缺陷 + 两个部署事实）：
+
+- **草案缺陷 3**：`pwsh-local` 与 `pwsh-sandbox` 同注册 `ctx.shell` 服务 → 装配冲突（`service "shell" has been registered`）；pwsh-sandbox 内部继承 PwshLocalExecutor，**只挂 pwsh-sandbox** 即得受限 shell。草案"pwsh 三件套"实为两件（pwsh-sandbox + tool-pwsh）
+- **草案缺陷 4**：缺 `dsh-shell-env`（tool-pwsh 的 inject 含 `shellEnv`，缺件挂起不激活）——冒烟版已补
+- **部署事实**：bare 包名自配置文件目录向上解析 node_modules（"configuration project" 语义，实测：仓库外配置解析失败，`examples/node_modules` 链接场使示例成功）；spike 解法 = junction `spike/node_modules` → `dsh/examples/node_modules` + pwsh-sandbox 相对路径引用（loader 支持 `.` 开头相对名）。**M2/M3 启示：部署时 cordis.yml 必须与 runtime 闭包（package.json + node_modules）同目录**
+- **M3 核实项**：npm 发布版 `0.0.1-rc.5` ≠ 钉住仓库 `0.1.0-rc.5`，打包前须核实对应关系
+
 ### S1 帧驱动脚本（~0.5 天）
 
 新增 `.claude/plans/测试/spike/spike_driver.mjs`（Node，无第三方依赖）。**按 M1 类骨架分五模块写**（"脚本即对译模板"——每个函数头部注释标注对应 M1 类方法，M1 逐函数对译，不做平铺脚本）：
@@ -66,6 +80,19 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 - 归一化副本 `norm/*.jsonl`：**占位符命名自定、字段宁多勿少**——官方两处快照约定已核实不一致（`scripts/snapshots/python-sdk-single-exe/` 用 `{{parent}}`/`{{messageId}}`；`examples/jsonrpc-agent/tests/snapshots/` 用 `{{sessionId}}`/`{{cwd}}`/`{{system}}`/`{{tools}}`），M1 断言由咱们自己消费，不追官方命名；sessionId/messageId/cwd/system/tools 等标识性字段全占位，**父子会话分离**——root 会话 → `{{rootSessionId}}`，子会话按 `subagent.started` 出现序 → `{{childSessionId-N}}`，messageId 同理区分 root 收据与子会话消息；**不可把所有 sessionId 塌成一个占位符**，否则会话树过滤/事件隔离测试（M2 核心语义）没有可用 fixture；time/seq/createdAt 全归零（seq 本就 per-session 从 0 起，归零不影响父子区分）。**M1 回放断言的 fixture 只用归一化副本**（真实模型每跑必变的字段不可进断言）
 
 - 判据：脚本跑通"你好"轮——initialize 握手成功；收到 assistant/chunk 文本增量流 + finish + idle，clean exit；**reasoning 流实测**：记录 reasoning-delta 的数量与形态、block-end 的 reasoning 块结构，与蓝本报告 §4 对照（Ctrl+T `appendThinking` 折叠通道的对接前提）
+
+**S1 执行结果（2026-08-16，判据全部达成）**：
+
+`[finalResponse] 你好，联通正常 ✅`——initialize 握手（serverInfo.name=deepseek-harness-sdk-runtime）、流式文本（text-delta）、reasoning 流（reasoning-delta=17，block-start blockType=reasoning）、usage（含 reasoningTokens）、idle 判定、shutdown 阶梯、exit 0 全链路通过。frames 双轨落盘（raw + norm，占位归一正确）。
+
+**M1/M2 实现必读的实测协议事实（蓝本报告未覆盖或需修正）**：
+
+1. **事件先于响应**：session/prompt 响应到达前事件已开始流动（首个 `agent/inbox/spliced` 已带最终 messageId）——receipt 门控必须"**缓冲全部通知 + 响应到达后回溯过滤**"，到达时即判必然失败（messageId 尚不存在）。首版驱动实测踩中，已修
+2. **sessionId 碰撞**：复用已落盘日志的 sessionId → `id collision` 错误（turn 直接 error）——客户端每次必须生成新 id；/resume 语义须走 runtime 自身会话恢复（M2 会话层注意）
+3. **assistant/message 形态**：内容块在 `data.message.content`（含 reasoning 块 + text 块），非 `data.content`
+4. **双 finish 枚举**：`assistant/chunk` finish 的 `reason.kind="stop"` vs `turn/end` 的 `reason.kind="completed"`——两套枚举，取值别混
+5. **每轮两个 spliced**：首个含 prompt 消息（响应前），次个 `inserted=[]`（next-turn 预置）
+6. serverInfo.version 实测 `"0.0.1"`（呼应 npm 0.0.1-rc.5，与钉住 0.1.0-rc.5 的差异 → M3 核实项）
 
 ### S2 工具面实测（~0.5 天）
 
@@ -131,6 +158,23 @@ Spike 分 S0-S5 六步，时间盒 1-2 天。**subagent 专项（S3）为独立�
 
 - 通过 → M1 传输层（CLFJsonRpcClient），frames 归一化副本直接转单测回放用例
 - 不通过 / 部分通过 → 按"出入清单"逐项评估是协议理解偏差还是 dsh 缺陷，回填设计文档
+
+## Spike 执行总结果（2026-08-16，S0-S5 全部完成，go）
+
+详见 `../../测试/spike/Spike报告.md`。要点：
+
+**P1-P4 通过标准全部达成**：
+
+- **P1**：initialize→prompt→event 流→idle 全链路 8 轮跑通（含流式文本、reasoning 流、usage、shutdown 阶梯、clean exit）
+- **P2**：Windows 工具面实测（三维对照）——read ✓ / write ✓（**fs 通道独立于沙箱，写不受限**）/ pwsh 执行 ✓（ConstrainedLanguage）/ todo_write ✓ / subagent ✓；净增点明确：subagent、todo、多模型、上下文压缩装配
+- **P3**：subagent 四项断言全过——started/finished 通知（status=ok、lastAssistantMessage 带回）、子会话事件隔离（root 731 vs child 644，无污染）、亲缘链可维护、root 侧 tool/call+tool/result 完整（UI 合同可用）
+- **P4**：frames 双轨 8 组 run（raw + norm，父子会话占位分离正确）→ M1 单测素材就绪
+
+**决策点 3 的实测输入**：read-only 只约束 pwsh 通道；pwsh 写被拒 → 升级重试（sandbox_permissions + justification）→ **无审批服务装配，升级直接失败**（"requires approval, but no approval service is composed"）——确认请求不会出现在 JSON-RPC 协议里。若未来要 dsh 内确认链，需装配审批服务插件并摸清其桥接形态。
+
+**对 dsh 参考文档的修正**（草案缺陷 5 处，全部落于 cordis-final.yml）：缺 sandbox 两件 / mode 错挂 / pwsh-local 冲突 / 缺 shell-env / pwsh-sandbox 链接场缺席。
+
+**go/no-go：go** —— M1 传输层立项，素材与事实齐备。
 
 ## 附录：外部评审意见处置（2026-08-16）
 

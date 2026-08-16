@@ -1,0 +1,10 @@
+{"dir":"tx","frame":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"cwd":"{{cwd}}","provider":"deepseek-official","model":"deepseek-v4-pro"}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"deepseek-harness-sdk-runtime","version":"0.0.1"}}}}
+{"dir":"tx","frame":{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"{{rootSessionId}}","contentBlocks":[{"type":"text","text":"你好，请简短回复确认联通"}]}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"{{rootSessionId}}","event":{"type":"agent/inbox/spliced","seq":0,"time":0,"data":{"target":"next-turn","start":0,"inserted":[{"content":[{"type":"text","text":"你好，请简短回复确认联通"}],"source":{"kind":"user"},"role":"user","id":"{{messageId-1}}"}]}}}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","method":"session.status","params":{"sessionId":"{{rootSessionId}}","status":"running"}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"{{rootSessionId}}","event":{"type":"turn/start","seq":0,"time":0,"data":{"turn":1}}}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"{{rootSessionId}}","event":{"type":"agent/inbox/spliced","seq":0,"time":0,"data":{"target":"next-turn","start":0,"removedCount":1,"inserted":[]}}}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","id":2,"result":{"messageId":"417a628b-018c-4a3d-9b1b-9356fb837ee2"}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","method":"session.event","params":{"sessionId":"{{rootSessionId}}","event":{"type":"turn/end","seq":0,"time":0,"data":{"turn":1,"reason":{"kind":"error","error":{"message":"session \"spike-s1\" already has a persisted log on disk that does not match this live session (id collision)","code":"UNKNOWN"}}}}}}}
+{"dir":"rx","frame":{"jsonrpc":"2.0","method":"session.status","params":{"sessionId":"{{rootSessionId}}","status":"idle"}}}

@@ -9,9 +9,23 @@
 - 决策定稿：subagent UI 合同从简（root 工具调用走现有 showProgress/finishProgress，子会话事件只收不渲染，ICLFOutput 零新增）
 - 外部评审四批共 13 条意见（dsh 会话 flash 产出）：逐条核实裁决——全部采纳（部分带修正），已合入方案附录；核实收获：tool-pwsh 沙箱拒绝/升级机制真实形态（无 [sandbox: escalation available] 字面串，升级=参数重试+审批提示=待澄清#5 实测入口）、官方两处快照占位约定不一致、workspaceRoot 无默认回退 process.cwd()、windows-acl runner 懒裁决不预 probe，均已写入方案
 - 开工前深检（Claude Code 复核 8 项）：抓到一个真缺陷——**draft-cordis-win64.yml 装配错误**（pwsh-sandbox 无 mode 字段 + 缺 sandbox-local/sandbox-policy 两件，原样必启动失败），修正已写入冒烟版 cordis 规格；initialize/session-prompt 签名、文本块形态、toolBash:false 合法性等 7 项全过
-- 下一步：S0 启动冒烟 → S1 驱动脚本
+- 下一步：M1 传输层（CLFJsonRpcClient）——spike go，素材齐备（frames norm fixture + 五模块驱动脚本逐函数对译）
 
 ## 已完成
+
+### 2026-08-16 dsh 后端接入 Spike S1-S5 全部完成 ✅（go，M1 立项）
+- 产出：《测试/spike/Spike报告.md》+ `tools/spike/`（spike_driver.mjs 五模块 + cordis-smoke/final.yml + frames raw/norm 8 组）
+- P1-P4 全过：全链路 8 轮跑通（流式/reasoning/usage/shutdown/exit 0）；工具面五类实测可用（fs 写不受沙箱约束、pwsh 写被拒+升级无审批服务）；subagent 四断言全过（父子会话隔离 731/644）；frames 双轨就绪
+- 关键协议事实（M1/M2 必读）：事件先于响应（receipt 门控须缓冲回溯）/ sessionId 复用碰撞 / assistant/message 在 data.message.content / 双 finish 枚举 / tool-call 参数为 JSON 字符串 / spliced 带 removedCount
+- 回填分析文档 #1/#4/#5（确认链 UX：审批请求不进 JSON-RPC 协议）
+- 决策点 3 实测输入齐备：read-only 只约束 pwsh 通道、升级需装配审批服务
+
+### 2026-08-16 dsh 后端接入 Spike S0 启动冒烟 ✅（四项全过）
+- 产出：`.claude/plans/测试/spike/cordis-smoke.yml`（零 !!js + 修正装配 + junction node_modules）
+- 四项清单全过：缺配置 exit(1) / 畸形行静默跳过 / 20 插件全树加载 / 持开 stdin 存活 10s stderr 零行
+- 执行中抓出草案缺陷 3+4：pwsh-local 与 pwsh-sandbox 的 ctx.shell 服务冲突（只挂 sandbox 版即可，三件套实为两件）；缺 dsh-shell-env（tool-pwsh 挂起不激活）
+- 部署事实实测：bare 包名自配置文件目录向上解析（"configuration project" 语义）→ M2/M3 部署时 cordis.yml 须与 runtime 闭包同目录；npm 发布版 0.0.1-rc.5 ≠ 钉住 0.1.0-rc.5（M3 核实项）
+- 插曲：首轮 loader 失败一度怀疑 dsh web（:3080）并发干扰，隔离测试排除——根因是配置目录解析（bare 包名），与并发无关
 
 ### 2026-08-14 P2-UI M2+M3（审批卡强化 + usage 打通） ✅
 - P2-2 审批卡：splitPrompt 纯函数 + headline 琥珀加粗/参数 dim 分层 + 确认结束清 prompt 防残影
