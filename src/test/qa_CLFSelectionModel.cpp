@@ -42,20 +42,21 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         expect(sv.topHintCount() == 1);  // 有上方内容 → 顶部提示行
     };
 
-    "S1b 鼠标坐标换算公式（1 基 + 提示行偏移 + clamp）"_test = [] {
+    "S1b 鼠标坐标换算公式（0 基 + 提示行偏移 + clamp）"_test = [] {
         CLF::CLFUI::CLFScrollView sv;
         sv.handleEvent(ftxui::Event::PageUp);
         sv.update(100, 30, 7);
         auto [vs, ve] = sv.visibleRange();
         int topHints = sv.topHintCount();
+        // 验收实测修正：本环境投递 0 基坐标（不做 -1）
         auto gRow = [&](int y) {
-            int r = vs + (y - 1) - topHints;
+            int r = vs + y - topHints;
             return std::max(vs, std::min(r, ve - 1));
         };
         expect(vs == 62 && ve == 85 && topHints == 1);
-        expect(gRow(1)  == 62);  // 提示行 → clamp 到首个内容行
-        expect(gRow(2)  == 62);  // 首个内容行
-        expect(gRow(24) == 84);  // 末个内容行
+        expect(gRow(0)  == 62);  // 提示行 → clamp 到首个内容行
+        expect(gRow(1)  == 62);  // 首个内容行
+        expect(gRow(23) == 84);  // 末个内容行
         expect(gRow(30) == 84);  // 超出 → clamp 到末行
     };
 

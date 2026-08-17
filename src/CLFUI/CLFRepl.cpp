@@ -21,6 +21,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -97,9 +98,12 @@ int CLFRepl::run() {
         CLFConfirmBar confirmBar;
 
         // ---- 事件调试日志（CLF_DEBUG_EVENTS=1 时开启，诊断用） ----
+        // 独立追加文件：CLFLogger 的 clf_agent.log 每会话覆盖，取证需跨会话保留
         const bool kDbgEvents = (std::getenv("CLF_DEBUG_EVENTS") != nullptr);
         auto dbgEvt = [&](const std::string& msg) {
-            if (kDbgEvents) CLFLogger::instance().info("[EvtDbg] " + msg);
+            if (!kDbgEvents) return;
+            std::ofstream f("doc/log/clf_events.log", std::ios::app);
+            if (f) f << msg << std::endl;
         };
         // 控制字符转义（日志中区分 \n \r 等）
         auto escDbg = [](const std::string& s) {
@@ -405,15 +409,18 @@ int CLFRepl::run() {
         });
 
         // ---- 鼠标坐标 → (全局渲染行, 行内字节偏移) ----
-        // x/y 为 SGR 1 基坐标；提示行点击 clamp 到最近内容行
+        // x/y 直接使用原始值（0 基）：FTXUI 自身 Input 点击定位即按 0 基 Box 对比
+        // （input.cpp HandleMouse → box_.Contain(raw x, raw y)），实测本环境
+        // （WT/ConPTY）投递 0 基——按 SGR 规范做 -1 反而整体偏上一行（验收实证）
+        // 提示行点击 clamp 到最近内容行
         auto hitTest = [&](int x, int y) -> std::optional<std::pair<int, int>> {
             if (m_lastRowMap.empty()) return std::nullopt;
             auto [vs, ve] = scrollView.visibleRange();
             if (ve <= vs) return std::nullopt;
-            int gRow = vs + (y - 1) - scrollView.topHintCount();
+            int gRow = vs + y - scrollView.topHintCount();
             gRow = std::max(vs, std::min(gRow, ve - 1));
             if (gRow >= static_cast<int>(m_lastRowTexts.size())) return std::nullopt;
-            size_t byteOff = CLFSelectionModel::colToByte(m_lastRowTexts[gRow], x - 1);
+            size_t byteOff = CLFSelectionModel::colToByte(m_lastRowTexts[gRow], x);
             if (kDbgEvents)
                 dbgEvt("  hit vs=" + std::to_string(vs) + " ve=" + std::to_string(ve)
                        + " hints=" + std::to_string(scrollView.topHintCount())
@@ -460,6 +467,16 @@ int CLFRepl::run() {
                 // confirm 激活或 busy 时只复位不提交（文本留在输入框）
                 if (shouldSubmit && !(terminal && terminal->isConfirmActive()))
                     doSubmit();
+            }
+
+            // === 0c. 复制后短窗内吞自动重复按键 ===
+            // 验收实证：快速 Ctrl+C 的重复事件——第一个复制并退出选区，
+            // 第二个落到空闲态 Ctrl+C 分支直接退出程序；Enter 重复会误提交
+            if (m_lastCopyTime != std::chrono::steady_clock::time_point{}
+                && std::chrono::steady_clock::now() - m_lastCopyTime
+                   < std::chrono::milliseconds(500)
+                && (e == ftxui::Event::CtrlC || e == ftxui::Event::Return)) {
+                return true;
             }
 
             // === 1. 确认栏激活时（最小化处理，防卡死）===
@@ -527,6 +544,7 @@ int CLFRepl::run() {
                                    + escDbg(out) + "'");
                     }
                     m_selection.clear();
+                    m_lastCopyTime = std::chrono::steady_clock::now();
                     return true;
                 }
                 if (e == ftxui::Event::ArrowUp || e == ftxui::Event::ArrowDown
