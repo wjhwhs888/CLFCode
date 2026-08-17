@@ -81,29 +81,43 @@ Write-Host "[2/5] Packaging $ZipName ..." -ForegroundColor Cyan
 
 # Clean and create dirs
 if (Test-Path $ReleaseDir) { Remove-Item $ReleaseDir -Recurse -Force }
-New-Item -ItemType Directory -Path "$ReleaseDir\bin\Release" -Force | Out-Null
+foreach ($d in @("$ReleaseDir\bin\Release", "$ReleaseDir\config", "$ReleaseDir\doc")) {
+    New-Item -ItemType Directory -Path $d -Force | Out-Null
+}
 
 # Copy exe
 Copy-Item "$ScriptDir\bin\Release\CLFCode.exe" "$ReleaseDir\bin\Release\" -Force
 
-# Copy runtime DLLs from previous release (exclude current tag)
-# MSVC 构建仅依赖 OpenSSL 动态库对；旧脚本全量复制 *.dll 会把历史 MinGW
-# 运行库（libgcc_s_seh/libstdc++-6 等）逐版携带——只取实际导入的 DLL
+# 运行库 DLL：MSVC 构建仅依赖 OpenSSL 动态库对。
+# 来源优先级：本机 OpenSSL 安装目录（与链接的 lib 同版本）→ 上一版发布目录。
+# 旧脚本从上一版发布目录全量复制 *.dll，既携带历史 MinGW 运行库，
+# 又依赖"上一版目录必须存在"——目录被清理后新包缺 DLL（v0.3.2 首包事故）。
+$sslDlls = @('libssl-4-x64.dll', 'libcrypto-4-x64.dll')
+$sslSrc = "C:\Program Files\OpenSSL-Win64\bin"
 $PrevDir = Get-ChildItem "$ScriptDir\release" -Directory |
     Where-Object { $_.Name -match '^CLFCode-v' -and $_.Name -ne "CLFCode-$Tag" } |
     Sort-Object Name -Descending | Select-Object -First 1
-if ($PrevDir) {
-    foreach ($dll in @('libssl-4-x64.dll', 'libcrypto-4-x64.dll')) {
-        $src = "$($PrevDir.FullName)\bin\Release\$dll"
-        if (Test-Path $src) { Copy-Item $src "$ReleaseDir\bin\Release\" -Force }
-    }
-    Write-Host "  DLLs: $((Get-ChildItem "$ReleaseDir\bin\Release\*.dll").Count) files (OpenSSL pair)" -ForegroundColor Gray
-    # Config, data, doc
-    foreach ($sub in @('config', 'data', 'doc')) {
-        $src = "$($PrevDir.FullName)\$sub"
-        if (Test-Path $src) { Copy-Item $src "$ReleaseDir\" -Recurse -Force }
+foreach ($dll in $sslDlls) {
+    $from = if (Test-Path "$sslSrc\$dll") { "$sslSrc\$dll" }
+            elseif ($PrevDir -and (Test-Path "$($PrevDir.FullName)\bin\Release\$dll")) { "$($PrevDir.FullName)\bin\Release\$dll" }
+            else { $null }
+    if ($from) { Copy-Item $from "$ReleaseDir\bin\Release\" -Force }
+    else {
+        Write-Host "ERROR: missing $dll (searched OpenSSL bin + previous release)" -ForegroundColor Red
+        exit 1
     }
 }
+Write-Host "  DLLs: $($sslDlls.Count) files (OpenSSL pair)" -ForegroundColor Gray
+
+# config / data / doc：从仓库取（发布目录可能被清理，不能依赖上一版）
+# config 排除 agent_settings.local.json（含本地 API Key，绝不进包）
+foreach ($f in @('README.md', 'agent_settings.json', 'system_prompt_template.md')) {
+    Copy-Item "$ScriptDir\config\$f" "$ReleaseDir\config\" -Force
+}
+Copy-Item "$ScriptDir\data" "$ReleaseDir\" -Recurse -Force
+# doc 只带 README（log/contextHistory 为运行时产物，不进包）
+Copy-Item "$ScriptDir\doc\README.md" "$ReleaseDir\doc\" -Force
+Write-Host "  config/data/doc from repo" -ForegroundColor Gray
 
 # VERSION + readme
 Copy-Item "$ScriptDir\VERSION" "$ReleaseDir\" -Force
