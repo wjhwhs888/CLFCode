@@ -26,6 +26,12 @@
 #include <mutex>
 #include <optional>
 
+#ifdef _WIN32
+#include <windows.h>
+#undef min
+#undef max
+#endif
+
 namespace CLF::CLFUI {
 using namespace CLF::CLFCore;
 
@@ -826,6 +832,21 @@ int CLFRepl::run() {
         });
 
         // ---- 运行 ----
+#ifdef _WIN32
+        // 关闭 ENABLE_PROCESSED_INPUT：FTXUI 设置控制台模式时未清除该位
+        // （3rdparty app.cpp:617-624 只动 echo/line/VT/window 四位），该位开启时
+        // 系统把 Ctrl+C 转成 CTRL_C_EVENT 信号，FTXUI 的 SIGINT 处理器直接退出
+        // 主循环（RecordSignal→ExecuteSignalHandlers→Signal(SIGABRT)→ExitNow）——
+        // 事件永远到不了应用层（验收实证：选区态 Ctrl+C 复制失效、应用直接退出，
+        // 事件日志零 Ctrl+C 记录）。清除后 VT 输入模式下 Ctrl+C 以 0x03 字符事件
+        // 到达 CatchEvent，旧"上下文感知分发"分支恢复生效。
+        {
+            HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+            DWORD mode = 0;
+            if (hIn != INVALID_HANDLE_VALUE && GetConsoleMode(hIn, &mode))
+                SetConsoleMode(hIn, mode & ~ENABLE_PROCESSED_INPUT);
+        }
+#endif
         screen.Loop(handler);
         asyncSubmit.join();
         if (m_escTimer.joinable()) m_escTimer.join();
