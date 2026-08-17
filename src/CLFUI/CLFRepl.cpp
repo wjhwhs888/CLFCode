@@ -103,14 +103,9 @@ int CLFRepl::run() {
 
         CLFConfirmBar confirmBar;
 
-        // ---- 事件调试日志（验收期取证） ----
-        // 独立追加文件：CLFLogger 的 clf_agent.log 每会话覆盖，取证需跨会话保留。
-        // Debug 构建默认开启（无需环境变量）；Release 构建需 CLF_DEBUG_EVENTS=1。
-#ifdef _DEBUG
-        const bool kDbgEvents = true;
-#else
+        // ---- 事件调试日志（取证用，按需开启 CLF_DEBUG_EVENTS=1） ----
+        // 独立追加文件：CLFLogger 的 clf_agent.log 每会话覆盖，取证需跨会话保留
         const bool kDbgEvents = (std::getenv("CLF_DEBUG_EVENTS") != nullptr);
-#endif
         auto dbgEvt = [&](const std::string& msg) {
             if (!kDbgEvents) return;
             std::ofstream f("doc/log/clf_events.log", std::ios::app);

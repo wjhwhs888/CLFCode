@@ -2,18 +2,6 @@
 
 ## 进行中
 
-### 小设计-复制粘贴功能修改（选区模式 + 双通道粘贴接管）
-- 需求：① 应用内选区模式（键盘/鼠标选择任意显示内容，复制逻辑文本保证换行正确——终端原生拖选只认识渲染网格，无法修复）；② Ctrl+V 与 Shift+右键粘贴双通道接管，多行原样插入输入框（现状：粘贴多行每行触发一次提交，根因 CLFRepl.cpp:414 Return 一律提交）
-- ✅ 分析定稿（`.claude/plans/分析/分析-复制粘贴功能修改.md`）：粘贴走事件突发合并器（无 bracketed paste、双通道同一事件路径、时间戳区分）；复制走选区状态机 + 行映射表（渲染确定性可并行建 RowMap）+ CLFClipboard（早已就位未接线）复用；关键事实 F1-F9
-- ✅ 设计定稿（`.claude/plans/设计/设计-复制粘贴功能修改.md`）：Flash 四轮审查 12 条意见 + 我方终审 6 缺口（PENDING 不变式/消费幂等/常驻 cv 线程+wakeCb/源字符串定义/接线清单旧接口残留/渲染流程改造）全部合入；spike 取消（保守默认值，验收时实测微调）
-- ✅ **M1 完成**：CLFPasteCoalescer 实现（空行规则/时间注入/常驻 cv 定时线程/wakeCb/幂等消费）+ CLFRepl 接线（顶部路由三分类 + doSubmit 共用 + Ctrl+D 直通）+ P1-P10 全过（11 tests/59 asserts）；ctest 9/10（SessionManager 既有环境失败不变）
-  - 实现中修正两处：① cv 谓词缺陷（wait 无 deadline 唤醒 → 改 wait_until 时间点自动唤醒）；② 取消"空文本 Return 短路"（与 P9 前导空行冲突，窗满后空文本 no-op 语义等价）；设计文档已同步
-  - 顺带根因修复 qa_CLFSecurityPolicy 测试缺陷：`const char* == 字面量` 是指针比较，跨 TU 同址依赖链接器合并（GCC 合并/MSVC Debug 不合并）→ 改 std::string 比较；修后该测试在 MSVC 下转绿
-- ✅ **M2 完成**：CLFSelectionModel（选区状态机/colToByte/substrByWidth/snapBack/提取拼接）+ 渲染器改造（rowMap/rowTexts/rowStyles 与元素同趟并行构建，切片前按全局行号高亮，diff 样式保留）+ CLFScrollView visibleRange/topHintCount 口径分离 + 事件接线（选区态接管整体插在确认栏后/合并器路由前；左键拖选/单击取消/Ctrl+S/方向键/Home/End/PgUp/PgDn/Enter/Ctrl+C 复制/Esc 取消/滚轮放行/输入框区放行）+ S1-S8 全过（13 tests/49 asserts）；ctest 10/11（SessionManager 既有环境失败不变）
-  - 实现定稿差异（设计文档已同步）：RowInfo 取消 byteStart/byteEnd（提取以 rowTexts WYSIWYG 为源）；选区覆盖滚动区内容行（Progress/Status 枚举保留不产出）；高亮色 Grey30（本版 FTXUI 无 BlueGrey）
-- ✅ **M3 代码侧完成**：/help 快捷键表 +4 行（粘贴双通道/选区/复制/取消）、README 快捷键表同步；全量回归 10/11（SessionManager 既有环境失败不变）；`--version` 冒烟通过
-- ⏳ **人工验收（10 项清单，需用户终端操作）**：验收通过即关闭 → 转 M1 传输层
-
 ### M1 传输层（CLFJsonRpcClient）— 待启动
 - 依据：spike go 决策（`tools/spike/Spike报告.md`）+ 设计文档 M1 章节
 - 范围：`src/CLFBackend/CLFJsonRpcClient`（spawn / 行帧 reader / 三分类路由 / waiter 表 / close 阶梯）+ 单测（fake runtime 回放 `tools/spike/frames/norm/*.norm.jsonl`）
@@ -22,6 +10,15 @@
 - 估时：2-3 天
 
 ## 已完成
+
+### 2026-08-17 复制粘贴功能修改 ✅（验收通过，关闭）
+- 分析/设计：`.claude/plans/分析/分析-复制粘贴功能修改.md` + `.claude/plans/设计/设计-复制粘贴功能修改.md`（Flash 四轮 12 条意见 + 终审 6 缺口全消化）
+- 实现：CLFPasteCoalescer（粘贴事件突发合并，P1-P10 全过）+ CLFSelectionModel（选区状态机/提取，S1-S8 全过）+ 渲染器 RowMap 并行构建与高亮；ctest 基线 10/11（SessionManager 既有环境失败不变）
+- **验收收敛定稿（用户决策）**：选区 = 纯鼠标左键拖选 + 松手自动复制（copy-on-select）；移除 Ctrl+S 键盘选区与 Ctrl+C/Enter 复制；Ctrl+C 空闲忽略（原误触即退出）、busy 中断保留
+- **验收期根因修复 5 项**（事件日志取证实证）：① cv 谓词缺陷（wait→wait_until）② 鼠标坐标 0 基（WT/ConPTY 投递 0 基，FTXUI Box 对照）③ **ENABLE_PROCESSED_INPUT 未清**（FTXUI 不清理，Ctrl+C 被系统转信号、SIGINT 处理器直接退主循环——事件永远到不了应用层）④ 拖选末字符丢失（colToByteEnd 含入 + 松手补位）⑤ hitTest 下方 clamp 缺陷（输入框点击误判为选区）
+- 顺带根因修复 qa_CLFSecurityPolicy 测试缺陷（const char* 指针比较 → std::string）
+- 已知边界：粘贴源若为终端原生复制（Shift+拖选）会带渲染网格填充空格——用应用内拖选复制作源；超大粘贴分批（>40ms 批间隔）可能整段自动提交（设计 §2.1）
+- 取证模式保留：`CLF_DEBUG_EVENTS=1` → `doc/log/clf_events.log`（独立追加）
 
 ### 2026-08-16 dsh 后端接入 Spike S1-S5 全部完成 ✅（go，M1 立项）
 - 产出：`tools/spike/`（Spike报告.md + spike_driver.mjs 五模块 + cordis-smoke/final.yml + frames raw/norm 8 组，自包含）
