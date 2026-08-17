@@ -107,7 +107,30 @@ foreach ($dll in $sslDlls) {
         exit 1
     }
 }
-Write-Host "  DLLs: $($sslDlls.Count) files (OpenSSL pair)" -ForegroundColor Gray
+# VC 运行库（MSVCP140/VCRUNTIME140/VCRUNTIME140_1）：本机有 VS 能跑，
+# 干净客户机无 VC Redist 会启动失败——从 VS Redist 目录随包携带。
+# 目录经 vcvars 导入（$env:VCToolsRedistDir），CRT 子目录名随工具集版本（VC145.CRT 等）
+if ($env:VCToolsRedistDir) {
+    $vcCrtDir = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter "Microsoft.VC*.CRT" |
+        Select-Object -First 1
+    if ($vcCrtDir) {
+        foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            $src = Join-Path $vcCrtDir.FullName $dll
+            if (Test-Path $src) { Copy-Item $src "$ReleaseDir\bin\Release\" -Force }
+            else {
+                Write-Host "ERROR: missing VC runtime $dll in $($vcCrtDir.FullName)" -ForegroundColor Red
+                exit 1
+            }
+        }
+    } else {
+        Write-Host "ERROR: VC runtime dir not found under $env:VCToolsRedistDir\x64" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "ERROR: VCToolsRedistDir not set (vcvars import failed?)" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  DLLs: $((Get-ChildItem "$ReleaseDir\bin\Release\*.dll").Count) files (OpenSSL + VC runtime)" -ForegroundColor Gray
 
 # config / data / doc：从仓库取（发布目录可能被清理，不能依赖上一版）
 # config 排除 agent_settings.local.json（含本地 API Key，绝不进包）
