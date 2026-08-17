@@ -34,10 +34,42 @@ Write-Host ""
 # 1. Build
 # ========================================
 Write-Host "[1/5] Building Release..." -ForegroundColor Cyan
-$BuildDir = if (Test-Path "$ScriptDir\build_rel\build.ninja") { "build_rel" } else { "build" }
+
+# 构建目录：cmake-build-release（CLion 默认命名；旧脚本指向不存在的 build_rel/build，
+# 曾导致构建失败后静默打包陈旧 exe——发布必崩事故的间接成因）
+$BuildDir = "cmake-build-release"
+if (-not (Test-Path "$ScriptDir\$BuildDir\build.ninja")) {
+    Write-Host "ERROR: $BuildDir not configured." -ForegroundColor Red
+    Write-Host "  Run: cmake -S . -B $BuildDir -DCMAKE_BUILD_TYPE=Release -G Ninja" -ForegroundColor Yellow
+    exit 1
+}
+
+# MSVC 环境导入（普通 PowerShell 缺 INCLUDE/LIB；从 vcvars64 的 cmd 输出回填）
+$vcvars = "D:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+if ((Test-Path $vcvars) -and -not $env:VCToolsInstallDir) {
+    cmd /c "`"$vcvars`" >nul 2>&1 && set" | ForEach-Object {
+        if ($_ -match '^([^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+    }
+}
+
+# 删除旧 exe，防止"构建失败但 exe 残留"时静默打包陈旧产物
+$exe = "$ScriptDir\bin\Release\CLFCode.exe"
+Remove-Item $exe -ErrorAction SilentlyContinue
+
 cmake --build "$ScriptDir\$BuildDir" --target CLFCode --config Release -j6 2>&1 | Select-Object -Last 5
-if (-not (Test-Path "$ScriptDir\bin\Release\CLFCode.exe")) {
-    Write-Host "ERROR: Build failed" -ForegroundColor Red
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) {
+    Write-Host "ERROR: Build failed (exit $LASTEXITCODE)" -ForegroundColor Red
+    exit 1
+}
+
+# 新旧自检：exe 不得早于最新源码（防御增量构建异常）
+$exeTime = (Get-Item $exe).LastWriteTime
+$newestSrc = Get-ChildItem "$ScriptDir\src" -Recurse -Include *.cpp,*.hpp |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($exeTime -lt $newestSrc.LastWriteTime) {
+    Write-Host "ERROR: exe ($exeTime) older than $($newestSrc.Name) ($($newestSrc.LastWriteTime))" -ForegroundColor Red
     exit 1
 }
 Write-Host "  Done" -ForegroundColor Green
@@ -49,27 +81,66 @@ Write-Host "[2/5] Packaging $ZipName ..." -ForegroundColor Cyan
 
 # Clean and create dirs
 if (Test-Path $ReleaseDir) { Remove-Item $ReleaseDir -Recurse -Force }
-New-Item -ItemType Directory -Path "$ReleaseDir\bin\Release" -Force | Out-Null
+foreach ($d in @("$ReleaseDir\bin\Release", "$ReleaseDir\config", "$ReleaseDir\doc")) {
+    New-Item -ItemType Directory -Path $d -Force | Out-Null
+}
 
 # Copy exe
 Copy-Item "$ScriptDir\bin\Release\CLFCode.exe" "$ReleaseDir\bin\Release\" -Force
 
-# Copy DLLs from previous release (exclude current tag)
+# 运行库 DLL：MSVC 构建仅依赖 OpenSSL 动态库对。
+# 来源优先级：本机 OpenSSL 安装目录（与链接的 lib 同版本）→ 上一版发布目录。
+# 旧脚本从上一版发布目录全量复制 *.dll，既携带历史 MinGW 运行库，
+# 又依赖"上一版目录必须存在"——目录被清理后新包缺 DLL（v0.3.2 首包事故）。
+$sslDlls = @('libssl-4-x64.dll', 'libcrypto-4-x64.dll')
+$sslSrc = "C:\Program Files\OpenSSL-Win64\bin"
 $PrevDir = Get-ChildItem "$ScriptDir\release" -Directory |
     Where-Object { $_.Name -match '^CLFCode-v' -and $_.Name -ne "CLFCode-$Tag" } |
     Sort-Object Name -Descending | Select-Object -First 1
-if ($PrevDir) {
-    $DllSrc = "$($PrevDir.FullName)\bin\Release\*.dll"
-    foreach ($f in (Get-ChildItem $DllSrc -ErrorAction SilentlyContinue)) {
-        Copy-Item $f.FullName "$ReleaseDir\bin\Release\" -Force
-    }
-    Write-Host "  DLLs: $((Get-ChildItem "$ReleaseDir\bin\Release\*.dll").Count) files" -ForegroundColor Gray
-    # Config, data, doc
-    foreach ($sub in @('config', 'data', 'doc')) {
-        $src = "$($PrevDir.FullName)\$sub"
-        if (Test-Path $src) { Copy-Item $src "$ReleaseDir\" -Recurse -Force }
+foreach ($dll in $sslDlls) {
+    $from = if (Test-Path "$sslSrc\$dll") { "$sslSrc\$dll" }
+            elseif ($PrevDir -and (Test-Path "$($PrevDir.FullName)\bin\Release\$dll")) { "$($PrevDir.FullName)\bin\Release\$dll" }
+            else { $null }
+    if ($from) { Copy-Item $from "$ReleaseDir\bin\Release\" -Force }
+    else {
+        Write-Host "ERROR: missing $dll (searched OpenSSL bin + previous release)" -ForegroundColor Red
+        exit 1
     }
 }
+# VC 运行库（MSVCP140/VCRUNTIME140/VCRUNTIME140_1）：本机有 VS 能跑，
+# 干净客户机无 VC Redist 会启动失败——从 VS Redist 目录随包携带。
+# 目录经 vcvars 导入（$env:VCToolsRedistDir），CRT 子目录名随工具集版本（VC145.CRT 等）
+if ($env:VCToolsRedistDir) {
+    $vcCrtDir = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter "Microsoft.VC*.CRT" |
+        Select-Object -First 1
+    if ($vcCrtDir) {
+        foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            $src = Join-Path $vcCrtDir.FullName $dll
+            if (Test-Path $src) { Copy-Item $src "$ReleaseDir\bin\Release\" -Force }
+            else {
+                Write-Host "ERROR: missing VC runtime $dll in $($vcCrtDir.FullName)" -ForegroundColor Red
+                exit 1
+            }
+        }
+    } else {
+        Write-Host "ERROR: VC runtime dir not found under $env:VCToolsRedistDir\x64" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "ERROR: VCToolsRedistDir not set (vcvars import failed?)" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  DLLs: $((Get-ChildItem "$ReleaseDir\bin\Release\*.dll").Count) files (OpenSSL + VC runtime)" -ForegroundColor Gray
+
+# config / data / doc：从仓库取（发布目录可能被清理，不能依赖上一版）
+# config 排除 agent_settings.local.json（含本地 API Key，绝不进包）
+foreach ($f in @('README.md', 'agent_settings.json', 'system_prompt_template.md')) {
+    Copy-Item "$ScriptDir\config\$f" "$ReleaseDir\config\" -Force
+}
+Copy-Item "$ScriptDir\data" "$ReleaseDir\" -Recurse -Force
+# doc 只带 README（log/contextHistory 为运行时产物，不进包）
+Copy-Item "$ScriptDir\doc\README.md" "$ReleaseDir\doc\" -Force
+Write-Host "  config/data/doc from repo" -ForegroundColor Gray
 
 # VERSION + readme
 Copy-Item "$ScriptDir\VERSION" "$ReleaseDir\" -Force

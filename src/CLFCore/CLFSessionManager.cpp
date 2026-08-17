@@ -37,7 +37,14 @@ std::string extractTitle(const std::vector<CLFMessage>& messages) {
             std::string title = msg.m_content;
             for (auto& c : title)
                 if (c == '\n' || c == '\r') c = ' ';
-            if (title.size() > 50) title = title.substr(0, 47) + "...";
+            if (title.size() > 50) {
+                // UTF-8 边界安全截断（不劈半多字节字符）
+                size_t cut = 47;
+                while (cut > 0
+                       && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80)
+                    --cut;
+                title = title.substr(0, cut) + "...";
+            }
             return title;
         }
     }
@@ -53,7 +60,13 @@ std::string sanitizeFilename(const std::string& input) {
             c = '_';
         }
     }
-    if (out.size() > 80) out = out.substr(0, 77) + "...";
+    if (out.size() > 80) {
+        size_t cut = 77;
+        while (cut > 0
+               && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80)
+            --cut;
+        out = out.substr(0, cut) + "...";
+    }
     return out;
 }
 
@@ -69,12 +82,12 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
                                      const std::vector<std::string>& skills,
                                      const CLFSessionSummary* summary) {
     std::error_code ec;
-    fs::create_directories(dirPath, ec);
+    fs::create_directories(fs::u8path(dirPath), ec);
 
     // === 归档模式：latest.json → 时间戳.json ===
     if (finalize) {
         std::string latestPath = dirPath + "/latest.json";
-        if (!fs::exists(latestPath, ec)) {
+        if (!fs::exists(fs::u8path(latestPath), ec)) {
             CLFLogger::instance().debug("[Save] finalize skipped: latest.json not found");
             return "";
         }
@@ -84,13 +97,13 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
         std::string finalPath = dirPath + "/" + timestampStr() + "_" + safeTitle + ".json";
 
         // 冲突处理：如果已存在同名文件，加序号
-        for (int n = 2; fs::exists(finalPath, ec); ++n) {
+        for (int n = 2; fs::exists(fs::u8path(finalPath), ec); ++n) {
             finalPath = dirPath + "/" + timestampStr() + "_" + safeTitle + "-"
                       + std::to_string(n) + ".json";
         }
 
         CLFLogger::instance().debug("[Save] finalizing: latest.json → " + finalPath);
-        fs::rename(latestPath, finalPath, ec);
+        fs::rename(fs::u8path(latestPath), fs::u8path(finalPath), ec);
         if (ec) {
             CLFLogger::instance().warn("[Save] finalize rename failed: " + ec.message());
             return "";
@@ -116,7 +129,8 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
 
     // ① 写临时文件
     {
-        std::ofstream file(tmpPath, std::ios::out | std::ios::trunc | std::ios::binary);
+        std::ofstream file(fs::u8path(tmpPath),
+                           std::ios::out | std::ios::trunc | std::ios::binary);
         if (!file.is_open()) {
             CLFLogger::instance().warn("[Save] cannot open tmp file: " + tmpPath);
             return "";
@@ -125,14 +139,14 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
         file.close();
         if (file.fail()) {
             CLFLogger::instance().warn("[Save] write failed (disk full?): " + tmpPath);
-            fs::remove(tmpPath, ec);
+            fs::remove(fs::u8path(tmpPath), ec);
             return "";
         }
     }
 
     // ② 原子 rename（同文件系统上保证原子性：要么旧文件在，要么新文件在，不会出现半截文件）
     CLFLogger::instance().debug("[Save] rename: " + tmpPath + " → " + finalPath);
-    fs::rename(tmpPath, finalPath, ec);
+    fs::rename(fs::u8path(tmpPath), fs::u8path(finalPath), ec);
     if (ec) {
         CLFLogger::instance().warn("[Save] rename failed: " + ec.message());
         return "";
@@ -154,7 +168,7 @@ bool CLFSessionManager::load(const std::string& filePath,
                               CLFSessionSummary* outSummary) {
     CLFLogger::instance().debug("[Load] opening: " + filePath);
 
-    std::ifstream file(filePath);
+    std::ifstream file(fs::u8path(filePath));
     if (!file.is_open()) {
         CLFLogger::instance().warn("[Load] not found or cannot open: " + filePath);
         return false;
@@ -176,7 +190,7 @@ bool CLFSessionManager::load(const std::string& filePath,
         // 损坏文件 → 备份为 .bak，不崩溃
         std::error_code ec;
         std::string bakPath = filePath + ".bak";
-        fs::rename(filePath, bakPath, ec);
+        fs::rename(fs::u8path(filePath), fs::u8path(bakPath), ec);
         CLFLogger::instance().warn("[Load] corrupted, backed up: " + bakPath);
         return false;
     }
@@ -195,17 +209,19 @@ std::vector<CLFSessionInfo> CLFSessionManager::list(const std::string& dirPath, 
     std::vector<CLFSessionInfo> result;
     std::error_code ec;
 
-    if (!fs::exists(dirPath, ec) || !fs::is_directory(dirPath, ec)) return result;
+    if (!fs::exists(fs::u8path(dirPath), ec) || !fs::is_directory(fs::u8path(dirPath), ec))
+        return result;
 
     // 先检查 latest.json（放在列表最前面）
     std::string latestPath = dirPath + "/latest.json";
-    if (fs::exists(latestPath, ec) && fs::is_regular_file(latestPath, ec)) {
+    if (fs::exists(fs::u8path(latestPath), ec)
+        && fs::is_regular_file(fs::u8path(latestPath), ec)) {
         CLFSessionInfo info;
         info.m_path     = latestPath;
         info.m_isLatest = true;
 
         try {
-            std::ifstream file(latestPath);
+            std::ifstream file(fs::u8path(latestPath));
             std::ostringstream oss;
             oss << file.rdbuf();
             std::string title;
@@ -222,9 +238,9 @@ std::vector<CLFSessionInfo> CLFSessionManager::list(const std::string& dirPath, 
 
     // 收集已归档的 .json 文件（排除 latest.json 和 _incomplete）
     std::vector<fs::directory_entry> entries;
-    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
+    for (const auto& entry : fs::directory_iterator(fs::u8path(dirPath), ec)) {
         if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
+        std::string name = entry.path().filename().u8string();
         if (name.size() < 5) continue;
         if (name.substr(name.size() - 5) != ".json") continue;
         if (name.find("_incomplete") != std::string::npos) continue;
@@ -243,10 +259,10 @@ std::vector<CLFSessionInfo> CLFSessionManager::list(const std::string& dirPath, 
         if (count++ >= remaining) break;
 
         CLFSessionInfo info;
-        info.m_path = entry.path().string();
+        info.m_path = entry.path().u8string();
 
         try {
-            std::ifstream file(info.m_path);
+            std::ifstream file(fs::u8path(info.m_path));
             std::ostringstream oss;
             oss << file.rdbuf();
             std::string title;

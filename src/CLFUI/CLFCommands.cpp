@@ -5,6 +5,7 @@
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"

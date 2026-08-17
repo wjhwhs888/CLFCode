@@ -14,6 +14,17 @@
 
 ---
 
+## v0.3.2 (2026-08-18)
+
+### 修复
+
+- **发布版必崩溃**（台式机+笔记本稳定复现，Debug 正常）：`/exit` 或 Esc Esc 退出时归档中文标题会话触发 `No mapping for the Unicode character exists in the target multi-byte code page` 异常——MSVC 窄字符文件系统 API 按 ANSI 代码页（CP936）解释 UTF-8 路径字节。全链路修复：`CLFSessionManager`/`CLFConfigLoader`/`CLFFileOps` 文件操作统一 `u8path`/`u8string`，会话标题截断改 UTF-8 边界安全
+- **read_file 内容编码**：增加 UTF-8 内容探测，合法 UTF-8 直接采用（原先按 GBK 解读既有乱码隐患，非法序列还会抛转换异常）；目录列出的文件名宽路径直读，消除 ACP 往返
+- **release.ps1**：构建目录修正为 `cmake-build-release`（旧脚本指向不存在的目录，构建失败后静默打包陈旧 exe——本次崩溃发布事故的间接成因）；新增 vcvars64 环境导入、构建失败硬退出、exe 新旧自检；DLL 只携带 OpenSSL 对，不再逐版携带历史 MinGW 运行库
+- 取证设施清理：移除崩溃定位期间的临时复现钩子与异常陷阱（保留增强异常捕获——打印 `e.what()`，及 `CLF_DEBUG_EVENTS` 事件日志取证设施）
+
+---
+
 ## v0.3.1 (2026-08-17)
 
 ### 新增

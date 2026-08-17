@@ -63,7 +63,7 @@ std::string CLFConfigLoader::findProjectRoot() {
     }
 
     // 4. 找不到则回退到 CWD
-    s_projectRoot = fs::current_path().string();
+    s_projectRoot = fs::current_path().u8string();
     return s_projectRoot;
 }
 
@@ -73,11 +73,11 @@ std::string CLFConfigLoader::resolvePath(const std::string& relativePath) {
 }
 
 std::string CLFConfigLoader::getWorkingDir() {
-    return fs::current_path().string();
+    return fs::current_path().u8string();
 }
 
 bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig& outConfig) {
-    std::ifstream file(configPath);
+    std::ifstream file(fs::u8path(configPath));
     if (!file.is_open()) {
         return false;
     }
