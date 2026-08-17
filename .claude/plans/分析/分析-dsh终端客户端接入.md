@@ -163,9 +163,10 @@ dsh 对咱们是**运行时依赖**（编译期零依赖，运行时 spawn 其 r
 
 ### 已回填结论（2026-08-14）
 
-- **#7 reasoning 流式形态（已解）**：推理以 `blockType:"reasoning"` 独立块流式传输（reasoning-delta），与正文 text 块分开——Ctrl+T 折叠可原样保留
-- **#1 Windows 能力面（部分解）**：Windows 实测 31 次工具调用全成功；cordis 草案（`设计/dsh/draft-cordis-win64.yml`）包名全部核实存在，pwsh 三件套可行；完整清单仍待 spike 实测
-- **#4 会话模型映射（部分解）**：14 种事件类型表已到手（见"协议实现细节"）；`agent/inbox/spliced` 为消息队列增删操作——建议渲染最终投影而非队列操作
+- **#7 reasoning 流式形态（已解）**：推理以 `blockType:"reasoning"` 独立块流式传输（reasoning-delta），与正文 text 块分开——Ctrl+T 折叠可原样保留；2026-08-16 spike 实测坐实（reasoning-delta 正常流出）
+- **#1 Windows 能力面（已解）**：2026-08-16 spike 实测：read/write/pwsh/todo_write/subagent 五类工具全部可用；**fs 通道独立于沙箱（read-only 下写不受限）**；pwsh 受 read-only 约束（ConstrainedLanguage）且写被拒；工具面 ≥ 咱们 8 工具并明确净增（subagent/todo/多模型/上下文压缩装配）。详见《tools/spike/Spike报告.md》
+- **#4 会话模型映射（已解）**：14 种事件类型表已到手（见"协议实现细节"）；`agent/inbox/spliced` 为消息队列增删操作——建议渲染最终投影而非队列操作。spike 实测补充：**事件先于 session/prompt 响应**（receipt 门控须缓冲回溯）；sessionId 复用与已落盘日志碰撞（客户端每次新 id，/resume 走 runtime 自身恢复）；每轮双 spliced（首个带消息、次个空插入）
+- **#5 确认链 UX（已解）**：spike 实测——当前 cordis 组合**未装配审批服务**，pwsh 写升级重试（sandbox_permissions+justification）直接报 `requires approval, but no approval service is composed`；**确认请求不进入 JSON-RPC 协议**，咱们 Zone 5 确认栏无对接面。若需 dsh 内确认链，须装配审批服务插件并摸清其桥接形态
 - **#8 单 exe runtime 形态（已解）**：Windows 是 non-goal，无官方单 exe；主线改 Node 目录分发（见"运行时形态"修正）
 
 ## 关键风险与不确定点

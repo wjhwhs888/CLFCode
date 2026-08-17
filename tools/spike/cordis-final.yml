@@ -1,0 +1,114 @@
+# CLFCode dsh 后端 cordis 定稿（v1，2026-08-16 spike 实测定稿）
+# 相对 dsh 参考目录 draft-cordis-win64.yml 的修正（均经 spike 实测）：
+#   1. 补 dsh-sandbox-local + dsh-sandbox-policy（缺件必启动失败）
+#   2. mode/workspaceRoot 属于 sandbox-policy（draft 错挂在 pwsh-sandbox）
+#   3. 只挂 pwsh-sandbox（与 pwsh-local 同注册 ctx.shell，二选一）
+#   4. 补 dsh-shell-env（tool-pwsh 的 inject 依赖）
+#   5. pwsh-sandbox 走相对路径引用（examples 链接场缺该包）
+#   6. 可变字段恢复 !!js 表达式（零表达式冒烟版已验证协议链路）
+
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  config:
+    maxTokensAsSuccess: true
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    thinking: enabled
+    reasoningEffort: max
+
+# --- 命令执行面：subprocess + 沙箱装配 ---
+
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: read-only
+    workspaceRoot: !!js process.env.DSH_CWD ?? process.cwd()
+
+- id: pwsh-sandbox
+  name: '../../../../deepseek-harness/packages/shell/pwsh-sandbox/lib/index.js'
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+    timeoutMs: 60000
+
+- id: shell-env
+  name: '@deepseek-ai/dsh-shell-env'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  config:
+    enableRunInBackground: false
+
+# --- agent 骨架 ---
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are a coding agent.'
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+
+# --- 会话持久化 + 上下文压缩 ---
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+    compression: zstd
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: token-meter
+  name: '@deepseek-ai/dsh-token-meter'
+
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  config:
+    thresholdRatio: 0.8
+    retainRatio: 0.16
+    maxTokens: 8192
+    compactionRetries: 1
+
+# --- 子代理 + todo + fs 工具（平台无关，Windows 可用） ---
+
+- id: subagent
+  name: '@deepseek-ai/dsh-subagent'
+
+- id: subagent-spawn-in-process
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: subagent
+    enableRunInBackground: false
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: fs-local
+  name: '@deepseek-ai/dsh-fs-local'
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+- id: fs-observation-policy
+  name: '@deepseek-ai/dsh-fs-observation-policy'
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'

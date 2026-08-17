@@ -73,7 +73,7 @@ ctest --test-dir build --output-on-failure -j6
 
 ## 项目目录结构
 
-详见 `ProjectSetting.md`。
+详见 `doc/architecture_design.md`（总体架构设计，含目录结构）。
 
 ## Plans 目录
 

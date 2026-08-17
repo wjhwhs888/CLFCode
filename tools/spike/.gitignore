@@ -1,0 +1,6 @@
+# spike 运行产物，不入库
+workspace/
+sessions/
+frames/raw/
+s0_stderr.log
+node_modules/
