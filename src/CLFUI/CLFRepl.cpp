@@ -469,15 +469,23 @@ int CLFRepl::run() {
                     doSubmit();
             }
 
-            // === 0c. 复制后短窗内吞自动重复按键 ===
-            // 验收实证：快速 Ctrl+C 的重复事件——第一个复制并退出选区，
-            // 第二个落到空闲态 Ctrl+C 分支直接退出程序；Enter 重复会误提交
-            if (m_lastCopyTime != std::chrono::steady_clock::time_point{}
-                && std::chrono::steady_clock::now() - m_lastCopyTime
-                   < std::chrono::milliseconds(500)
-                && (e == ftxui::Event::CtrlC || e == ftxui::Event::Return)) {
-                return true;
+            // === 0c. 复制后吞自动重复按键（同键连发 + 无字符间隔） ===
+            // 验收实证：快速 Ctrl+C 的重复事件——第一个复制并退出选区，第二个
+            // 落到空闲态 Ctrl+C 分支直接退出程序；Enter 重复会误提交。
+            // 保护条件收紧：仅"复制后 100ms 内 + 期间无字符事件"才吞——
+            // 自动重复是纯同键连发；粘贴突发的 Return 与字符交错，不受影响
+            // （上一版 500ms 无条件吞 Return 曾吞掉粘贴换行，验收回归实证）。
+            // 每次吞后重新武装窗口，按住不放的连续重复全程覆盖。
+            if (e == ftxui::Event::CtrlC || e == ftxui::Event::Return) {
+                auto nowEvt = std::chrono::steady_clock::now();
+                if (m_lastCopyTime != std::chrono::steady_clock::time_point{}
+                    && m_charsSinceCopy == 0
+                    && nowEvt - m_lastCopyTime < std::chrono::milliseconds(100)) {
+                    m_lastCopyTime = nowEvt;
+                    return true;
+                }
             }
+            if (e.is_character()) ++m_charsSinceCopy;
 
             // === 1. 确认栏激活时（最小化处理，防卡死）===
             if (terminal && terminal->isConfirmActive()) {
@@ -545,6 +553,7 @@ int CLFRepl::run() {
                     }
                     m_selection.clear();
                     m_lastCopyTime = std::chrono::steady_clock::now();
+                    m_charsSinceCopy = 0;
                     return true;
                 }
                 if (e == ftxui::Event::ArrowUp || e == ftxui::Event::ArrowDown
