@@ -101,6 +101,17 @@ int CLFRepl::run() {
         auto dbgEvt = [&](const std::string& msg) {
             if (kDbgEvents) CLFLogger::instance().info("[EvtDbg] " + msg);
         };
+        // 控制字符转义（日志中区分 \n \r 等）
+        auto escDbg = [](const std::string& s) {
+            std::string o;
+            for (char c : s) {
+                if (c == '\n') o += "\\n";
+                else if (c == '\r') o += "\\r";
+                else if (c == '\033') o += "\\e";
+                else o += c;
+            }
+            return o;
+        };
 
         // ---- 主渲染器 ----
         auto ui = ftxui::Renderer(root, [&] {
@@ -403,6 +414,12 @@ int CLFRepl::run() {
             gRow = std::max(vs, std::min(gRow, ve - 1));
             if (gRow >= static_cast<int>(m_lastRowTexts.size())) return std::nullopt;
             size_t byteOff = CLFSelectionModel::colToByte(m_lastRowTexts[gRow], x - 1);
+            if (kDbgEvents)
+                dbgEvt("  hit vs=" + std::to_string(vs) + " ve=" + std::to_string(ve)
+                       + " hints=" + std::to_string(scrollView.topHintCount())
+                       + " -> row=" + std::to_string(gRow)
+                       + " byte=" + std::to_string(byteOff)
+                       + " text='" + escDbg(m_lastRowTexts[gRow]) + "'");
             return std::make_pair(gRow, static_cast<int>(byteOff));
         };
 
@@ -411,10 +428,16 @@ int CLFRepl::run() {
 
             if (kDbgEvents) {
                 std::string kind = e.is_character()
-                    ? ("Char '" + e.character() + "'")
+                    ? ("Char '" + escDbg(e.character()) + "'")
                     : (e == ftxui::Event::Return ? "Return"
-                       : e.is_mouse() ? "Mouse"
-                       : "Other");
+                       : e.is_mouse() ? ("Mouse btn="
+                            + std::to_string(static_cast<int>(e.mouse().button))
+                            + " mot=" + std::to_string(static_cast<int>(e.mouse().motion))
+                            + " x=" + std::to_string(e.mouse().x)
+                            + " y=" + std::to_string(e.mouse().y))
+                       : (e == ftxui::Event::CtrlC ? "CtrlC"
+                          : e == ftxui::Event::CtrlS ? "CtrlS"
+                          : "Other"));
                 dbgEvt(kind + " sel=" + (m_selection.active() ? "1" : "0")
                        + " input=" + std::to_string(inputText.size()));
             }
@@ -494,9 +517,15 @@ int CLFRepl::run() {
                 if (e == ftxui::Event::Return || e == ftxui::Event::CtrlC) {
                     // 提取 → 写剪贴板 → 退出（选区态 Ctrl+C = 复制，不触发中断）
                     auto r = m_selection.range();
-                    if (r.fromRow >= 0)
-                        CLFClipboard::write(CLFSelectionModel::extract(
-                            r, m_lastRowMap, m_lastRowTexts));
+                    if (r.fromRow >= 0) {
+                        std::string out = CLFSelectionModel::extract(
+                            r, m_lastRowMap, m_lastRowTexts);
+                        CLFClipboard::write(out);
+                        if (kDbgEvents)
+                            dbgEvt("  copy sel=[" + std::to_string(r.fromRow)
+                                   + "," + std::to_string(r.toRow) + "] out='"
+                                   + escDbg(out) + "'");
+                    }
                     m_selection.clear();
                     return true;
                 }
@@ -558,12 +587,11 @@ int CLFRepl::run() {
                 }
             }
             if (e == ftxui::Event::CtrlS) {
+                // 进入选区：锚点=游标=可见窗口首个内容行行首（空选区起点，
+                // 方向键/拖拽扩展——验收反馈：全窗预选体验不对）
                 auto [vs, ve] = scrollView.visibleRange();
-                if (ve > vs && ve <= static_cast<int>(m_lastRowTexts.size())) {
+                if (ve > vs && ve <= static_cast<int>(m_lastRowTexts.size()))
                     m_selection.startAt(vs, 0);
-                    m_selection.extendTo(ve - 1,
-                        static_cast<int>(m_lastRowTexts[ve - 1].size()));
-                }
                 return true;
             }
 
@@ -596,6 +624,8 @@ int CLFRepl::run() {
                     if (act == CLFPasteCoalescer::Action::RestoreAndAppendChar) {
                         inputText = pasteCoalescer.pendingText() + "\n" + e.character();
                         *cursorPos = static_cast<int>(inputText.size());
+                        if (kDbgEvents)
+                            dbgEvt("  restored input='" + escDbg(inputText) + "'");
                         return true;
                     }
                     // PassThrough → 放行给 Input
@@ -672,6 +702,10 @@ int CLFRepl::run() {
 
             // === 4. Ctrl+C: 上下文感知分发 ===
             if (e == ftxui::Event::CtrlC) {
+                if (kDbgEvents)
+                    dbgEvt("  CtrlC old-branch busy="
+                           + std::string(asyncSubmit.busy() ? "1" : "0")
+                           + " sel=" + (m_selection.active() ? "1" : "0"));
                 m_escPending = false;
                 if (asyncSubmit.busy()) {
                     if (terminal && terminal->m_interruptCb)
