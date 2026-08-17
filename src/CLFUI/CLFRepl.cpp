@@ -475,24 +475,6 @@ int CLFRepl::run() {
                     doSubmit();
             }
 
-            // === 0c. 复制后吞自动重复按键（同键连发 + 无字符间隔） ===
-            // 验收实证：快速 Ctrl+C 的重复事件——第一个复制并退出选区，第二个
-            // 落到空闲态 Ctrl+C 分支直接退出程序；Enter 重复会误提交。
-            // 保护条件收紧：仅"复制后 100ms 内 + 期间无字符事件"才吞——
-            // 自动重复是纯同键连发；粘贴突发的 Return 与字符交错，不受影响
-            // （上一版 500ms 无条件吞 Return 曾吞掉粘贴换行，验收回归实证）。
-            // 每次吞后重新武装窗口，按住不放的连续重复全程覆盖。
-            if (e == ftxui::Event::CtrlC || e == ftxui::Event::Return) {
-                auto nowEvt = std::chrono::steady_clock::now();
-                if (m_lastCopyTime != std::chrono::steady_clock::time_point{}
-                    && m_charsSinceCopy == 0
-                    && nowEvt - m_lastCopyTime < std::chrono::milliseconds(100)) {
-                    m_lastCopyTime = nowEvt;
-                    return true;
-                }
-            }
-            if (e.is_character()) ++m_charsSinceCopy;
-
             // === 1. 确认栏激活时（最小化处理，防卡死）===
             if (terminal && terminal->isConfirmActive()) {
                 // confirm 激活期内取消任何待提交（定时线程可能已确认，见 0b）
@@ -539,63 +521,32 @@ int CLFRepl::run() {
                 return true;  // 屏蔽其他所有按键
             }
 
-            // === 1.4 选区态事件接管（置于合并器路由之前：Enter=复制优先于 Return 路由） ===
+            // === 1.4 选区态事件接管（验收收敛：仅鼠标拖选，松手自动复制） ===
+            // 交互定稿（用户决策）：放弃 Ctrl+S 键盘选区与 Ctrl+C/Enter 复制；
+            // Shift+拖选+右键为终端原生路径（事件从未到达应用，日志实证 btn=2 为零），
+            // 应用内等价操作 = 左键拖选 → 松手自动复制（copy-on-select），
+            // 之后右键粘贴（终端原生粘贴）即可。
             if (m_selection.active()) {
                 if (e == ftxui::Event::Escape) { m_selection.clear(); return true; }
-                // Ctrl+S 激活时忽略：按住会触发键盘自动重复，toggle 语义导致
-                // 高亮闪烁 + 可能停在"激活"态吞掉后续输入（退出统一 Esc/Enter/Ctrl+C）
-                if (e == ftxui::Event::CtrlS)  { return true; }
-                if (e == ftxui::Event::Return || e == ftxui::Event::CtrlC) {
-                    // 提取 → 写剪贴板 → 退出（选区态 Ctrl+C = 复制，不触发中断）
-                    auto r = m_selection.range();
-                    if (r.fromRow >= 0) {
-                        std::string out = CLFSelectionModel::extract(
-                            r, m_lastRowMap, m_lastRowTexts);
-                        CLFClipboard::write(out);
-                        if (kDbgEvents)
-                            dbgEvt("  copy sel=[" + std::to_string(r.fromRow)
-                                   + "," + std::to_string(r.toRow) + "] out='"
-                                   + escDbg(out) + "'");
-                    }
-                    m_selection.clear();
-                    m_lastCopyTime = std::chrono::steady_clock::now();
-                    m_charsSinceCopy = 0;
-                    return true;
-                }
-                if (e == ftxui::Event::ArrowUp || e == ftxui::Event::ArrowDown
-                    || e == ftxui::Event::ArrowLeft || e == ftxui::Event::ArrowRight) {
-                    auto d = e == ftxui::Event::ArrowUp   ? CLFSelectionModel::Dir::Up
-                           : e == ftxui::Event::ArrowDown ? CLFSelectionModel::Dir::Down
-                           : e == ftxui::Event::ArrowLeft ? CLFSelectionModel::Dir::Left
-                                                          : CLFSelectionModel::Dir::Right;
-                    m_selection.moveCursor(d, m_lastRowMap, m_lastRowTexts);
-                    return true;
-                }
-                if (e == ftxui::Event::Home || e == ftxui::Event::End) {
-                    m_selection.moveCursor(e == ftxui::Event::Home
-                                               ? CLFSelectionModel::Dir::Home
-                                               : CLFSelectionModel::Dir::End,
-                                           m_lastRowMap, m_lastRowTexts);
-                    return true;
-                }
-                if (e == ftxui::Event::PageUp || e == ftxui::Event::PageDown) {
-                    auto [vs, ve] = scrollView.visibleRange();
-                    if (ve > vs && ve <= static_cast<int>(m_lastRowTexts.size())) {
-                        if (e == ftxui::Event::PageUp) m_selection.extendTo(vs, 0);
-                        else m_selection.extendTo(ve - 1,
-                            static_cast<int>(m_lastRowTexts[ve - 1].size()));
-                    }
-                    return true;
-                }
                 if (e.is_mouse()) {
                     auto& m = e.mouse();
                     if (m.button == ftxui::Mouse::WheelUp
                         || m.button == ftxui::Mouse::WheelDown)
-                        return false;  // 滚轮放行到 :542 滚动处理
+                        return false;  // 滚轮放行到滚动处理
                     if (m.button == ftxui::Mouse::Left) {
                         if (m.motion == ftxui::Mouse::Released) {
-                            // 单击（无移动，anchor==cursor）→ 取消选区
-                            if (m_selection.empty()) m_selection.clear();
+                            // 松手：非空选区 → 复制 + 清除；单击（空选区）→ 仅清除
+                            auto r = m_selection.range();
+                            if (r.fromRow >= 0) {
+                                std::string out = CLFSelectionModel::extract(
+                                    r, m_lastRowMap, m_lastRowTexts);
+                                if (!out.empty()) CLFClipboard::write(out);
+                                if (kDbgEvents)
+                                    dbgEvt("  dragcopy sel=[" + std::to_string(r.fromRow)
+                                           + "," + std::to_string(r.toRow) + "] out='"
+                                           + escDbg(out) + "'");
+                            }
+                            m_selection.clear();
                             return true;
                         }
                         // Pressed / Moved → 扩展选区
@@ -604,10 +555,10 @@ int CLFRepl::run() {
                         return true;
                     }
                 }
-                return true;  // 选区态其他事件消费
+                return true;  // 拖选期间其他事件消费
             }
 
-            // === 1.45 选区进入（鼠标左键按下 / Ctrl+S 键盘选区） ===
+            // === 1.45 选区进入（仅鼠标左键按下） ===
             if (e.is_mouse()) {
                 auto& m = e.mouse();
                 if (m.button == ftxui::Mouse::Left && m.motion == ftxui::Mouse::Pressed) {
@@ -618,14 +569,6 @@ int CLFRepl::run() {
                     }
                     return false;
                 }
-            }
-            if (e == ftxui::Event::CtrlS) {
-                // 进入选区：锚点=游标=可见窗口首个内容行行首（空选区起点，
-                // 方向键/拖拽扩展——验收反馈：全窗预选体验不对）
-                auto [vs, ve] = scrollView.visibleRange();
-                if (ve > vs && ve <= static_cast<int>(m_lastRowTexts.size()))
-                    m_selection.startAt(vs, 0);
-                return true;
             }
 
             // === 1.5 粘贴合并器事件路由（Return/字符/其他三类） ===
@@ -734,18 +677,18 @@ int CLFRepl::run() {
             }
 
             // === 4. Ctrl+C: 上下文感知分发 ===
+            // 验收收敛（用户决策）：空闲时忽略——原"空闲 Ctrl+C 退出"与
+            // 用户直觉冲突（误触即退出）；退出统一 Esc Esc / /exit。busy 时中断保留。
             if (e == ftxui::Event::CtrlC) {
                 if (kDbgEvents)
-                    dbgEvt("  CtrlC old-branch busy="
-                           + std::string(asyncSubmit.busy() ? "1" : "0")
-                           + " sel=" + (m_selection.active() ? "1" : "0"));
+                    dbgEvt("  CtrlC busy="
+                           + std::string(asyncSubmit.busy() ? "1" : "0"));
                 m_escPending = false;
                 if (asyncSubmit.busy()) {
                     if (terminal && terminal->m_interruptCb)
                         terminal->m_interruptCb();
-                } else {
-                    screen.ExitLoopClosure()();
                 }
+                // 空闲：消费且无动作（不退出）
                 return true;
             }
 

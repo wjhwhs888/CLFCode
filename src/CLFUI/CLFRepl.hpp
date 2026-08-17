@@ -69,10 +69,6 @@ private:
     std::vector<RowInfo>     m_lastRowMap;
     std::vector<std::string> m_lastRowTexts;
     std::vector<int>         m_lastRowStyles;  // 0=无 1=绿 2=红 3=dim
-    // 复制时刻（Ctrl+C/Enter 键盘自动重复防护：复制后 100ms 内且无字符事件才吞；
-    // 字符计数区分粘贴突发——粘贴的 Return 与字符交错，不受防护）
-    std::chrono::steady_clock::time_point m_lastCopyTime{};
-    int m_charsSinceCopy = 0;
 };
 
 } // namespace CLF::CLFUI
