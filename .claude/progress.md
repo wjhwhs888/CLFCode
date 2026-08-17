@@ -2,6 +2,12 @@
 
 ## 进行中
 
+### 小设计-复制粘贴功能修改（选区模式 + 双通道粘贴接管）
+- 需求：① 应用内选区模式（键盘/鼠标选择任意显示内容，复制逻辑文本保证换行正确——终端原生拖选只认识渲染网格，无法修复）；② Ctrl+V 与 Shift+右键粘贴双通道接管，多行原样插入输入框（现状：粘贴多行每行触发一次提交，根因 CLFRepl.cpp:414 Return 一律提交）
+- ✅ 分析定稿（`.claude/plans/分析/分析-复制粘贴功能修改.md`）：粘贴走事件突发合并器（无 bracketed paste、双通道同一事件路径、时间戳区分）；复制走选区状态机 + 行映射表（渲染确定性可并行建 RowMap）+ CLFClipboard（早已就位未接线）复用；关键事实 F1-F9
+- ✅ 设计定稿（`.claude/plans/设计/设计-复制粘贴功能修改.md`）：Flash 四轮审查 12 条意见 + 我方终审 6 缺口（PENDING 不变式/消费幂等/常驻 cv 线程+wakeCb/源字符串定义/接线清单旧接口残留/渲染流程改造）全部合入；spike 取消（保守默认值，验收时实测微调）
+- 待办：实现 M1（CLFPasteCoalescer + 接线 + P1-P10）→ M2（CLFSelectionModel + RowMap + 高亮 + S1-S8）→ M3（收尾 + ctest 回归 + 人工验收 10 项）→ 关闭转 M1 传输层
+
 ### M1 传输层（CLFJsonRpcClient）— 待启动
 - 依据：spike go 决策（`tools/spike/Spike报告.md`）+ 设计文档 M1 章节
 - 范围：`src/CLFBackend/CLFJsonRpcClient`（spawn / 行帧 reader / 三分类路由 / waiter 表 / close 阶梯）+ 单测（fake runtime 回放 `tools/spike/frames/norm/*.norm.jsonl`）
