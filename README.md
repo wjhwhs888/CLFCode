@@ -69,12 +69,15 @@ ctest --test-dir build --output-on-failure -j6
 |------|--------|
 | 提交输入 | `Enter` / `Ctrl+D` |
 | 换行 | `Ctrl+N` |
+| 粘贴 | `Ctrl+V` / `Shift+右键`（多行原样插入输入框） |
+| 选区 | 鼠标左键拖拽 / `Ctrl+S`（方向键扩展游标） |
+| 复制 | 选区中 `Enter` / `Ctrl+C`（换行与原文一致；选区态 Ctrl+C 不中断 Agent） |
+| 取消选区 | 选区中 `Esc` |
 | 中断 Agent | `Esc`（单击，中断后回显上次输入） |
 | 退出程序 | `Esc Esc`（空闲时双击） |
 | 切换安全模式 | `Shift+Tab` |
 | 历史导航 | `↑` / `↓`（首行↑翻历史，尾行↓回草稿） |
 | 滚动内容 | 鼠标滚轮 / `PgUp` / `PgDn` / `Home` / `End` |
-| 粘贴 | `Ctrl+V`（终端原生） |
 | 确认弹窗 | `← →` 选择 / `Enter` 确认或返回 / `Esc` 返回 |
 
 ## 设计文档

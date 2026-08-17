@@ -11,7 +11,8 @@
   - 顺带根因修复 qa_CLFSecurityPolicy 测试缺陷：`const char* == 字面量` 是指针比较，跨 TU 同址依赖链接器合并（GCC 合并/MSVC Debug 不合并）→ 改 std::string 比较；修后该测试在 MSVC 下转绿
 - ✅ **M2 完成**：CLFSelectionModel（选区状态机/colToByte/substrByWidth/snapBack/提取拼接）+ 渲染器改造（rowMap/rowTexts/rowStyles 与元素同趟并行构建，切片前按全局行号高亮，diff 样式保留）+ CLFScrollView visibleRange/topHintCount 口径分离 + 事件接线（选区态接管整体插在确认栏后/合并器路由前；左键拖选/单击取消/Ctrl+S/方向键/Home/End/PgUp/PgDn/Enter/Ctrl+C 复制/Esc 取消/滚轮放行/输入框区放行）+ S1-S8 全过（13 tests/49 asserts）；ctest 10/11（SessionManager 既有环境失败不变）
   - 实现定稿差异（设计文档已同步）：RowInfo 取消 byteStart/byteEnd（提取以 rowTexts WYSIWYG 为源）；选区覆盖滚动区内容行（Progress/Status 枚举保留不产出）；高亮色 Grey30（本版 FTXUI 无 BlueGrey）
-- 待办：M3（快捷键/帮助文本/README + 全量回归 + 人工验收 10 项）→ 关闭转 M1 传输层
+- ✅ **M3 代码侧完成**：/help 快捷键表 +4 行（粘贴双通道/选区/复制/取消）、README 快捷键表同步；全量回归 10/11（SessionManager 既有环境失败不变）；`--version` 冒烟通过
+- ⏳ **人工验收（10 项清单，需用户终端操作）**：验收通过即关闭 → 转 M1 传输层
 
 ### M1 传输层（CLFJsonRpcClient）— 待启动
 - 依据：spike go 决策（`tools/spike/Spike报告.md`）+ 设计文档 M1 章节
