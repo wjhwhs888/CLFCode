@@ -128,7 +128,6 @@ int CLFRepl::run() {
         };
 
         // ---- 主渲染器 ----
-        int dbgDumpedSize = -1;  // 取证屏幕转储的去重标记（见渲染器尾部）
         auto ui = ftxui::Renderer(root, [&] {
             if (terminal) terminal->m_refreshPending = false;
 
@@ -407,7 +406,7 @@ int CLFRepl::run() {
                 dbgEvt("Render input=" + std::to_string(inputText.size())
                        + " rows=" + std::to_string(m_lastRowTexts.size()));
 
-            auto el = ftxui::vbox({
+            return ftxui::vbox({
                 contentArea,
                 ftxui::vbox(std::move(progressElements)),
                 statusLine,
@@ -417,20 +416,6 @@ int CLFRepl::run() {
                 modeLine,
                 confirmBar.render(*terminal),
             });
-
-            // 取证：输入框内容变化时把真实渲染的屏幕转储到文件（Debug 诊断用）
-            if (kDbgEvents && inputText.size() > 60
-                && dbgDumpedSize != static_cast<int>(inputText.size())) {
-                dbgDumpedSize = static_cast<int>(inputText.size());
-                auto s = ftxui::Screen::Create(
-                    ftxui::Dimension::Fixed(termW),
-                    ftxui::Dimension::Fixed(CLFTerminal::getTerminalHeight()));
-                ftxui::Render(s, el);
-                std::ofstream f("doc/log/clf_screen.txt", std::ios::app);
-                f << "=== input=" << inputText.size() << " ===\n"
-                  << s.ToString() << "\n";
-            }
-            return el;
         });
 
         // ---- 鼠标坐标 → (全局渲染行, 字符起始字节, 字符结尾字节) ----
@@ -475,7 +460,6 @@ int CLFRepl::run() {
                             + " x=" + std::to_string(e.mouse().x)
                             + " y=" + std::to_string(e.mouse().y))
                        : (e == ftxui::Event::CtrlC ? "CtrlC"
-                          : e == ftxui::Event::CtrlS ? "CtrlS"
                           : "Other"));
                 dbgEvt(kind + " sel=" + (m_selection.active() ? "1" : "0")
                        + " input=" + std::to_string(inputText.size()));

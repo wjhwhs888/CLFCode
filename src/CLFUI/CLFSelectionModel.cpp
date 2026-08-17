@@ -75,13 +75,6 @@ size_t CLFSelectionModel::colToByteEnd(const std::string& s, int col) {
     return s.size();
 }
 
-size_t CLFSelectionModel::snapBack(const std::string& s, size_t byteOff) {
-    while (byteOff > 0 && byteOff <= s.size()
-           && (static_cast<unsigned char>(s[byteOff]) & 0xC0) == 0x80)
-        --byteOff;
-    return byteOff;
-}
-
 // ============================================================================
 // 选区状态
 // ============================================================================
@@ -127,51 +120,6 @@ CLFSelectionModel::rowSelection(int globalRow, size_t rowTextLen) const {
                                              static_cast<size_t>(std::max(0, r.toByte)));
     if (a >= b) return std::nullopt;
     return std::make_pair(a, b);
-}
-
-void CLFSelectionModel::clampCursorToRow(const std::vector<std::string>& rowTexts) {
-    if (m_cursorRow < 0 || m_cursorRow >= static_cast<int>(rowTexts.size())) return;
-    size_t len = rowTexts[m_cursorRow].size();
-    if (static_cast<size_t>(m_cursorByte) > len) m_cursorByte = static_cast<int>(len);
-    // 行尾或跨行落点可能位于 UTF-8 多字节字符中间 → 回退到字符边界
-    m_cursorByte = static_cast<int>(snapBack(rowTexts[m_cursorRow], m_cursorByte));
-}
-
-void CLFSelectionModel::moveCursor(Dir d,
-                                   const std::vector<RowInfo>& rowMap,
-                                   const std::vector<std::string>& rowTexts) {
-    if (!m_active || rowMap.empty() || rowMap.size() != rowTexts.size()) return;
-    auto isCont = [](char c) { return (static_cast<unsigned char>(c) & 0xC0) == 0x80; };
-
-    switch (d) {
-    case Dir::Left:
-        if (m_cursorByte > 0)
-            m_cursorByte = static_cast<int>(snapBack(rowTexts[m_cursorRow], m_cursorByte - 1));
-        break;
-    case Dir::Right: {
-        const auto& rowText = rowTexts[m_cursorRow];
-        size_t pos = static_cast<size_t>(m_cursorByte) + 1;
-        while (pos < rowText.size() && isCont(rowText[pos])) ++pos;  // 越过续字节
-        m_cursorByte = static_cast<int>(std::min(pos, rowText.size()));
-        break;
-    }
-    case Dir::Up:
-        if (m_cursorRow > 0) { --m_cursorRow; clampCursorToRow(rowTexts); }
-        break;
-    case Dir::Down:
-        if (m_cursorRow + 1 < static_cast<int>(rowMap.size())) {
-            ++m_cursorRow;
-            clampCursorToRow(rowTexts);
-        }
-        break;
-    case Dir::Home:
-        m_cursorByte = 0;
-        break;
-    case Dir::End:
-        m_cursorByte = static_cast<int>(rowTexts[m_cursorRow].size());
-        clampCursorToRow(rowTexts);
-        break;
-    }
 }
 
 // ============================================================================

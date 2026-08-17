@@ -1,8 +1,12 @@
-// qa_CLFInputRender.cpp — 临时诊断：FTXUI 多行 Input 渲染验证（验收期取证）
-// 验证输入框对含 '\n' 内容的行渲染是否正常
+// qa_CLFInputRender.cpp — FTXUI 多行输入渲染回归测试
+// 背景：粘贴首两行合并 bug 的根因定位（ftxui::Ref<int> 拥有型构造致光标不同步），
+// 本套件钉死两条回归：① 多行内容渲染为多行；② 光标引用型 Ref 同步下，
+// "restore 直接赋值 + OnEvent 逐字符"事件流产生正确换行内容；③ '\r' 在输入中
+// 不产生换行（渲染为空格——警惕 \r\n 源粘贴混入 \r）。
 
 #include <boost/ut.hpp>
 
+#include <algorithm>
 #include <string>
 
 #include <ftxui/component/component.hpp>
@@ -12,6 +16,18 @@
 
 using namespace boost::ut;
 
+namespace {
+
+// 渲染并提取屏幕各行（去掉 ANSI 序列，便于断言）
+std::string renderToString(const ftxui::Element& element, int w, int h) {
+    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(w),
+                                        ftxui::Dimension::Fixed(h));
+    ftxui::Render(screen, element);
+    return screen.ToString();
+}
+
+} // anonymous namespace
+
 const boost::ut::suite<"CLFInputRender"> tests = [] {
 
     "多行内容渲染为多行"_test = [] {
@@ -19,46 +35,24 @@ const boost::ut::suite<"CLFInputRender"> tests = [] {
         ftxui::InputOption opt;
         opt.multiline = true;
         auto input = ftxui::Input(&content, "", opt);
-        auto element = input->Render();
-
-        auto screen = ftxui::Screen::Create(ftxui::Dimension::Fit(element));
-        ftxui::Render(screen, element);
-        std::string out = screen.ToString();
-
-        // 每一行应出现在独立的屏幕行
-        expect(out.find("L1") != std::string::npos);
-        expect(out.find("L5") != std::string::npos);
-        // L1 和 L2 不得在同一行
+        std::string out = renderToString(input->Render(), 40, 10);
+        // L2 必须在 L1 所在行之后的换行之后
         size_t p1 = out.find("L1");
         size_t p2 = out.find("L2");
-        size_t nl1 = out.find('\n', p1);
-        expect(p2 > nl1);  // L2 必须在 L1 所在行之后的换行之后
-        std::cerr << "=== screen dump ===\n" << out << "=== end ===\n";
+        expect(p1 != std::string::npos && p2 != std::string::npos);
+        expect(p2 > out.find('\n', p1));
     };
 
-    "\\r 字符在输入框中如何渲染（取证实验）"_test = [] {
-        std::string content = "L1\rL2\nL3";
-        ftxui::InputOption opt;
-        opt.multiline = true;
-        auto input = ftxui::Input(&content, "", opt);
-        auto element = input->Render();
-        auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(40),
-                                            ftxui::Dimension::Fixed(10));
-        ftxui::Render(screen, element);
-        std::string out = screen.ToString();
-        std::cerr << "=== cr-test dump ===\n" << out << "=== end ===\n";
-    };
-
-    "精确事件流模拟：restore 直接赋值 + OnEvent 逐字符 + 渲染"_test = [] {
+    "restore 直接赋值 + OnEvent 事件流：内容换行位置正确（光标引用型 Ref）"_test = [] {
         std::string content;
         ftxui::InputOption opt;
         opt.multiline = true;
-        // 引用型 Ref（指针构造）——与应用修复后一致；拥有型 Ref 是 Input 内部副本，
-        // 直接赋值不同步（根因：Ref(T t) 拥有型构造 + 默认拷贝）
+        // 引用型 Ref（指针构造）：直接赋值后光标与 Input 共享——
+        // 拥有型 Ref(T t) 是 Input 内部副本，光标停在旧位置导致
+        // 后续字符插在 '\n' 之前（验收实证 bug）
         int cursorPosValue = 0;
         ftxui::Ref<int> cursorPos(&cursorPosValue);
         opt.cursor_position = cursorPos;
-        opt.transform = [](ftxui::InputState state) { return state.element; };
         auto input = ftxui::Input(&content, "❯ ", opt);
 
         std::string line1 = "  ⎿ 终端: 高30 x 宽120, ANSI: 关";
@@ -67,20 +61,14 @@ const boost::ut::suite<"CLFInputRender"> tests = [] {
         std::string line4 = "  ⎿ 模型: deepseek-v4-flash";
         std::string line5 = "  ⎿ 知识库: 5 skills";
 
-        // line1 字符 PassThrough
         for (size_t i = 0; i < line1.size(); ++i)
             input->OnEvent(ftxui::Event::Character(std::string(1, line1[i])));
-        // Return₁ → PENDING 捕获
-        std::string pending = content;
-        // line2 首字符 ' ' → RestoreAndAppendChar（与 CLFRepl 相同的直接赋值；
-        // 注意：必须用解引用赋值 *cursorPos——Ref 整体赋值会触发拥有型构造覆盖指针）
-        content = pending + "\n" + " ";
-        *cursorPos = static_cast<int>(content.size());
-        // line2 剩余字符
+        std::string pending = content;                 // Return → PENDING 捕获
+        content = pending + "\n" + " ";                // RestoreAndAppendChar 直接赋值
+        *cursorPos = static_cast<int>(content.size()); // 必须同步（解引用赋值）
         for (size_t i = 1; i < line2.size(); ++i)
             input->OnEvent(ftxui::Event::Character(std::string(1, line2[i])));
-        // Return₂ → InsertNewline
-        input->OnEvent(ftxui::Event::Character("\n"));
+        input->OnEvent(ftxui::Event::Character("\n")); // InsertNewline
         for (size_t i = 0; i < line3.size(); ++i)
             input->OnEvent(ftxui::Event::Character(std::string(1, line3[i])));
         input->OnEvent(ftxui::Event::Character("\n"));
@@ -90,91 +78,24 @@ const boost::ut::suite<"CLFInputRender"> tests = [] {
         for (size_t i = 0; i < line5.size(); ++i)
             input->OnEvent(ftxui::Event::Character(std::string(1, line5[i])));
 
+        // 字节级断言：4 个 '\n' 且各在正确位置（首行尾后、非被推到末尾）
         expect(std::count(content.begin(), content.end(), '\n') == 4);
-
-        {
-            std::string vis;
-            for (char c : content)
-                vis += (c == '\n' ? std::string("\\n") : std::string(1, c));
-            std::cerr << "=== content bytes: [" << vis << "] cursor="
-                      << *cursorPos
-                      << " size=" << content.size() << " ===\n";
-        }
-
-        auto element = ftxui::vbox({
-            ftxui::text("x") | ftxui::flex,
-            ftxui::separator(),
-            input->Render(),
-            ftxui::separator(),
-            ftxui::text("m"),
-        });
-        auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(352),
-                                            ftxui::Dimension::Fixed(25));
-        ftxui::Render(screen, element);
-        std::cerr << "=== event-sim dump ===\n" << screen.ToString()
-                  << "=== end ===\n";
+        expect(content.find('\n') == line1.size());
+        expect(*cursorPos == static_cast<int>(content.size()));  // 光标同步到末尾
     };
 
-    "二分对照：全部字符走 OnEvent（无直接赋值）"_test = [] {
-        std::string content;
+    "\\r 在输入中渲染为空格（不产生换行，警惕 \\r\\n 源混入）"_test = [] {
+        std::string content = "L1\rL2\nL3";
         ftxui::InputOption opt;
         opt.multiline = true;
-        ftxui::Ref<int> cursorPos = 0;
-        opt.cursor_position = cursorPos;
-        opt.transform = [](ftxui::InputState state) { return state.element; };
-        auto input = ftxui::Input(&content, "❯ ", opt);
-
-        std::string full = "  ⎿ 终端: 高30 x 宽120, ANSI: 关\n"
-                           "  ⎿ 工作目录: F:\\wjh_work\\ProjectCliom\\testCLFCode\n"
-                           "  ⎿ 配置: https://api.deepseek.com\n"
-                           "  ⎿ 模型: deepseek-v4-flash\n"
-                           "  ⎿ 知识库: 5 skills";
-        for (size_t i = 0; i < full.size(); ++i)
-            input->OnEvent(ftxui::Event::Character(std::string(1, full[i])));
-
-        auto element = ftxui::vbox({
-            ftxui::text("x") | ftxui::flex,
-            ftxui::separator(),
-            input->Render(),
-            ftxui::separator(),
-            ftxui::text("m"),
-        });
-        auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(352),
-                                            ftxui::Dimension::Fixed(25));
-        ftxui::Render(screen, element);
-        std::cerr << "=== all-onevent dump ===\n" << screen.ToString()
-                  << "=== end ===\n";
-    };
-
-    "应用布局上下文 + 应用 inputOpt：多行输入在 vbox 中渲染"_test = [] {
-        // 精确复现应用场景：5 行粘贴内容 + 352x25 窗口 + 应用 transform/cursor
-        std::string content = "  ⎿ 终端: 高30 x 宽120, ANSI: 关\n"
-                             "  ⎿ 工作目录: F:\\wjh_work\\ProjectCliom\\testCLFCode\n"
-                             "  ⎿ 配置: https://api.deepseek.com\n"
-                             "  ⎿ 模型: deepseek-v4-flash\n"
-                             "  ⎿ 知识库: 5 skills";
-        ftxui::InputOption opt;
-        opt.multiline = true;
-        ftxui::Ref<int> cursorPos = static_cast<int>(content.size());
-        opt.cursor_position = cursorPos;
-        // 与应用一致的 transform（去除焦点背景）
-        opt.transform = [](ftxui::InputState state) { return state.element; };
-        auto input = ftxui::Input(&content, "❯ ", opt);
-
-        // 模拟应用布局：flex 内容区在上，输入框在下（352x25 窗口）
-        auto element = ftxui::vbox({
-            ftxui::text("content-row-0") | ftxui::flex,
-            ftxui::separator(),
-            input->Render(),
-            ftxui::separator(),
-            ftxui::text("mode-line"),
-        });
-
-        auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(352),
-                                            ftxui::Dimension::Fixed(25));
-        ftxui::Render(screen, element);
-        std::string out = screen.ToString();
-        std::cerr << "=== app-layout dump ===\n" << out << "=== end ===\n";
+        auto input = ftxui::Input(&content, "", opt);
+        std::string out = renderToString(input->Render(), 40, 10);
+        // '\r' 不换行：L1 与 L2 同屏行；'\n' 正常换行：L3 独立
+        size_t p1 = out.find("L1");
+        size_t p2 = out.find("L2");
+        size_t p3 = out.find("L3");
+        expect(p2 < out.find('\n', p1));   // L2 在 L1 同一行
+        expect(p3 > out.find('\n', p1));   // L3 在下一行
     };
 };
 

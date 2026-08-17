@@ -2,7 +2,7 @@
 // 终端粘贴（Ctrl+V / Shift+右键）以"字符 + Return 突发批次"到达，
 // 用事件时间戳区分粘贴换行与手打回车：Return 后开 quietWindowMs 静默窗，
 // 窗内后续事件视为粘贴 → 换行插入而非提交。
-// 设计：`.claude/plans/设计/设计-复制粘贴功能修改.md` §二
+// 设计：`.claude/plans/设计/归档/归档-复制粘贴功能修改.md` §二
 
 #pragma once
 

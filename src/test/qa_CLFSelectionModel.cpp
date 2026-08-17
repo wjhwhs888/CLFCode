@@ -1,5 +1,6 @@
-// qa_CLFSelectionModel.cpp — 选区状态机单元测试（S1-S8）
-// 设计：`.claude/plans/设计/设计-复制粘贴功能修改.md` §3.6
+// qa_CLFSelectionModel.cpp — 选区状态机单元测试（S1-S7）
+// 设计：`.claude/plans/设计/归档/归档-复制粘贴功能修改.md` §3.6
+// （S8 键盘移动用例随 Ctrl+S 键盘选区一并移除——验收收敛为纯鼠标拖选）
 
 #include <boost/ut.hpp>
 
@@ -195,58 +196,15 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         expect(m.range().fromRow == -1);
     };
 
-    // ========== S7: UTF-8 边界安全 ==========
+    // ========== S7: 鼠标拖选 UTF-8 边界安全（colToByteEnd 含入不劈半） ==========
 
-    "S7 moveCursor 左右移动不劈半多字节，列超行尾 clamp"_test = [] {
-        std::vector<RowInfo> map;
-        std::vector<std::string> texts;
-        addRow(map, texts, RowKind::Content, 0, 0, "a你b");   // 字节: a(0) 你(1-3) b(4)
-        CLFSelectionModel m;
-        m.startAt(0, 0);
-        m.moveCursor(CLFSelectionModel::Dir::Right, map, texts);  // → 1 ('a' 后)
-        expect(m.range().toByte == 1);
-        m.moveCursor(CLFSelectionModel::Dir::Right, map, texts);  // → 4 ('你' 之后)
-        expect(m.range().toByte == 4);
-        m.moveCursor(CLFSelectionModel::Dir::Left, map, texts);   // ← 1
-        expect(m.range().toByte == 1);
-        m.moveCursor(CLFSelectionModel::Dir::End, map, texts);
-        expect(m.range().toByte == 5);  // 行尾
-        m.moveCursor(CLFSelectionModel::Dir::Left, map, texts);   // ← 4（'b' 前）
-        expect(m.range().toByte == 4);
-    };
-
-    // ========== S8: moveCursor 跨行（含跨 RowKind） ==========
-
-    "S8 跨行字节偏移保留 + clamp 到目标行尾（跨 RowKind）"_test = [] {
-        std::vector<RowInfo> map;
-        std::vector<std::string> texts;
-        addRow(map, texts, RowKind::Content,      0, 0, "long-line-0");
-        addRow(map, texts, RowKind::Progress,     0, 0, "short");
-        addRow(map, texts, RowKind::ThinkingFold, 0, 0, "  Thought for 5s · abc");
-        CLFSelectionModel m;
-        m.startAt(0, 10);  // 第一行第 10 字节
-        m.moveCursor(CLFSelectionModel::Dir::Down, map, texts);  // 到 "short"（len 5）
-        expect(m.range().toRow == 1 && m.range().toByte == 5);   // clamp 到行尾
-        m.moveCursor(CLFSelectionModel::Dir::Down, map, texts);  // 到 ThinkingFold
-        expect(m.range().toRow == 2 && m.range().toByte == 5);   // 保留偏移（len 足够）
-        m.moveCursor(CLFSelectionModel::Dir::Up, map, texts);    // 回 "short"
-        expect(m.range().toRow == 1 && m.range().toByte == 5);   // 再 clamp
-        m.moveCursor(CLFSelectionModel::Dir::Up, map, texts);    // 回行 0，游标=5，锚点仍在 10
-        auto r = m.range();  // 归一化：anchor(0,10) 为端点
-        expect(r.fromRow == 0 && r.fromByte == 5 && r.toRow == 0 && r.toByte == 10);
-    };
-
-    "S8b moveCursor 越界不移动 / Home-End"_test = [] {
-        std::vector<RowInfo> map;
-        std::vector<std::string> texts;
-        addRow(map, texts, RowKind::Content, 0, 0, "abc");
-        CLFSelectionModel m;
-        m.startAt(0, 3);
-        m.moveCursor(CLFSelectionModel::Dir::Down, map, texts);  // 已在末行
-        expect(m.range().toRow == 0);
-        m.moveCursor(CLFSelectionModel::Dir::Home, map, texts);  // 游标=0，锚点=3
-        auto r = m.range();  // 归一化：anchor(0,3) 为端点
-        expect(r.fromRow == 0 && r.fromByte == 0 && r.toRow == 0 && r.toByte == 3);
+    "S7 拖选含入语义不劈半多字节（S1c 已覆盖列→字节换算）"_test = [] {
+        using Sel = CLFSelectionModel;
+        std::string s = "a你b";   // 字节: a(0) 你(1-3) b(4)
+        expect(Sel::colToByteEnd(s, 0) == 1);  // 落在 'a' 上 → 含入
+        expect(Sel::colToByteEnd(s, 1) == 4);  // 落在 '你' 首列 → 含入整字
+        expect(Sel::colToByteEnd(s, 4) == 5);  // 落在 'b' 上 → 含入
+        expect(Sel::colToByteEnd(s, 99) == 5); // 超列 → 行尾
     };
 };
 

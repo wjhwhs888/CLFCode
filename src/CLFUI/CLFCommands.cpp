@@ -60,7 +60,7 @@ bool cmdHelp(const std::string&, const std::string&,
         "  ⎿ 选区复制    鼠标左键拖选（松手自动复制，换行与原文一致）\n"
         "  ⎿ 取消拖选    拖选时 esc\n"
         "  ⎿ 思考过程    ctrl+t（折叠/展开推理内容）\n"
-        "  ⎿ 中断 Agent  esc（单击，中断后回显上次输入）\n"
+        "  ⎿ 中断 Agent  esc（单击）/ ctrl+c（运行中，空闲时无动作）\n"
         "  ⎿ 退出程序    esc esc（空闲时双击）\n"
         "  ⎿ 切换模式    shift+tab\n"
         "  ⎿ 历史导航    ↑ / ↓（首行↑翻历史，尾行↓回草稿）\n"

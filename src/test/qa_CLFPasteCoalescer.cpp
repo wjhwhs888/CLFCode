@@ -1,5 +1,5 @@
 // qa_CLFPasteCoalescer.cpp — 粘贴事件突发合并器单元测试（P1-P10）
-// 设计：`.claude/plans/设计/设计-复制粘贴功能修改.md` §2.3
+// 设计：`.claude/plans/设计/归档/归档-复制粘贴功能修改.md` §2.3
 // 双配置：transition=200ms 窗（纯状态机序列，真实定时器在测试期内不触发）；
 //         expiry=5ms 窗（真实等待验证窗满确认路径）。
 
