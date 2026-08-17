@@ -63,10 +63,12 @@ const boost::ut::suite<"CLFSecurityPolicy"> tests = [] {
     };
 
     "getModeName 返回正确名称"_test = [] {
-        expect(CLFSecurityPolicy(CLFSecurityMode::Auto).getModeName() == "auto");
-        expect(CLFSecurityPolicy(CLFSecurityMode::Analyze).getModeName() == "analyze");
-        expect(CLFSecurityPolicy(CLFSecurityMode::Edit).getModeName() == "edit");
-        expect(CLFSecurityPolicy(CLFSecurityMode::Manual).getModeName() == "manual");
+        // 注意：getModeName 返回 const char*，与字面量直接 == 是指针比较，
+        // 跨翻译单元字面量是否同址依赖链接器合并（GCC 合并 / MSVC Debug 不合并）
+        expect(std::string(CLFSecurityPolicy(CLFSecurityMode::Auto).getModeName()) == "auto");
+        expect(std::string(CLFSecurityPolicy(CLFSecurityMode::Analyze).getModeName()) == "analyze");
+        expect(std::string(CLFSecurityPolicy(CLFSecurityMode::Edit).getModeName()) == "edit");
+        expect(std::string(CLFSecurityPolicy(CLFSecurityMode::Manual).getModeName()) == "manual");
     };
 
     "setMode 动态切换生效"_test = [] {

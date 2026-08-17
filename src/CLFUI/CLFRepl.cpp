@@ -6,6 +6,7 @@
 #include "CLFUI/CLFAsyncSubmit.hpp"
 #include "CLFUI/CLFClipboard.hpp"
 #include "CLFUI/CLFCommandDispatcher.hpp"
+#include "CLFUI/CLFPasteCoalescer.hpp"
 #include "CLFUI/CLFConfirmBar.hpp"
 #include "CLFUI/CLFScrollView.hpp"
 #include "CLFUI/CLFTerminal.hpp"
@@ -69,6 +70,9 @@ int CLFRepl::run() {
         // ---- 组件声明 ----
         CLFScrollView   scrollView;
         CLFAsyncSubmit  asyncSubmit;
+        // 粘贴合并器：窗满定时线程经 PostEvent(Custom) 唤醒主循环消费
+        CLFPasteCoalescer pasteCoalescer(
+            [&] { screen.PostEvent(ftxui::Event::Custom); });
 
         ftxui::InputOption inputOpt;
         inputOpt.multiline = true;  // 多行显示（Ctrl+N 换行后可见多行）
@@ -366,8 +370,30 @@ int CLFRepl::run() {
         // ---- CatchEvent: 快捷键处理 ----
         auto handler = ftxui::CatchEvent(ui, [&](ftxui::Event e) {
 
+            // === 0a. 提交主体（合并器确认路径与 Ctrl+D 共用，:414 原逻辑） ===
+            auto doSubmit = [&] {
+                if (!inputText.empty() && !asyncSubmit.busy()) {
+                    m_lastSubmittedInput = inputText;
+                    m_inputHistory.push_back(inputText);
+                    m_historyIndex = -1;
+                    auto text = inputText;
+                    inputText.clear();
+                    asyncSubmit.launch([this, text]() { submit(text); });
+                }
+            };
+
+            // === 0b. 粘贴合并器窗满确认消费（任何事件到达时检查，幂等） ===
+            if (pasteCoalescer.pendingConfirmed()) {
+                bool shouldSubmit = pasteCoalescer.consumePendingConfirmation();
+                // confirm 激活或 busy 时只复位不提交（文本留在输入框）
+                if (shouldSubmit && !(terminal && terminal->isConfirmActive()))
+                    doSubmit();
+            }
+
             // === 1. 确认栏激活时（最小化处理，防卡死）===
             if (terminal && terminal->isConfirmActive()) {
+                // confirm 激活期内取消任何待提交（定时线程可能已确认，见 0b）
+                pasteCoalescer.onOtherEvent(std::chrono::steady_clock::now());
                 // "返回"/ESC/CtrlC 统一行为: 拒绝 + 中断 Agent，回到输入编辑
                 auto cancelWithInterrupt = [&] {
                     if (terminal->m_interruptCb)
@@ -410,16 +436,39 @@ int CLFRepl::run() {
                 return true;  // 屏蔽其他所有按键
             }
 
-            // === 2. 提交 ===
-            if (e == ftxui::Event::Return || e == ftxui::Event::CtrlD) {
-                if (!inputText.empty() && !asyncSubmit.busy()) {
-                    m_lastSubmittedInput = inputText;
-                    m_inputHistory.push_back(inputText);
-                    m_historyIndex = -1;
-                    auto text = inputText;
-                    inputText.clear();
-                    asyncSubmit.launch([this, text]() { submit(text); });
+            // === 1.5 粘贴合并器事件路由（Return/字符/其他三类） ===
+            {
+                auto now = std::chrono::steady_clock::now();
+                if (e == ftxui::Event::Return) {
+                    switch (pasteCoalescer.onReturn(now, inputText)) {
+                    case CLFPasteCoalescer::Action::Consume:
+                        return true;  // 待提交已捕获 / 空文本短路
+                    case CLFPasteCoalescer::Action::RestoreAndAppendNewline:
+                        inputText = pasteCoalescer.pendingText() + "\n\n";
+                        *cursorPos = static_cast<int>(inputText.size());
+                        return true;
+                    case CLFPasteCoalescer::Action::InsertNewline:
+                        input->OnEvent(ftxui::Event::Character("\n"));
+                        return true;
+                    default:
+                        break;  // PassThrough 不会出现在 Return 路径
+                    }
+                } else if (e.is_character()) {
+                    if (pasteCoalescer.onCharacter(now)
+                        == CLFPasteCoalescer::Action::RestoreAndAppendChar) {
+                        inputText = pasteCoalescer.pendingText() + "\n" + e.character();
+                        *cursorPos = static_cast<int>(inputText.size());
+                        return true;
+                    }
+                    // PassThrough → 放行给 Input
+                } else {
+                    pasteCoalescer.onOtherEvent(now);  // PENDING 取消 / PASTE_MODE 退出
                 }
+            }
+
+            // === 2. 提交（Ctrl+D 立即提交；Return 已由 1.5 路由处理） ===
+            if (e == ftxui::Event::CtrlD) {
+                doSubmit();
                 return true;
             }
 
