@@ -19,6 +19,7 @@
 #include "CLFCore/CLFSkillLoader.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
@@ -94,6 +95,12 @@ int CLFRepl::run() {
         // input->TakeFocus();
 
         CLFConfirmBar confirmBar;
+
+        // ---- 事件调试日志（CLF_DEBUG_EVENTS=1 时开启，诊断用） ----
+        const bool kDbgEvents = (std::getenv("CLF_DEBUG_EVENTS") != nullptr);
+        auto dbgEvt = [&](const std::string& msg) {
+            if (kDbgEvents) CLFLogger::instance().info("[EvtDbg] " + msg);
+        };
 
         // ---- 主渲染器 ----
         auto ui = ftxui::Renderer(root, [&] {
@@ -370,6 +377,10 @@ int CLFRepl::run() {
                      | ftxui::color(ftxui::Color::CyanLight);
             };
 
+            if (kDbgEvents)
+                dbgEvt("Render input=" + std::to_string(inputText.size())
+                       + " rows=" + std::to_string(m_lastRowTexts.size()));
+
             return ftxui::vbox({
                 contentArea,
                 ftxui::vbox(std::move(progressElements)),
@@ -397,6 +408,16 @@ int CLFRepl::run() {
 
         // ---- CatchEvent: 快捷键处理 ----
         auto handler = ftxui::CatchEvent(ui, [&](ftxui::Event e) {
+
+            if (kDbgEvents) {
+                std::string kind = e.is_character()
+                    ? ("Char '" + e.character() + "'")
+                    : (e == ftxui::Event::Return ? "Return"
+                       : e.is_mouse() ? "Mouse"
+                       : "Other");
+                dbgEvt(kind + " sel=" + (m_selection.active() ? "1" : "0")
+                       + " input=" + std::to_string(inputText.size()));
+            }
 
             // === 0a. 提交主体（合并器确认路径与 Ctrl+D 共用，:414 原逻辑） ===
             auto doSubmit = [&] {
@@ -467,7 +488,9 @@ int CLFRepl::run() {
             // === 1.4 选区态事件接管（置于合并器路由之前：Enter=复制优先于 Return 路由） ===
             if (m_selection.active()) {
                 if (e == ftxui::Event::Escape) { m_selection.clear(); return true; }
-                if (e == ftxui::Event::CtrlS)  { m_selection.clear(); return true; }
+                // Ctrl+S 激活时忽略：按住会触发键盘自动重复，toggle 语义导致
+                // 高亮闪烁 + 可能停在"激活"态吞掉后续输入（退出统一 Esc/Enter/Ctrl+C）
+                if (e == ftxui::Event::CtrlS)  { return true; }
                 if (e == ftxui::Event::Return || e == ftxui::Event::CtrlC) {
                     // 提取 → 写剪贴板 → 退出（选区态 Ctrl+C = 复制，不触发中断）
                     auto r = m_selection.range();
@@ -548,7 +571,11 @@ int CLFRepl::run() {
             {
                 auto now = std::chrono::steady_clock::now();
                 if (e == ftxui::Event::Return) {
-                    switch (pasteCoalescer.onReturn(now, inputText)) {
+                    auto act = pasteCoalescer.onReturn(now, inputText);
+                    if (kDbgEvents)
+                        dbgEvt("  onReturn -> " + std::to_string(static_cast<int>(act))
+                               + " input=" + std::to_string(inputText.size()));
+                    switch (act) {
                     case CLFPasteCoalescer::Action::Consume:
                         return true;  // 待提交已捕获 / 空文本短路
                     case CLFPasteCoalescer::Action::RestoreAndAppendNewline:
@@ -562,8 +589,11 @@ int CLFRepl::run() {
                         break;  // PassThrough 不会出现在 Return 路径
                     }
                 } else if (e.is_character()) {
-                    if (pasteCoalescer.onCharacter(now)
-                        == CLFPasteCoalescer::Action::RestoreAndAppendChar) {
+                    auto act = pasteCoalescer.onCharacter(now);
+                    if (kDbgEvents)
+                        dbgEvt("  onChar -> " + std::to_string(static_cast<int>(act))
+                               + " input=" + std::to_string(inputText.size()));
+                    if (act == CLFPasteCoalescer::Action::RestoreAndAppendChar) {
                         inputText = pasteCoalescer.pendingText() + "\n" + e.character();
                         *cursorPos = static_cast<int>(inputText.size());
                         return true;
