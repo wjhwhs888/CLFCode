@@ -88,7 +88,8 @@ endif()
 set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator
                      qa_CLFHeadTail qa_CLFSearchContent qa_CLFToolExecutor
-                     qa_CLFPasteCoalescer qa_CLFSelectionModel)
+                     qa_CLFPasteCoalescer qa_CLFSelectionModel
+                     qa_CLFInputRender)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -133,6 +134,10 @@ add_test(NAME qa_CLFPasteCoalescer COMMAND qa_CLFPasteCoalescer)
 add_executable(qa_CLFSelectionModel test/qa_CLFSelectionModel.cpp)
 target_link_libraries(qa_CLFSelectionModel PRIVATE clf_core clf_ui)
 add_test(NAME qa_CLFSelectionModel COMMAND qa_CLFSelectionModel)
+
+add_executable(qa_CLFInputRender test/qa_CLFInputRender.cpp)
+target_link_libraries(qa_CLFInputRender PRIVATE clf_core clf_ui)
+add_test(NAME qa_CLFInputRender COMMAND qa_CLFInputRender)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

@@ -86,7 +86,11 @@ int CLFRepl::run() {
 
         ftxui::InputOption inputOpt;
         inputOpt.multiline = true;  // 多行显示（Ctrl+N 换行后可见多行）
-        ftxui::Ref<int> cursorPos = 0;
+        // 光标须为引用型 Ref（指针构造）：拥有型 Ref(T t) 在 Input 内部是副本，
+        // restore/历史导航对 *cursorPos 的直接赋值不同步到 Input，其光标停在旧位置
+        // 导致后续粘贴字符插在 '\n' 之前、首两行渲染合并（验收实证，字节级定位）
+        int cursorPosValue = 0;
+        ftxui::Ref<int> cursorPos(&cursorPosValue);
         inputOpt.cursor_position = cursorPos;  // ↑/↓ 历史导航需要光标位置
         // 自定义渲染：去除聚焦时的背景色
         inputOpt.transform = [](ftxui::InputState state) {
@@ -124,6 +128,7 @@ int CLFRepl::run() {
         };
 
         // ---- 主渲染器 ----
+        int dbgDumpedSize = -1;  // 取证屏幕转储的去重标记（见渲染器尾部）
         auto ui = ftxui::Renderer(root, [&] {
             if (terminal) terminal->m_refreshPending = false;
 
@@ -402,7 +407,7 @@ int CLFRepl::run() {
                 dbgEvt("Render input=" + std::to_string(inputText.size())
                        + " rows=" + std::to_string(m_lastRowTexts.size()));
 
-            return ftxui::vbox({
+            auto el = ftxui::vbox({
                 contentArea,
                 ftxui::vbox(std::move(progressElements)),
                 statusLine,
@@ -412,6 +417,20 @@ int CLFRepl::run() {
                 modeLine,
                 confirmBar.render(*terminal),
             });
+
+            // 取证：输入框内容变化时把真实渲染的屏幕转储到文件（Debug 诊断用）
+            if (kDbgEvents && inputText.size() > 60
+                && dbgDumpedSize != static_cast<int>(inputText.size())) {
+                dbgDumpedSize = static_cast<int>(inputText.size());
+                auto s = ftxui::Screen::Create(
+                    ftxui::Dimension::Fixed(termW),
+                    ftxui::Dimension::Fixed(CLFTerminal::getTerminalHeight()));
+                ftxui::Render(s, el);
+                std::ofstream f("doc/log/clf_screen.txt", std::ios::app);
+                f << "=== input=" << inputText.size() << " ===\n"
+                  << s.ToString() << "\n";
+            }
+            return el;
         });
 
         // ---- 鼠标坐标 → (全局渲染行, 字符起始字节, 字符结尾字节) ----
