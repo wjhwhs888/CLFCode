@@ -7,6 +7,7 @@
 #include "CLFUI/CLFClipboard.hpp"
 #include "CLFUI/CLFCommandDispatcher.hpp"
 #include "CLFUI/CLFPasteCoalescer.hpp"
+#include "CLFUI/CLFSelectionModel.hpp"
 #include "CLFUI/CLFConfirmBar.hpp"
 #include "CLFUI/CLFScrollView.hpp"
 #include "CLFUI/CLFTerminal.hpp"
@@ -21,6 +22,7 @@
 #include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <optional>
 
 namespace CLF::CLFUI {
 using namespace CLF::CLFCore;
@@ -128,80 +130,68 @@ int CLFRepl::run() {
                 m_needRestoreInput = false;
             }
 
-            auto snap = terminal ? terminal->contentSnapshot()
-                                 : CLFTerminal::ContentSnapshot{};
+            m_lastSnapshot = terminal ? terminal->contentSnapshot()
+                                      : CLFTerminal::ContentSnapshot{};
+            const auto& snap = m_lastSnapshot;
+
+            // confirm 激活即清选区（confirm 分支以外的事件通道外兜底）
+            if (terminal && terminal->isConfirmActive())
+                m_selection.clear();
 
             // 获取终端宽度用于硬换行（避免长行超出视口）
             int termW = CLFTerminal::getTerminalWidth();
             int wrapW = (termW > 20) ? termW : 78;
 
-            // CJK 字符显示宽度：ASCII/半角=1，CJK/全角=2
-            auto charWidth = [](unsigned char c) -> int {
-                if (c < 0x80) return 1;                     // ASCII
-                if (c >= 0xC0) return 2;                    // UTF-8 多字节首字节
-                return 0;                                    // UTF-8 续字节
-            };
-            auto displayWidth = [&](const std::string& s) -> int {
-                int w = 0;
-                for (size_t i = 0; i < s.size(); ++i)
-                    w += charWidth(static_cast<unsigned char>(s[i]));
-                return w;
-            };
-            // 按显示列宽截取子串（不截断 UTF-8 多字节字符）
-            auto substrByWidth = [&](const std::string& s, int maxW) -> std::string {
-                int w = 0;
-                for (size_t i = 0; i < s.size(); ) {
-                    int cw = charWidth(static_cast<unsigned char>(s[i]));
-                    if (cw == 0) { ++i; continue; }          // UTF-8 续字节，不单独算
-                    if (w + cw > maxW) return s.substr(0, i);
-                    w += cw;
-                    // 跳过 UTF-8 续字节
-                    if (cw == 2) { ++i; while (i < s.size()
-                        && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
-                    else { ++i; }
-                }
-                return s;
+            // 显示宽度工具统一走 CLFSelectionModel（渲染硬换行 / 选区换算 / 高亮拆分共用）
+            using Sel = CLFSelectionModel;
+
+            // ---- 行映射表 + 行文本 + 行样式（选区坐标与提取的依据，每帧重建） ----
+            // 行样式码：0=无 1=绿(Add) 2=红(Remove) 3=dim
+            m_lastRowMap.clear();
+            m_lastRowTexts.clear();
+            m_lastRowStyles.clear();
+            auto addRow = [&](std::string text, RowKind kind, size_t lineIdx,
+                              size_t partIdx, int style) {
+                m_lastRowMap.push_back(RowInfo{kind, lineIdx, partIdx});
+                m_lastRowTexts.push_back(std::move(text));
+                m_lastRowStyles.push_back(style);
             };
 
-            ftxui::Elements allLines;
             const bool hasStyles = (snap.lineStyles.size() == snap.lines.size());
 
             for (size_t i = 0; i < snap.lines.size(); ++i) {
-                auto& l = snap.lines[i];
-                ftxui::Element el;
-                int lineW = displayWidth(l);
+                const auto& l = snap.lines[i];
+                int style = 0;
+                if (hasStyles && i < snap.lineStyles.size()) {
+                    auto s = static_cast<CLF::CLFTypes::ICLFOutput::LineStyle>(
+                        snap.lineStyles[i]);
+                    style = (s == CLF::CLFTypes::ICLFOutput::LineStyle::Add) ? 1
+                          : (s == CLF::CLFTypes::ICLFOutput::LineStyle::Remove) ? 2
+                          : (s == CLF::CLFTypes::ICLFOutput::LineStyle::Context) ? 3 : 0;
+                }
+                int lineW = Sel::displayWidth(l);
                 if (wrapW > 0 && lineW > wrapW) {
-                    // CJK 感知换行：按显示列宽拆分，不截断多字节字符
-                    ftxui::Elements parts;
+                    // CJK 感知硬换行：每个 part 是独立的渲染行（选区行映射的基本单元）
                     std::string remaining = l;
+                    size_t partIdx = 0;
                     while (!remaining.empty()) {
-                        std::string part = substrByWidth(remaining, wrapW);
+                        std::string part = Sel::substrByWidth(remaining, wrapW);
                         if (part.empty()) part = remaining.substr(0, 1); // fallback
-                        parts.push_back(ftxui::text(part));
+                        addRow(part, RowKind::Content, i, partIdx++, style);
                         remaining = remaining.substr(part.size());
                     }
-                    el = ftxui::vbox(std::move(parts));
                 } else {
-                    el = ftxui::text(l);
+                    addRow(l, RowKind::Content, i, 0, style);
                 }
-                if (hasStyles && i < snap.lineStyles.size()) {
-                    auto s = static_cast<CLF::CLFTypes::ICLFOutput::LineStyle>(snap.lineStyles[i]);
-                    if (s == CLF::CLFTypes::ICLFOutput::LineStyle::Add)
-                        el = el | ftxui::color(ftxui::Color::Green);
-                    else if (s == CLF::CLFTypes::ICLFOutput::LineStyle::Remove)
-                        el = el | ftxui::color(ftxui::Color::Red);
-                    else if (s == CLF::CLFTypes::ICLFOutput::LineStyle::Context)
-                        el = ftxui::dim(el);
-                }
-                allLines.push_back(el);
             }
             if (!snap.pendingLine.empty()) {
-                auto& pl = snap.pendingLine;
+                const auto& pl = snap.pendingLine;
                 if (wrapW > 0) {
+                    size_t partIdx = 0;
                     for (size_t pos = 0; pos < pl.size(); pos += wrapW)
-                        allLines.push_back(ftxui::text(pl.substr(pos, wrapW)));
+                        addRow(pl.substr(pos, wrapW), RowKind::Pending, 0, partIdx++, 0);
                 } else {
-                    allLines.push_back(ftxui::text(pl));
+                    addRow(pl, RowKind::Pending, 0, 0, 0);
                 }
             }
 
@@ -221,39 +211,64 @@ int CLFRepl::run() {
                     fold += " · " + truncateUtf8(src, 80);
                 }
                 fold += " (ctrl+t 展开)";
-                allLines.push_back(ftxui::dim(ftxui::text(fold)));
+                addRow(fold, RowKind::ThinkingFold, 0, 0, 3);
                 if (!snap.thinkingActive && m_showThinking && !snap.thinkingLines.empty()) {
-                    for (auto& tl : snap.thinkingLines)
-                        allLines.push_back(ftxui::dim(ftxui::text("  " + tl)));
+                    for (size_t i = 0; i < snap.thinkingLines.size(); ++i)
+                        addRow("  " + snap.thinkingLines[i], RowKind::ThinkingLine, i, 0, 3);
                 }
             }
 
             // ---- P2-1: 恢复回显折叠块（滚动区末尾） ----
             size_t foldLineIdx = 0;
             if (!snap.foldedSummary.empty()) {
-                foldLineIdx = allLines.size();
+                foldLineIdx = m_lastRowMap.size();
                 std::string marker = snap.foldedExpanded ? "▾" : "▸";
-                allLines.push_back(ftxui::dim(ftxui::text(
-                    "  " + marker + " " + snap.foldedSummary)));
+                addRow("  " + marker + " " + snap.foldedSummary,
+                       RowKind::FoldSummary, 0, 0, 3);
                 if (snap.foldedExpanded) {
-                    for (const auto& fl : snap.foldedLines) {
+                    for (size_t i = 0; i < snap.foldedLines.size(); ++i) {
                         // 与主内容一致的 CJK 感知硬换行
-                        std::string remaining = "  " + fl;
-                        int lw = displayWidth(remaining);
+                        std::string remaining = "  " + snap.foldedLines[i];
+                        int lw = Sel::displayWidth(remaining);
                         if (wrapW > 0 && lw > wrapW) {
-                            ftxui::Elements parts;
+                            size_t partIdx = 0;
                             while (!remaining.empty()) {
-                                std::string part = substrByWidth(remaining, wrapW);
+                                std::string part = Sel::substrByWidth(remaining, wrapW);
                                 if (part.empty()) part = remaining.substr(0, 1);
-                                parts.push_back(ftxui::dim(ftxui::text(part)));
+                                addRow(part, RowKind::FoldLine, i, partIdx++, 3);
                                 remaining = remaining.substr(part.size());
                             }
-                            allLines.push_back(ftxui::vbox(std::move(parts)));
                         } else {
-                            allLines.push_back(ftxui::dim(ftxui::text(remaining)));
+                            addRow(remaining, RowKind::FoldLine, i, 0, 3);
                         }
                     }
                 }
+            }
+
+            // ---- 元素构建（含选区高亮：切片前按全局行号应用，切片保留元素） ----
+            ftxui::Elements allLines;
+            allLines.reserve(m_lastRowTexts.size());
+            auto decorate = [](int style, ftxui::Element el) -> ftxui::Element {
+                if (style == 1) return el | ftxui::color(ftxui::Color::Green);
+                if (style == 2) return el | ftxui::color(ftxui::Color::Red);
+                if (style == 3) return ftxui::dim(el);
+                return el;
+            };
+            for (size_t i = 0; i < m_lastRowTexts.size(); ++i) {
+                const std::string& rowText = m_lastRowTexts[i];
+                auto sel = m_selection.rowSelection(static_cast<int>(i), rowText.size());
+                if (!sel) {
+                    allLines.push_back(decorate(m_lastRowStyles[i], ftxui::text(rowText)));
+                    continue;
+                }
+                // 三段拆分：选中段加 bgcolor，行级样式（diff 色/dim）整行保留
+                size_t a = sel->first, b = sel->second;
+                ftxui::Elements segs;
+                if (a > 0) segs.push_back(ftxui::text(rowText.substr(0, a)));
+                segs.push_back(ftxui::text(rowText.substr(a, b - a))
+                               | ftxui::bgcolor(ftxui::Color::Grey30));
+                if (b < rowText.size()) segs.push_back(ftxui::text(rowText.substr(b)));
+                allLines.push_back(decorate(m_lastRowStyles[i], ftxui::hbox(std::move(segs))));
             }
 
             scrollView.update(static_cast<int>(allLines.size()),
@@ -367,6 +382,19 @@ int CLFRepl::run() {
             });
         });
 
+        // ---- 鼠标坐标 → (全局渲染行, 行内字节偏移) ----
+        // x/y 为 SGR 1 基坐标；提示行点击 clamp 到最近内容行
+        auto hitTest = [&](int x, int y) -> std::optional<std::pair<int, int>> {
+            if (m_lastRowMap.empty()) return std::nullopt;
+            auto [vs, ve] = scrollView.visibleRange();
+            if (ve <= vs) return std::nullopt;
+            int gRow = vs + (y - 1) - scrollView.topHintCount();
+            gRow = std::max(vs, std::min(gRow, ve - 1));
+            if (gRow >= static_cast<int>(m_lastRowTexts.size())) return std::nullopt;
+            size_t byteOff = CLFSelectionModel::colToByte(m_lastRowTexts[gRow], x - 1);
+            return std::make_pair(gRow, static_cast<int>(byteOff));
+        };
+
         // ---- CatchEvent: 快捷键处理 ----
         auto handler = ftxui::CatchEvent(ui, [&](ftxui::Event e) {
 
@@ -434,6 +462,86 @@ int CLFRepl::run() {
                     return true;
                 }
                 return true;  // 屏蔽其他所有按键
+            }
+
+            // === 1.4 选区态事件接管（置于合并器路由之前：Enter=复制优先于 Return 路由） ===
+            if (m_selection.active()) {
+                if (e == ftxui::Event::Escape) { m_selection.clear(); return true; }
+                if (e == ftxui::Event::CtrlS)  { m_selection.clear(); return true; }
+                if (e == ftxui::Event::Return || e == ftxui::Event::CtrlC) {
+                    // 提取 → 写剪贴板 → 退出（选区态 Ctrl+C = 复制，不触发中断）
+                    auto r = m_selection.range();
+                    if (r.fromRow >= 0)
+                        CLFClipboard::write(CLFSelectionModel::extract(
+                            r, m_lastRowMap, m_lastRowTexts));
+                    m_selection.clear();
+                    return true;
+                }
+                if (e == ftxui::Event::ArrowUp || e == ftxui::Event::ArrowDown
+                    || e == ftxui::Event::ArrowLeft || e == ftxui::Event::ArrowRight) {
+                    auto d = e == ftxui::Event::ArrowUp   ? CLFSelectionModel::Dir::Up
+                           : e == ftxui::Event::ArrowDown ? CLFSelectionModel::Dir::Down
+                           : e == ftxui::Event::ArrowLeft ? CLFSelectionModel::Dir::Left
+                                                          : CLFSelectionModel::Dir::Right;
+                    m_selection.moveCursor(d, m_lastRowMap, m_lastRowTexts);
+                    return true;
+                }
+                if (e == ftxui::Event::Home || e == ftxui::Event::End) {
+                    m_selection.moveCursor(e == ftxui::Event::Home
+                                               ? CLFSelectionModel::Dir::Home
+                                               : CLFSelectionModel::Dir::End,
+                                           m_lastRowMap, m_lastRowTexts);
+                    return true;
+                }
+                if (e == ftxui::Event::PageUp || e == ftxui::Event::PageDown) {
+                    auto [vs, ve] = scrollView.visibleRange();
+                    if (ve > vs && ve <= static_cast<int>(m_lastRowTexts.size())) {
+                        if (e == ftxui::Event::PageUp) m_selection.extendTo(vs, 0);
+                        else m_selection.extendTo(ve - 1,
+                            static_cast<int>(m_lastRowTexts[ve - 1].size()));
+                    }
+                    return true;
+                }
+                if (e.is_mouse()) {
+                    auto& m = e.mouse();
+                    if (m.button == ftxui::Mouse::WheelUp
+                        || m.button == ftxui::Mouse::WheelDown)
+                        return false;  // 滚轮放行到 :542 滚动处理
+                    if (m.button == ftxui::Mouse::Left) {
+                        if (m.motion == ftxui::Mouse::Released) {
+                            // 单击（无移动，anchor==cursor）→ 取消选区
+                            if (m_selection.empty()) m_selection.clear();
+                            return true;
+                        }
+                        // Pressed / Moved → 扩展选区
+                        if (auto hit = hitTest(m.x, m.y))
+                            m_selection.extendTo(hit->first, hit->second);
+                        return true;
+                    }
+                }
+                return true;  // 选区态其他事件消费
+            }
+
+            // === 1.45 选区进入（鼠标左键按下 / Ctrl+S 键盘选区） ===
+            if (e.is_mouse()) {
+                auto& m = e.mouse();
+                if (m.button == ftxui::Mouse::Left && m.motion == ftxui::Mouse::Pressed) {
+                    // 内容区按下 → 进入选区；非内容区（输入框等）放行给 Input
+                    if (auto hit = hitTest(m.x, m.y)) {
+                        m_selection.startAt(hit->first, hit->second);
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            if (e == ftxui::Event::CtrlS) {
+                auto [vs, ve] = scrollView.visibleRange();
+                if (ve > vs && ve <= static_cast<int>(m_lastRowTexts.size())) {
+                    m_selection.startAt(vs, 0);
+                    m_selection.extendTo(ve - 1,
+                        static_cast<int>(m_lastRowTexts[ve - 1].size()));
+                }
+                return true;
             }
 
             // === 1.5 粘贴合并器事件路由（Return/字符/其他三类） ===

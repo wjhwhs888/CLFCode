@@ -19,16 +19,18 @@ void CLFScrollView::update(int totalLines, int termHeight, int reservedLines) {
     m_maxOff = std::max(0, totalLines - m_viewH);
     if (m_scrollOffset < 0)      m_scrollOffset = 0;
     if (m_scrollOffset > m_maxOff) m_scrollOffset = m_maxOff;
+
+    // 可见内容渲染行区间（不含提示行——visibleRange() 口径）
+    m_startLine = std::max(0, totalLines - m_viewH - m_scrollOffset);
+    m_endLine   = std::min(totalLines, m_startLine + m_viewH);
 }
 
 ftxui::Elements CLFScrollView::renderWindow(const ftxui::Elements& allLines) {
     const int totalLines = static_cast<int>(allLines.size());
 
-    // 截取可见行
-    const int startLine = totalLines - m_viewH - m_scrollOffset;
+    // 截取可见行（区间由 update() 计算存储）
     ftxui::Elements visible;
-    for (int i = std::max(0, startLine);
-         i < totalLines && (int)visible.size() < m_viewH; ++i) {
+    for (int i = m_startLine; i < m_endLine && i < totalLines; ++i) {
         visible.push_back(allLines[i]);
     }
 

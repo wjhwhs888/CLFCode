@@ -14,6 +14,9 @@
 #include <thread>
 #include <vector>
 
+#include "CLFUI/CLFSelectionModel.hpp"
+#include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
+
 namespace CLF::CLFCore { class CLFAgentLoop; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
@@ -60,6 +63,12 @@ private:
     bool        m_foldJustToggled = false;
     // P2-3: 时间戳跨日判定（"YYYY-MM-DD"）
     std::string m_lastTsDate;
+    // 选区（复制粘贴功能修改 M2）：快照/行映射/行文本每帧重建，主线程独占
+    CLFSelectionModel m_selection;
+    CLFTerminal::ContentSnapshot m_lastSnapshot;
+    std::vector<RowInfo>     m_lastRowMap;
+    std::vector<std::string> m_lastRowTexts;
+    std::vector<int>         m_lastRowStyles;  // 0=无 1=绿 2=红 3=dim
 };
 
 } // namespace CLF::CLFUI

@@ -23,6 +23,11 @@ public:
     // lineIndex 为 allLines 下标；须在 update() 之后调用
     void keepLineVisible(int lineIndex);
 
+    // 选区坐标映射：可见内容渲染行区间 [start, end)（不含滚动提示行）；
+    // 提示行偏移由 topHintCount() 单独提供——两个口径分开，须在 update() 之后调用
+    std::pair<int, int> visibleRange() const { return {m_startLine, m_endLine}; }
+    int topHintCount() const { return m_scrollOffset > 0 ? 1 : 0; }
+
     // 重置（/clear 时调用）
     void reset();
 
@@ -32,6 +37,8 @@ private:
     int  m_lastTotalLines = 0;
     int  m_viewH          = 0;
     int  m_maxOff         = 0;
+    int  m_startLine      = 0;   // 可见内容渲染行区间（update() 计算，renderWindow 消费）
+    int  m_endLine        = 0;
 };
 
 } // namespace CLF::CLFUI
