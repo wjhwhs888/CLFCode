@@ -37,7 +37,9 @@ public:
     static int  charWidth(unsigned char c);
     static int  displayWidth(const std::string& s);
     static std::string substrByWidth(const std::string& s, int maxW);
-    static size_t colToByte(const std::string& s, int col);       // 显示列 → 字节偏移（不截断 UTF-8）
+    static size_t colToByte(const std::string& s, int col);       // 显示列 → 字符起始字节偏移（不截断 UTF-8）
+    static size_t colToByteEnd(const std::string& s, int col);    // 鼠标落在字符格内 → 该字符之后的偏移
+                                                                  // （选区游标含入语义：拖到字符上即包含该字符）
     static size_t snapBack(const std::string& s, size_t byteOff); // 回退到 UTF-8 字符边界
 
     // ---- 选区状态 ----

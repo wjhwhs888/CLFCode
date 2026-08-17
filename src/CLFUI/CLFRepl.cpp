@@ -414,26 +414,33 @@ int CLFRepl::run() {
             });
         });
 
-        // ---- 鼠标坐标 → (全局渲染行, 行内字节偏移) ----
+        // ---- 鼠标坐标 → (全局渲染行, 字符起始字节, 字符结尾字节) ----
         // x/y 直接使用原始值（0 基）：FTXUI 自身 Input 点击定位即按 0 基 Box 对比
         // （input.cpp HandleMouse → box_.Contain(raw x, raw y)），实测本环境
         // （WT/ConPTY）投递 0 基——按 SGR 规范做 -1 反而整体偏上一行（验收实证）
-        // 提示行点击 clamp 到最近内容行
-        auto hitTest = [&](int x, int y) -> std::optional<std::pair<int, int>> {
+        // 顶提示行 clamp 到首行；内容区以下（输入框等）返回 nullopt 放行给 Input
+        // （验收实证：旧版把下方点击 clamp 到末行，输入框点击被误判为选区）
+        auto hitTest = [&](int x, int y)
+            -> std::optional<std::tuple<int, int, int>> {
             if (m_lastRowMap.empty()) return std::nullopt;
             auto [vs, ve] = scrollView.visibleRange();
             if (ve <= vs) return std::nullopt;
             int gRow = vs + y - scrollView.topHintCount();
-            gRow = std::max(vs, std::min(gRow, ve - 1));
-            if (gRow >= static_cast<int>(m_lastRowTexts.size())) return std::nullopt;
-            size_t byteOff = CLFSelectionModel::colToByte(m_lastRowTexts[gRow], x);
+            if (gRow < vs) gRow = vs;  // 顶提示行 → 首行
+            if (gRow >= ve || gRow >= static_cast<int>(m_lastRowTexts.size()))
+                return std::nullopt;   // 内容区以下 → 放行
+            const std::string& rowText = m_lastRowTexts[gRow];
+            size_t bStart = CLFSelectionModel::colToByte(rowText, x);
+            size_t bEnd   = CLFSelectionModel::colToByteEnd(rowText, x);
             if (kDbgEvents)
                 dbgEvt("  hit vs=" + std::to_string(vs) + " ve=" + std::to_string(ve)
                        + " hints=" + std::to_string(scrollView.topHintCount())
                        + " -> row=" + std::to_string(gRow)
-                       + " byte=" + std::to_string(byteOff)
-                       + " text='" + escDbg(m_lastRowTexts[gRow]) + "'");
-            return std::make_pair(gRow, static_cast<int>(byteOff));
+                       + " b0=" + std::to_string(bStart)
+                       + " b1=" + std::to_string(bEnd)
+                       + " text='" + escDbg(rowText) + "'");
+            return std::make_tuple(gRow, static_cast<int>(bStart),
+                                   static_cast<int>(bEnd));
         };
 
         // ---- CatchEvent: 快捷键处理 ----
@@ -535,9 +542,13 @@ int CLFRepl::run() {
                         return false;  // 滚轮放行到滚动处理
                     if (m.button == ftxui::Mouse::Left) {
                         if (m.motion == ftxui::Mouse::Released) {
-                            // 松手：非空选区 → 复制 + 清除；单击（空选区）→ 仅清除
-                            auto r = m_selection.range();
-                            if (r.fromRow >= 0) {
+                            // 松手：先含入最终位置（松手点可能没有对应 Moved 事件），
+                            // 非空选区 → 复制 + 清除；单击/拖回起点（空选区）→ 仅清除
+                            if (auto hit = hitTest(m.x, m.y))
+                                m_selection.extendTo(std::get<0>(*hit),
+                                                     std::get<2>(*hit));
+                            if (!m_selection.empty()) {
+                                auto r = m_selection.range();
                                 std::string out = CLFSelectionModel::extract(
                                     r, m_lastRowMap, m_lastRowTexts);
                                 if (!out.empty()) CLFClipboard::write(out);
@@ -549,9 +560,10 @@ int CLFRepl::run() {
                             m_selection.clear();
                             return true;
                         }
-                        // Pressed / Moved → 扩展选区
+                        // Pressed / Moved → 扩展选区（游标含入鼠标所在字符）
                         if (auto hit = hitTest(m.x, m.y))
-                            m_selection.extendTo(hit->first, hit->second);
+                            m_selection.extendTo(std::get<0>(*hit),
+                                                 std::get<2>(*hit));
                         return true;
                     }
                 }
@@ -562,9 +574,9 @@ int CLFRepl::run() {
             if (e.is_mouse()) {
                 auto& m = e.mouse();
                 if (m.button == ftxui::Mouse::Left && m.motion == ftxui::Mouse::Pressed) {
-                    // 内容区按下 → 进入选区；非内容区（输入框等）放行给 Input
+                    // 内容区按下 → 进入选区（锚点=字符起始）；非内容区（输入框等）放行给 Input
                     if (auto hit = hitTest(m.x, m.y)) {
-                        m_selection.startAt(hit->first, hit->second);
+                        m_selection.startAt(std::get<0>(*hit), std::get<1>(*hit));
                         return true;
                     }
                     return false;

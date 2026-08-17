@@ -53,6 +53,28 @@ size_t CLFSelectionModel::colToByte(const std::string& s, int col) {
     return i;
 }
 
+size_t CLFSelectionModel::colToByteEnd(const std::string& s, int col) {
+    if (col < 0) return 0;
+    int w = 0;
+    size_t i = 0;
+    while (i < s.size()) {
+        int cw = charWidth(static_cast<unsigned char>(s[i]));
+        if (cw == 0) { ++i; continue; }
+        if (col < w + cw) {
+            // 鼠标落在本字符格内 → 含入该字符
+            if (cw == 2) { ++i; while (i < s.size()
+                && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
+            else { ++i; }
+            return i;
+        }
+        w += cw;
+        if (cw == 2) { ++i; while (i < s.size()
+            && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
+        else { ++i; }
+    }
+    return s.size();
+}
+
 size_t CLFSelectionModel::snapBack(const std::string& s, size_t byteOff) {
     while (byteOff > 0 && byteOff <= s.size()
            && (static_cast<unsigned char>(s[byteOff]) & 0xC0) == 0x80)

@@ -72,6 +72,13 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         expect(Sel::colToByte(s, 99) == 8); // 超列 clamp 行尾
         // part 边界：substrByWidth 不劈半多字节
         expect(Sel::substrByWidth("你你你", 4) == "你你");
+        // colToByteEnd：鼠标落在字符格内 → 含入该字符（拖选末字符不丢失，验收实证）
+        expect(Sel::colToByteEnd("abc", 0) == 1);    // 落在 'a' 上 → 含入
+        expect(Sel::colToByteEnd("abc", 2) == 3);    // 落在 'c' 上 → 含入
+        expect(Sel::colToByteEnd("abc", 99) == 3);   // 超出行尾 → 行尾
+        expect(Sel::colToByteEnd("a你好b", 2) == 4); // col 2 是 '你' 末列 → 含入 '你'
+        expect(Sel::colToByteEnd("a你好b", 3) == 7); // col 3 是 '好' 首列 → 含入 '好'
+        expect(Sel::colToByteEnd("a你好b", 6) == 8); // 总宽 6 → 行尾
     };
 
     // ========== S2: 反向选区归一化 ==========
