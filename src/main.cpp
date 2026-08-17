@@ -121,6 +121,7 @@ int main(int argc, char* argv[]) {
             prompt = oss.str();
         }
         // 非交互模式关流式（流式路径内容走 m_output，无 output 会丢失返回值）
+        // 非交互模式关流式（流式路径内容走 m_output，无 output 会丢失返回值）
         config.m_stream = false;
     }
 

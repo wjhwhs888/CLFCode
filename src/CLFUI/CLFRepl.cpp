@@ -385,7 +385,7 @@ int CLFRepl::run() {
                   | ftxui::bold,
                 sep(),
                 ftxui::text(" 📁 " + std::filesystem::path(
-                    CLFConfigLoader::getWorkingDir()).filename().string())
+                    CLFConfigLoader::getWorkingDir()).filename().u8string())
                   | ftxui::color(ftxui::Color::GreenLight),
                 sep(),
                 ftxui::text(" 🔒 " + m_dispatcher->modeName())
@@ -810,8 +810,12 @@ int CLFRepl::run() {
         if (m_escTimer.joinable()) m_escTimer.join();
         if (terminal) terminal->setScreen(nullptr);
 
+    } catch (const std::exception& e) {
+        std::cerr << "[Fatal] Unexpected error: " << e.what()
+                  << " — CLFCode terminated." << std::endl;
+        return 1;
     } catch (...) {
-        std::cerr << "[Fatal] Unexpected error — CLFCode terminated." << std::endl;
+        std::cerr << "[Fatal] Unknown exception — CLFCode terminated." << std::endl;
         return 1;
     }
     return 0;
