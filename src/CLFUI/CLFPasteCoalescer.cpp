@@ -2,6 +2,7 @@
 // 状态机与线程模型详见设计文档 §2.1/§2.2
 
 #include "CLFUI/CLFPasteCoalescer.hpp"
+#include "CLFCore/CLFLogger.hpp"
 
 namespace CLF::CLFUI {
 
@@ -23,7 +24,17 @@ CLFPasteCoalescer::CLFPasteCoalescer(std::function<void()> wakeCb, int quietWind
                 m_pendingConfirmed.store(true);
                 auto cb = m_wakeCb;
                 lock.unlock();
-                if (cb) cb();
+                // B3: 兜底防 std::terminate；catch 后必须重新加锁（异常路径也走 lock.lock()），
+                //     否则析构时 notify_one 在未持锁状态下调用 = UB/死锁
+                try {
+                    if (cb) cb();
+                } catch (const std::exception& e) {
+                    CLF::CLFCore::CLFLogger::instance().error(
+                        std::string("[PasteTimer] wakeCb exception: ") + e.what());
+                } catch (...) {
+                    CLF::CLFCore::CLFLogger::instance().error(
+                        "[PasteTimer] wakeCb unknown exception");
+                }
                 lock.lock();
             } else {
                 // 无待提交：无限睡，新 PENDING 进入时 notify 唤醒

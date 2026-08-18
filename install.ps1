@@ -77,14 +77,20 @@ Write-Host "  下载完成 ($([math]::Round((Get-Item $zipPath).Length / 1MB, 1)
 
 # ── 3. 解压到安装目录 ──
 Write-Host "  正在安装..." -ForegroundColor Gray
+$backupRoot = $null
 if (Test-Path $INSTALL_DIR) {
-    # 保留用户配置
-    $backupConfig = $null
-    $configDir = "$INSTALL_DIR\config"
-    if (Test-Path $configDir) {
-        $backupConfig = "$env:TEMP\CLFCode_config_backup"
-        Copy-Item -Path $configDir -Destination $backupConfig -Recurse -Force
+    # 保留用户数据：配置 / 会话历史 / 日志 / 崩溃转储（覆盖安装不丢数据）
+    # GUID 唯一目录名：避免旧固定目录残留导致下次备份嵌套错乱
+    $backupRoot = "$env:TEMP\CLFCode_backup_$([guid]::NewGuid().ToString('N'))"
+    foreach ($rel in @("config", "doc\contextHistory", "doc\log", "doc\debug")) {
+        $srcPath = Join-Path $INSTALL_DIR $rel
+        if (Test-Path $srcPath) {
+            $dstPath = Join-Path $backupRoot $rel
+            New-Item -ItemType Directory -Path (Split-Path $dstPath) -Force | Out-Null
+            Copy-Item -Path $srcPath -Destination $dstPath -Recurse -Force
+        }
     }
+    Write-Host "  用户数据已备份（配置/会话历史/日志）" -ForegroundColor Gray
     Remove-Item -Path $INSTALL_DIR -Recurse -Force
 }
 
@@ -104,11 +110,19 @@ if ($innerDir) {
 if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
 Write-Host "  解压完成" -ForegroundColor Green
 
-# 恢复用户配置
-if ($backupConfig -and (Test-Path $backupConfig)) {
-    Copy-Item -Path $backupConfig\* -Destination "$INSTALL_DIR\config\" -Recurse -Force
-    Remove-Item -Path $backupConfig -Recurse -Force
-    Write-Host "  已保留用户配置" -ForegroundColor Green
+# 恢复用户数据（配置 / 会话历史 / 日志 / 崩溃转储）
+if ($backupRoot -and (Test-Path $backupRoot)) {
+    foreach ($rel in @("config", "doc\contextHistory", "doc\log", "doc\debug")) {
+        $srcPath = Join-Path $backupRoot $rel
+        if (Test-Path $srcPath) {
+            $dstPath = Join-Path $INSTALL_DIR $rel
+            New-Item -ItemType Directory -Path $dstPath -Force | Out-Null
+            # 管道形式：空目录时无条目，不会触发通配符无匹配报错
+            Get-ChildItem -Path $srcPath -Force | Copy-Item -Destination $dstPath -Recurse -Force
+        }
+    }
+    Remove-Item -Path $backupRoot -Recurse -Force
+    Write-Host "  已恢复用户数据（配置/会话历史/日志）" -ForegroundColor Green
 }
 
 # ── 4. 添加到 PATH ──

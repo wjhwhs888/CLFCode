@@ -43,13 +43,19 @@ if ($currentVersion -eq $latestVersion) {
 
 Write-Host "  当前版本: $currentVersion  →  最新版本: $latestVersion" -ForegroundColor Yellow
 
-# ── 备份用户配置 ──
-$backupConfig = "$env:TEMP\CLFCode_config_backup"
-$configDir = "$INSTALL_DIR\config"
-if (Test-Path $configDir) {
-    Copy-Item -Path $configDir -Destination $backupConfig -Recurse -Force
-    Write-Host "  配置已备份" -ForegroundColor Gray
+# ── 备份用户数据 ──
+# 保留：配置 / 会话历史 / 日志 / 崩溃转储（升级不丢数据）
+# GUID 唯一目录名：避免旧固定目录残留导致下次备份嵌套错乱
+$backupRoot = "$env:TEMP\CLFCode_backup_$([guid]::NewGuid().ToString('N'))"
+foreach ($rel in @("config", "doc\contextHistory", "doc\log", "doc\debug")) {
+    $srcPath = Join-Path $INSTALL_DIR $rel
+    if (Test-Path $srcPath) {
+        $dstPath = Join-Path $backupRoot $rel
+        New-Item -ItemType Directory -Path (Split-Path $dstPath) -Force | Out-Null
+        Copy-Item -Path $srcPath -Destination $dstPath -Recurse -Force
+    }
 }
+Write-Host "  用户数据已备份（配置/会话历史/日志）" -ForegroundColor Gray
 
 # ── 下载新版本 ──
 $zipUrl = "https://gitee.com/$REPO_OWNER/$REPO_NAME/releases/download/$latestVersion/CLFCode-$latestVersion-win64.zip"
@@ -91,12 +97,19 @@ if ($innerDir) {
 }
 if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
 
-# 恢复配置
-if ($backupConfig -and (Test-Path $backupConfig)) {
-    New-Item -ItemType Directory -Path "$INSTALL_DIR\config" -Force | Out-Null
-    Copy-Item -Path $backupConfig\* -Destination "$INSTALL_DIR\config\" -Recurse -Force
-    Remove-Item -Path $backupConfig -Recurse -Force
-    Write-Host "  配置已恢复" -ForegroundColor Green
+# 恢复用户数据（配置 / 会话历史 / 日志 / 崩溃转储）
+if ($backupRoot -and (Test-Path $backupRoot)) {
+    foreach ($rel in @("config", "doc\contextHistory", "doc\log", "doc\debug")) {
+        $srcPath = Join-Path $backupRoot $rel
+        if (Test-Path $srcPath) {
+            $dstPath = Join-Path $INSTALL_DIR $rel
+            New-Item -ItemType Directory -Path $dstPath -Force | Out-Null
+            # 管道形式：空目录时无条目，不会触发通配符无匹配报错
+            Get-ChildItem -Path $srcPath -Force | Copy-Item -Destination $dstPath -Recurse -Force
+        }
+    }
+    Remove-Item -Path $backupRoot -Recurse -Force
+    Write-Host "  用户数据已恢复（配置/会话历史/日志）" -ForegroundColor Green
 }
 
 # 确保 PATH

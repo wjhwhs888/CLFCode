@@ -20,7 +20,17 @@ CLFThinkingIndicator::CLFThinkingIndicator(ICLFHttpClient* http, CLF::CLFTypes::
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        if (m_output) m_output->setStatus("");
+        if (m_output) {
+            // B2: 兜底防 std::terminate。clf_network 不依赖 clf_core，不能用
+            //     CLFLogger，退而用 stderr 记录（本路径极罕见，纯防御）。
+            try {
+                m_output->setStatus("");
+            } catch (const std::exception& e) {
+                std::cerr << "[ThinkingIndicator] exception: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[ThinkingIndicator] unknown exception" << std::endl;
+            }
+        }
     });
 }
 

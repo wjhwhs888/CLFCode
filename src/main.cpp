@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -56,6 +57,21 @@ int main(int argc, char* argv[]) {
     SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
 #endif
+
+    // C: 全局 terminate 兜底——任何线程的未处理异常在触发 std::terminate 前留痕。
+    //     默认行为（abort，退出码 3）保持不变，但日志可定位；handler 保持极简
+    //     （运行在异常线程上）。先写 stderr（无锁、立即可见），再写日志文件
+    //     （CLFLogger 每行 flush，abort 前已落盘；若日志互斥锁被异常线程持有导致
+    //     死锁，cerr 已先行输出，进程仍按 abort 语义退出）。
+    std::set_terminate([]() {
+        std::cerr << "[Terminate] unhandled exception in thread — process aborting"
+                  << std::endl;
+        try {
+            CLF::CLFCore::CLFLogger::instance().error(
+                "[Terminate] unhandled exception in thread — process aborting");
+        } catch (...) {}
+        std::abort();
+    });
 
     // 0. 解析 CLI 参数
     CLF::CLFCore::CLFLaunchArgs args;

@@ -107,7 +107,7 @@ struct App::Internal {
   std::atomic<bool> quit_{false};
   bool installed_ = false;
   bool animation_requested_ = false;
-  animation::TimePoint previous_animation_time_;
+  std::atomic<animation::TimePoint> previous_animation_time_;
 
   int cursor_x_ = 1;
   int cursor_y_ = 1;
@@ -768,7 +768,7 @@ void App::Internal::PreMain() {
   g_active_screen = public_;
   g_active_screen->internal_->Install();
 
-  previous_animation_time_ = animation::Clock::now();
+  previous_animation_time_.store(animation::Clock::now());
 }
 
 void App::Internal::PostMain() {
@@ -935,8 +935,8 @@ void App::Internal::HandleTask(Component component, Task& task) {
 
       animation_requested_ = false;
       const animation::TimePoint now = animation::Clock::now();
-      const animation::Duration delta = now - previous_animation_time_;
-      previous_animation_time_ = now;
+      const animation::Duration delta = now - previous_animation_time_.load();
+      previous_animation_time_.store(now);
 
       animation::Params params(delta);
       component->OnAnimation(params);
@@ -1555,8 +1555,8 @@ void App::RequestAnimationFrame() {
   internal_->animation_requested_ = true;
   auto now = animation::Clock::now();
   const auto time_histeresis = std::chrono::milliseconds(33);
-  if (now - internal_->previous_animation_time_ >= time_histeresis) {
-    internal_->previous_animation_time_ = now;
+  if (now - internal_->previous_animation_time_.load() >= time_histeresis) {
+    internal_->previous_animation_time_.store(now);
   }
 }
 

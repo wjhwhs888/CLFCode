@@ -81,17 +81,26 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     auto turnStart = std::chrono::steady_clock::now();
     std::atomic<bool> turnTimerOn{true};
     std::thread turnTimer([&]() {
-        while (turnTimerOn.load(std::memory_order_relaxed)) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            if (!turnTimerOn.load(std::memory_order_relaxed)) break;
-            if (!m_output) continue;
-            auto s = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - turnStart).count();
-            // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）
-            if (s >= 15)
-                m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
-            // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
-            m_output->requestRefresh();
+        // B1: 线程体包 try/catch——event 队列曾被无锁并发破坏导致 push_back 抛异常，
+        //     无兜底会 std::terminate 静默退出（退出码 3）。A 修复后此处为纯防御。
+        try {
+            while (turnTimerOn.load(std::memory_order_relaxed)) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                if (!turnTimerOn.load(std::memory_order_relaxed)) break;
+                if (!m_output) continue;
+                auto s = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - turnStart).count();
+                // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）
+                if (s >= 15)
+                    m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
+                // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
+                m_output->requestRefresh();
+            }
+        } catch (const std::exception& e) {
+            CLFLogger::instance().error(
+                std::string("[TurnTimer] exception: ") + e.what());
+        } catch (...) {
+            CLFLogger::instance().error("[TurnTimer] unknown exception");
         }
     });
     struct TurnGuard {
