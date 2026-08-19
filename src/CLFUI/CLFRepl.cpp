@@ -44,7 +44,8 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
     : m_agent(agent)
     , m_output(output)
     , m_historyDir(historyDir)
-    , m_dispatcher(std::make_unique<CLFCommandDispatcher>(agent, historyDir, output, nullptr)) {
+    , m_dispatcher(std::make_unique<CLFCommandDispatcher>(agent, historyDir, output, nullptr))
+    , m_passerby(m_output) {
     m_agent.setConfirmCallback(
         [this](const std::string& prompt) { return confirmDialog(prompt); });
 }
@@ -899,6 +900,9 @@ void CLFRepl::submit(const std::string& input) {
         if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
         m_agent.clearContext();
     }
+
+    // 会话节奏观察：每轮 AI 对话结束后检查（时间窗 + 轮数，进程内一次）
+    m_passerby.onTurnFinished();
 
     auto st = m_agent.getLastToolStats();
     saveSession(false);  // 每轮都存 latest.json

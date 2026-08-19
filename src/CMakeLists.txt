@@ -29,6 +29,7 @@ add_library(clf_core STATIC
     CLFCore/CLFContext.cpp
     CLFCore/CLFLogger.cpp
     CLFCore/CLFMessageCodec.cpp
+    CLFCore/CLFPasserby.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRetryPolicy.cpp
     CLFCore/CLFSecurityPolicy.cpp
@@ -89,7 +90,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator
                      qa_CLFHeadTail qa_CLFSearchContent qa_CLFToolExecutor
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
-                     qa_CLFInputRender)
+                     qa_CLFInputRender qa_CLFPasserby)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -138,6 +139,10 @@ add_test(NAME qa_CLFSelectionModel COMMAND qa_CLFSelectionModel)
 add_executable(qa_CLFInputRender test/qa_CLFInputRender.cpp)
 target_link_libraries(qa_CLFInputRender PRIVATE clf_core clf_ui)
 add_test(NAME qa_CLFInputRender COMMAND qa_CLFInputRender)
+
+add_executable(qa_CLFPasserby test/qa_CLFPasserby.cpp)
+target_link_libraries(qa_CLFPasserby PRIVATE clf_core)
+add_test(NAME qa_CLFPasserby COMMAND qa_CLFPasserby)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

@@ -16,6 +16,7 @@
 
 #include "CLFUI/CLFSelectionModel.hpp"
 #include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
+#include "CLFCore/CLFPasserby.hpp" // 会话节奏观察器（值成员）
 
 namespace CLF::CLFCore { class CLFAgentLoop; }
 namespace CLF::CLFTypes { class ICLFOutput; }
@@ -43,6 +44,7 @@ private:
     CLF::CLFTypes::ICLFOutput*  m_output;
     std::string m_historyDir;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
+    CLF::CLFCore::CLFPasserby m_passerby;   // 会话节奏观察器（构造于 m_output 之后）
 
     // 快捷键状态
     bool        m_escPending = false;       // Alt+Enter 延迟检测中
