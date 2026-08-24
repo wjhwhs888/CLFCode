@@ -8,7 +8,7 @@
 ### 【A 阶段】本体自研 — 待启动（2026-08-25 定档）
 - 设计文档：`.claude/plans/设计/设计-功能修复与工具补充.md`（由《设计-功能审查与修复二》+《设计-工具检查与补充》合并而成，两份原文档已删除；合并原因：5 组重叠项落在同一段代码，分开排期会撞车）
 - 文档已经**四轮核实**（我方两轮自查 + flash 两轮复审），S1-S3 全部前置假设均有源码证据，无悬空引用
-- **S1 小修**（0.5-1 天 → v0.3.5）：edit_file 空串校验 / write_file force 文案 / 重试策略分级 / m_wasAborted 接线
+- ~~**S1 小修**~~ ✅ **已完成（v0.3.5，见下方已完成区）**
 - **S2 安全+工具**（2-3 天 → v0.4.0）：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
 - **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
@@ -24,6 +24,15 @@
 - 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于 dsh 决策）；若不走 → 自研轻量 subagent（进程内嵌套 CLFAgentLoop，2-3 天）
 
 ## 已完成
+
+### 2026-08-25 A1（=S1）小修批 ✅（v0.3.5）
+- **S1-1 edit_file 空 old_string 校验**：`CLFFileOps::editFile` 入口提前返回。原行为不是死循环而是**误导性错误**——`find("")` 每个位置都算命中，会遍历全文后报 "matches N times"（N = 文件长度+1）。校验刻意置于 `readFile` 之前，qa 用 F2 用例钉死该顺序
+- **S1-2 force 文案**：去掉 `CLFToolExecutor` 中对不存在参数的引用（两处：`m_content` 与 `emitContent`）
+- **S1-3 重试策略分级**：`CLFRetryPolicy` 新增 `extractHttpStatus`（**前缀匹配**，原 `find` 会把响应体里的 "HTTP 400" 误读为状态码）+ `maxAttemptsForError`（三档：致命=1 / 其他4xx=2 / 429·5xx·网络=3）；致命集合由 400-403 扩至含 404/405/409/413/422。`CLFAgentLoop` 流式(:224)与同步(:279)两处判定改用分类上限；**catch 异常分支(:367)保持 kMaxRetries**（无状态码可分级，刻意不改）
+- **S1-4 m_wasAborted 接线**：⚠️ 设计文档描述有误——`m_wasAborted` 是 `CLFHttpResponse` 的**响应字段**（`ICLFHttpClient.hpp:15`），非客户端成员，`abort()` 无法直接赋值。实际修法：4 个返回点均由 `m_aborted` 写入响应；并补 `postJson` 起始的标志复位（原先只有 `postJsonStream` 有，同步路径不对称）。根因链：中断→`stop()`→httplib 报连接失败→**被上层当网络故障重试**
+- 新增测试：`qa_CLFRetryPolicy`（16 用例 45 断言）+ `qa_CLFFileOps`（5 用例 12 断言），均已加入 `CLF_TEST_TARGETS` 列表（该列表统一设 `CXX_STANDARD 20`，boost::ut 必需——注册新测试时**必须同时加入此列表**，否则 C++17 下 ut.hpp 编译失败）
+- 构建：MSVC Debug 25/25 通过。**命令行构建需先导入 vcvars64**（CLion 内部自带环境，裸 bash 调用 cl.exe 会找不到 `<atomic>` 等标准库头）
+- ⚠️ **基线记录更正**：progress 原记"ctest 12/13"已过时。实测 **13/15**，失败 2 项均为既有：`qa_CLFSessionManager`（环境）+ **`qa_CLFAgentLoop`（超时 25s）**——后者已用 `git stash` 在当前 HEAD 基线上实证同样超时，与本批改动无关，另立待办排查
 
 ### 2026-08-25 设计文档核实与合并 ✅
 - 对两份新增设计文档（08-19 产出）的 **23 条代码断言逐条对照源码验证**，修正 7 处后合并为 `设计/设计-功能修复与工具补充.md`，原两份删除

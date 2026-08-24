@@ -220,14 +220,16 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] ") + response.m_error;
                     }
-                    if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
+                    // 按错误类别定重试上限：其他 4xx = 2（重试 1 次即止）/ 429·5xx·网络 = 3
+                    const int maxAttempts = CLFRetryPolicy::maxAttemptsForError(response.m_error);
+                    if (++consecutiveErrors >= maxAttempts) {
                         if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
                     if (m_output) m_output->emitContent(
                         "\n⚠ " + response.m_error + " — retry "
                         + std::to_string(consecutiveErrors) + "/"
-                        + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
+                        + std::to_string(maxAttempts) + "\n");
                     // ③ 可中断等待 (每 100ms 检查一次)
                     for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -273,14 +275,16 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] ") + response.m_error;
                     }
-                    if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
+                    // 按错误类别定重试上限：其他 4xx = 2（重试 1 次即止）/ 429·5xx·网络 = 3
+                    const int maxAttempts = CLFRetryPolicy::maxAttemptsForError(response.m_error);
+                    if (++consecutiveErrors >= maxAttempts) {
                         if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                         return std::string("[Error] Too many errors: ") + response.m_error;
                     }
                     if (m_output) m_output->emitContent(
                         "\n⚠ " + response.m_error + " — retry "
                         + std::to_string(consecutiveErrors) + "/"
-                        + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
+                        + std::to_string(maxAttempts) + "\n");
                     // ③ 可中断等待 (每 100ms 检查一次)
                     for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));

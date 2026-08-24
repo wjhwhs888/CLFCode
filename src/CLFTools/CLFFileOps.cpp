@@ -206,6 +206,15 @@ CLFFileResult editFile(const std::string& path,
                        const std::string& oldStr,
                        const std::string& newStr) {
     CLFFileResult result;
+
+    // 空 old_string 提前拒绝：find("") 恒命中位置 0 且每个位置都算匹配，
+    // 唯一性检查会遍历全文后误报 "matches N times"（N = 文件长度+1）
+    if (oldStr.empty()) {
+        result.m_error = "old_string must not be empty. "
+                         "Hint: provide the exact text to be replaced.";
+        return result;
+    }
+
     auto nativePath = toNativePath(path);
 
     // 读取原文件

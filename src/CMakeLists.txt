@@ -89,6 +89,7 @@ endif()
 set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator
                      qa_CLFHeadTail qa_CLFSearchContent qa_CLFToolExecutor
+                     qa_CLFRetryPolicy qa_CLFFileOps
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
                      qa_CLFInputRender qa_CLFPasserby)
 
@@ -127,6 +128,14 @@ add_test(NAME qa_CLFSearchContent COMMAND qa_CLFSearchContent)
 add_executable(qa_CLFToolExecutor test/qa_CLFToolExecutor.cpp)
 target_link_libraries(qa_CLFToolExecutor PRIVATE clf_core)
 add_test(NAME qa_CLFToolExecutor COMMAND qa_CLFToolExecutor)
+
+add_executable(qa_CLFRetryPolicy test/qa_CLFRetryPolicy.cpp)
+target_link_libraries(qa_CLFRetryPolicy PRIVATE clf_core)
+add_test(NAME qa_CLFRetryPolicy COMMAND qa_CLFRetryPolicy)
+
+add_executable(qa_CLFFileOps test/qa_CLFFileOps.cpp)
+target_link_libraries(qa_CLFFileOps PRIVATE clf_core)
+add_test(NAME qa_CLFFileOps COMMAND qa_CLFFileOps)
 
 add_executable(qa_CLFPasteCoalescer test/qa_CLFPasteCoalescer.cpp)
 target_link_libraries(qa_CLFPasteCoalescer PRIVATE clf_core clf_ui)

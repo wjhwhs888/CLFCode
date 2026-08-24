@@ -32,6 +32,7 @@ CLFHttpClient::CLFHttpClient(const std::string& baseUrl, const std::string& apiK
 
 CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::string& jsonBody) {
     CLFHttpResponse result;
+    m_aborted = false;  // 新请求开始，重置中断标志（与 postJsonStream 对称）
 
     auto cli = std::make_shared<httplib::Client>(m_baseUrl);
     cli->set_connection_timeout(10, 0);
@@ -50,6 +51,9 @@ CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::stri
     auto res = cli->Post(path, headers, jsonBody, "application/json");
 
     if (!res) {
+        // abort() 会 stop() 活动连接，httplib 表现为连接失败——
+        // 标记来源以便上层区分"用户中断"与"网络故障"，避免无谓重试
+        result.m_wasAborted = m_aborted;
         result.m_error = "Connection failed: " + httplib::to_string(res.error());
         return result;
     }
@@ -61,6 +65,7 @@ CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::stri
         result.m_error = "HTTP " + std::to_string(res->status) + ": " + res->body;
     }
 
+    result.m_wasAborted = m_aborted;
     return result;
 }
 
@@ -138,6 +143,8 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     lineBuffer.clear();
 
     if (!res) {
+        // 中断时接收回调返回 false，httplib 同样表现为连接失败——同 postJson，标记来源
+        result.m_wasAborted = m_aborted;
         result.m_error = "Stream connection failed: " + httplib::to_string(res.error());
         return result;
     }
@@ -146,6 +153,7 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     if (res->status < 200 || res->status >= 300) {
         result.m_error = "HTTP " + std::to_string(res->status);
     }
+    result.m_wasAborted = m_aborted;
     return result;
 }
 

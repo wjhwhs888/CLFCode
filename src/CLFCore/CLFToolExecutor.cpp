@@ -410,10 +410,10 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             // --- Step 2: 超限阻断（仅需确认模式）---
             if (preview.diffStats.truncated && needConfirm) {
                 result.m_content = "File too large to preview diff. "
-                                   "Use Auto mode or set force=true.";
+                                   "Use Auto mode.";
                 if (m_output) {
                     m_output->emitContent("  ⎿ ✗ File too large to preview diff. "
-                                          "Use Auto mode or set force=true.\n");
+                                          "Use Auto mode.\n");
                 }
                 results.push_back(std::move(result));
                 continue;
