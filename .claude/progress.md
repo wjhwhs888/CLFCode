@@ -2,14 +2,38 @@
 
 ## 进行中
 
-### M1 传输层（CLFJsonRpcClient）— 待启动
-- 依据：spike go 决策（`tools/spike/Spike报告.md`）+ 设计文档 M1 章节
-- 范围：`src/CLFBackend/CLFJsonRpcClient`（spawn / 行帧 reader / 三分类路由 / waiter 表 / close 阶梯）+ 单测（fake runtime 回放 `tools/spike/frames/norm/*.norm.jsonl`）
-- 对译蓝本：`tools/spike/spike_driver.mjs` 五模块（每函数头部有 M1 映射注释）
-- 必读协议事实（Spike报告 §一）：事件先于响应（receipt 门控须缓冲回溯）/ sessionId 每次新 id / assistant/message 在 data.message.content / 双 finish 枚举 / tool-call 参数为 JSON 字符串
-- 估时：2-3 天
+> **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能，4-5 天，可立即开工）→ 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。详见设计文档 §三。
+> A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
+
+### 【A 阶段】本体自研 — 待启动（2026-08-25 定档）
+- 设计文档：`.claude/plans/设计/设计-功能修复与工具补充.md`（由《设计-功能审查与修复二》+《设计-工具检查与补充》合并而成，两份原文档已删除；合并原因：5 组重叠项落在同一段代码，分开排期会撞车）
+- 文档已经**四轮核实**（我方两轮自查 + flash 两轮复审），S1-S3 全部前置假设均有源码证据，无悬空引用
+- **S1 小修**（0.5-1 天 → v0.3.5）：edit_file 空串校验 / write_file force 文案 / 重试策略分级 / m_wasAborted 接线
+- **S2 安全+工具**（2-3 天 → v0.4.0）：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
+- **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
+- **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
+- 完成后 dsh 净增点收敛为**仅剩 subagent** → 进入决策门
+
+### 【B 阶段】dsh 对接 — 挂决策门（原「M1 传输层待启动」暂缓）
+- **B0 环境重建 0.5 天** → **B1(=M1) 传输层 3-4 天** → **B2(=M2) 会话层 2-3 天** → **B3(=M3) 收尾 3-5 天**
+- 决策门不走的话：自研轻量 subagent（进程内嵌套 CLFAgentLoop）2-3 天，B 阶段整体作废
+- Spike S0-S5 全过（go 决策），素材齐备：`tools/spike/`（报告 + spike_driver.mjs 五模块 + frames/norm 12 组 fixture）
+- **2026-08-25 上游核实**：仓库已搬到 `E:\deepseek-harness`（Spike 报告的 F: 路径失效）；上游前进 854 提交至 `b150a55`(0.1.1-rc.2)；✅ 协议面几乎未动（`protocol/src/` 零变动，transport.ts 未变）→ fixture 仍有效；❌ platforms.json 仍无 Windows → Node 闭包仍是唯一路径
+- **工时修正**：M1 3-4 天（长驻子进程管理必须新写，CLFCommandExec 无 stdin 管道仅可借鉴 ~20 行）/ M2 2-3 天（UI 侧零改动属实）/ M3 3-5 天高方差（打包未实测 + 确认链未定）/ +0.5 天环境重建 = **全程 8.5-12.5 天**（非原估 6-9 天）
+- 决策门：S3 完成后回答"subagent 值不值 8.5-12.5 天 + 包体量级增长 + rc 阶段外部依赖 + 会话双轨"
+- 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于 dsh 决策）；若不走 → 自研轻量 subagent（进程内嵌套 CLFAgentLoop，2-3 天）
 
 ## 已完成
+
+### 2026-08-25 设计文档核实与合并 ✅
+- 对两份新增设计文档（08-19 产出）的 **23 条代码断言逐条对照源码验证**，修正 7 处后合并为 `设计/设计-功能修复与工具补充.md`，原两份删除
+- **关键修正**（原文档错误）：① `generateAndCacheSummary` 实由 `/exit`+`/clear` 调用而非压缩路径；~~`shouldSummarize` 已实现~~ **08-25 二次核实为臆造——`CLFSessionSummarizer` 无此方法（全库零命中），仅 `isEnabled()` 判开关**；S3-1 阈值判定需新写，成本回到原估 ② CLFMessageCodec 已有 `version:1` 字段（P2-4 降级为只补分流）③ `m_wasAborted` 检查在 `:212`/`:266`（非 203-207）④ CLFToolExecutor 在 `CLFCore/` 非 `CLFTools/` ⑤ **web_fetch 不可复用 CLFHttpClient——恒带 `Authorization: Bearer` 会向第三方泄漏 API key**（安全缺陷）⑥ ask_user 的"CLFRepl 无需改"不成立（`:524` 硬编码 0↔1 取反、Enter 二分支、返回 bool）⑦ `.clf/` 目录约定不存在（全库零命中）
+- 其余 16 条断言属实，可照做
+- 路线决策（用户定）：走 S1→S2→S3，dsh 挂决策门；**多模型（S3-2）用户定为必做**
+
+### 2026-08-19 v0.3.4 小功能更新 ✅
+- 新增一项小功能性更新（不影响既有功能与使用，公开口径见 CHANGELOG v0.3.4）；tag v0.3.4 已推，`release/CLFCode-v0.3.4-win64.zip` 已出包（3.6M）
+- 🔒 **隐私备忘（维护者/pro 必读，勿删除）**：v0.3.4 该项更新含用户隐私内容。**其触发条件、特殊日期、名称/编码方式、实现细节一律不得在本仓库任何文档（本文件 / CHANGELOG / 设计文档 / README）中体现**。维护时仅按公开口径"小功能性更新"提及，不展开、不说明。此前版本曾写入具体触发细节，已按用户要求移除——后续涉及该功能时请保持"隐形"。
 
 ### 2026-08-18 笔记本输入必崩根因修复 ✅（FTXUI 事件队列竞态，v0.3.3 候选）
 - **现象**：安装版交互输入必崩——流式回合静默退出，无报错/WER/转储，日志截断于 `[API] streaming request`；退出码 3（terminate/abort）；非交互模式同提示完整跑通；桌面同包正常
@@ -19,7 +43,8 @@
 - **验证**：Debug/Release（MSVC）构建通过；ctest 11/12（SessionManager 既有失败不变）；**E:\deepseek-harness 现场 11 轮工具迭代 + 40 消息上下文完整跑通不再崩**；B/C 防御零触发
 - 设计文档：`.claude/plans/设计/设计-FTXUI事件队列竞态修复.md`（含实施记录）
 - 收尾：bump v0.3.3 + CHANGELOG 条目；设计文档归档至 `设计/归档/归档-FTXUI事件队列竞态修复.md`；install.ps1/upgrade.ps1 修复——升级不再丢会话历史/日志/崩溃转储（GUID 唯一备份目录 + 四目录备份恢复，模拟测试通过）；用户手动替换安装版 exe 验证通过
-- 遗留：08-12 AV 家族同根因假设待观察；发布 v0.3.3（release.ps1）未执行
+- 遗留：08-12 AV 家族同根因假设待观察
+- ~~发布 v0.3.3 未执行~~ → **更正（08-25 核实）**：v0.3.3 已发布，`release/CLFCode-v0.3.3-win64.zip` 08-18 出包，tag 已推。包体从 12M 降至 3.6M 系 v0.3.2 起 DLL 只带 OpenSSL 对、不再携带历史 MinGW 运行库所致（预期变化）
 
 ### 2026-08-18 发布版必崩溃根因修复 ✅（v0.3.2，取证闭环）
 - **现象**：v0.3.1 打包版在台式机+笔记本必崩溃（输入"帮我查看当前项目信息"），源码 Debug 运行正常；同一 exe 时崩时不崩（时序相关假象）
