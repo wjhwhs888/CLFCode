@@ -5,6 +5,7 @@
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <stdexcept>
 #include <thread>
 
 #include "CLFCore/CLFAgentLoop.hpp"
@@ -44,7 +45,14 @@ public:
 
     CLFHttpResponse postJson(const std::string&, const std::string&) override {
         ++m_syncCalls;
-        expect(!m_syncResponses.empty()); // 预设不足即失败
+        // 预设不足必须抛异常，不能只 expect 后继续：boost::ut 的 expect 只记录
+        // 失败、不终止执行，继续对空 deque 调 front()/pop_front() 是 UB——
+        // MSVC Debug 的 _STL_VERIFY 会弹断言对话框，无人值守下进程永久挂起
+        // （表现为 ctest 超时且无任何输出）。抛异常则由 runTurn 的 catch 兜住。
+        if (m_syncResponses.empty()) {
+            expect(false) << "MockHttpClient: sync response queue exhausted";
+            throw std::runtime_error("MockHttpClient: sync response queue exhausted");
+        }
         auto resp = m_syncResponses.front();
         m_syncResponses.pop_front();
         return resp;
@@ -54,7 +62,10 @@ public:
         const std::string&, const std::string&,
         std::function<void(const std::string&)> onLine) override {
         ++m_streamCalls;
-        expect(!m_streamResponses.empty());
+        if (m_streamResponses.empty()) {  // 同 postJson：空队列 front() 是 UB
+            expect(false) << "MockHttpClient: stream response queue exhausted";
+            throw std::runtime_error("MockHttpClient: stream response queue exhausted");
+        }
         auto lines = m_streamResponses.front();
         m_streamResponses.pop_front();
         int idx = 0;

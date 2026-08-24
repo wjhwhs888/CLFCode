@@ -32,7 +32,16 @@
 - **S1-4 m_wasAborted 接线**：⚠️ 设计文档描述有误——`m_wasAborted` 是 `CLFHttpResponse` 的**响应字段**（`ICLFHttpClient.hpp:15`），非客户端成员，`abort()` 无法直接赋值。实际修法：4 个返回点均由 `m_aborted` 写入响应；并补 `postJson` 起始的标志复位（原先只有 `postJsonStream` 有，同步路径不对称）。根因链：中断→`stop()`→httplib 报连接失败→**被上层当网络故障重试**
 - 新增测试：`qa_CLFRetryPolicy`（16 用例 45 断言）+ `qa_CLFFileOps`（5 用例 12 断言），均已加入 `CLF_TEST_TARGETS` 列表（该列表统一设 `CXX_STANDARD 20`，boost::ut 必需——注册新测试时**必须同时加入此列表**，否则 C++17 下 ut.hpp 编译失败）
 - 构建：MSVC Debug 25/25 通过。**命令行构建需先导入 vcvars64**（CLion 内部自带环境，裸 bash 调用 cl.exe 会找不到 `<atomic>` 等标准库头）
-- ⚠️ **基线记录更正**：progress 原记"ctest 12/13"已过时。实测 **13/15**，失败 2 项均为既有：`qa_CLFSessionManager`（环境）+ **`qa_CLFAgentLoop`（超时 25s）**——后者已用 `git stash` 在当前 HEAD 基线上实证同样超时，与本批改动无关，另立待办排查
+- ⚠️ **基线记录更正**：progress 原记"ctest 12/13"已过时，实测基线为 **14/15**（唯一失败为 `qa_CLFSessionManager` 既有环境失败）
+
+### 2026-08-25 qa_CLFAgentLoop 超时根因排查 ✅（两个独立问题，非"单一既有问题"）
+- **排查手段**：ctest 输出为空曾被误判为"早期挂起"——实为 stdout 重定向到管道是全缓冲、进程被 kill 时缓冲区丢失。改用 **stderr 逐用例插桩**（无缓冲）定位到 case 5 = T6b，再逐行插桩收窄到 `S4b → S9` 之间
+- **问题①（本次引入，已修）**：`CLFRetryPolicy::extractHttpStatus` 中的函数局部 `static const std::string kPrefix` —— MSVC 的 magic static 走 `_Init_thread_header` 全局锁，在该多线程路径上**死锁**，表现为进程永久挂起、零输出。改为 `constexpr const char*` 后消失
+  - 判定证据：禁用 `fireInterrupt` 后**仍然挂起**（排除中断竞态）；改 constexpr 后立即全绿
+- **问题②（既有，未修）**：即便无死锁，该测试仍需 **28-29 秒**。根因是 `turnTimer` / `thinkingTimer` / `CLFThinkingIndicator` 三个后台线程都用 `sleep_for(1s)` 轮询退出标志，每次 join 平均等 ~0.8s，12 个用例累计约 2.4s×12。已另立待办（条件变量改造）
+- **顺带修复**：`MockHttpClient` 队列耗尽时只 `expect` 后继续对空 deque 调 `front()/pop_front()` 是 **UB**（boost::ut 的 expect 不终止执行），改为抛异常由 `runTurn` 的 catch 兜住
+- ⚠️ **更正 A1 提交中的错误结论**：当时记"基线也超时，与本批改动无关"——**只对了一半**。基线超时确实存在（原因是②的慢，29s > 我设的 25s timeout），但我**另外引入了①这个真死锁**，当时未能区分。教训：`git stash` 验证基线时只看了退出码，没有区分"慢"与"挂死"
+- **真实基线：14/15**（唯一失败 `qa_CLFSessionManager` 环境问题）；跑 ctest 需 `--timeout 90` 以上，否则 AgentLoop 会被误判超时
 
 ### 2026-08-25 设计文档核实与合并 ✅
 - 对两份新增设计文档（08-19 产出）的 **23 条代码断言逐条对照源码验证**，修正 7 处后合并为 `设计/设计-功能修复与工具补充.md`，原两份删除

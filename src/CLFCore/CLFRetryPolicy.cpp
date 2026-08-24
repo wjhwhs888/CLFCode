@@ -9,10 +9,13 @@ namespace CLF::CLFCore {
 int CLFRetryPolicy::extractHttpStatus(const std::string& err) {
     // 只认前缀形态："HTTP 429" / "HTTP 400: {...}"。
     // 用 find 会把响应体里的 "HTTP 500" 之类文本误当成状态码，故限定前缀。
-    static const std::string kPrefix = "HTTP ";
+    // 注意：此处刻意不用函数局部 static std::string——MSVC 的 magic static
+    // 走 _Init_thread_header 全局锁，在多线程热路径上是不必要的同步点。
+    constexpr const char* kPrefix    = "HTTP ";
+    constexpr size_t      kPrefixLen = 5;
     if (err.rfind(kPrefix, 0) != 0) return 0;
 
-    size_t i    = kPrefix.size();
+    size_t i    = kPrefixLen;
     int    code = 0;
     size_t digitStart = i;
     while (i < err.size() && std::isdigit(static_cast<unsigned char>(err[i]))) {
