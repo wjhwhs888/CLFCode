@@ -89,7 +89,7 @@ endif()
 set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator
                      qa_CLFHeadTail qa_CLFSearchContent qa_CLFToolExecutor
-                     qa_CLFRetryPolicy qa_CLFFileOps
+                     qa_CLFRetryPolicy qa_CLFFileOps qa_CLFBuiltinTools
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
                      qa_CLFInputRender qa_CLFPasserby)
 
@@ -136,6 +136,15 @@ add_test(NAME qa_CLFRetryPolicy COMMAND qa_CLFRetryPolicy)
 add_executable(qa_CLFFileOps test/qa_CLFFileOps.cpp)
 target_link_libraries(qa_CLFFileOps PRIVATE clf_core)
 add_test(NAME qa_CLFFileOps COMMAND qa_CLFFileOps)
+
+# clf_tools 经 clf_core 间接拉入 clf_network（httplib+SSL），静态库按需拉取
+# 会带出 CLFHttpClient.obj 的 OpenSSL 符号，故须显式链接 OpenSSL
+add_executable(qa_CLFBuiltinTools test/qa_CLFBuiltinTools.cpp)
+target_link_libraries(qa_CLFBuiltinTools PRIVATE clf_tools ${CLF_OPENSSL_LIBS})
+if(WIN32)
+    target_link_libraries(qa_CLFBuiltinTools PRIVATE ws2_32 crypt32)
+endif()
+add_test(NAME qa_CLFBuiltinTools COMMAND qa_CLFBuiltinTools)
 
 add_executable(qa_CLFPasteCoalescer test/qa_CLFPasteCoalescer.cpp)
 target_link_libraries(qa_CLFPasteCoalescer PRIVATE clf_core clf_ui)

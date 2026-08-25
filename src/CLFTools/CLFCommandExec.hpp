@@ -14,7 +14,12 @@ struct CLFCommandResult {
     bool        m_timedOut = false;
 };
 
-// 执行命令（带超时控制）
-CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds = 30);
+//执行命令（带超时控制）
+// cwd 非空时作为子进程工作目录；**调用方负责校验其合法性**（工具层已做工作区边界检查）
+// example:
+//   auto r = executeCommand("git status", 30, "E:/proj/sub");
+CLFCommandResult executeCommand(const std::string& command,
+                                int timeoutSeconds = 30,
+                                const std::string& cwd = "");
 
 } // namespace CLF::CLFTools

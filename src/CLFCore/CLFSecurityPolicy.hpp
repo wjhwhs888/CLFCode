@@ -12,6 +12,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "CLFTypes/CLFTypes.hpp"
 
@@ -46,8 +47,27 @@ public:
     // 循环到下一个模式
     static CLFSecurityMode nextMode(CLFSecurityMode current);
 
+    //设置危险命令检测的前缀白名单（命中则跳过检测）
+    // example:
+    //   policy.setCommandAllowlist(config.m_commandAllowlist);
+    void setCommandAllowlist(std::vector<std::string> allowlist);
+
+    //判断命令是否命中危险模式（用本实例的白名单）
+    // ⚠ 定位：这是**提示层**而非安全边界——模型可用变量拼接、中间命令等方式
+    //   绕过，仅用于降低误操作概率，不替代四模式安全策略
+    // example:
+    //   if (policy.isDangerousCommand(cmd)) needConfirm = true;
+    bool isDangerousCommand(const std::string& command) const;
+
+    //同上的静态版本（便于单测，不依赖实例）
+    // example:
+    //   CLFSecurityPolicy::isDangerousCommand("rm -rf /", {});
+    static bool isDangerousCommand(const std::string& command,
+                                   const std::vector<std::string>& allowlist);
+
 private:
     CLFSecurityMode m_mode;
+    std::vector<std::string> m_commandAllowlist;
 };
 
 } // namespace CLF::CLFCore

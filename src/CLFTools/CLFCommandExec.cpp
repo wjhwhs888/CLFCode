@@ -33,7 +33,8 @@ std::string readFileContent(const std::string& path) {
 
 } // anonymous namespace
 
-CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) {
+CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds,
+                                const std::string& cwd) {
     CLFCommandResult result;
 
     // 参数校验：clamp 超时到合理范围
@@ -64,10 +65,16 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
     si.hStdError  = hErrWrite;
     si.hStdInput  = nullptr;  // cmd.exe /s /c 模式不需要 stdin，避免继承 FTXUI 控制台句柄
 
+    // cwd → lpCurrentDirectory（CreateProcess 第 8 参数）
+    const std::string cwdNative =
+        cwd.empty() ? std::string() : CLF::CLFCore::CLFEncoding::fromUtf8(cwd);
+
     PROCESS_INFORMATION pi = {};
     if (!CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr,
                         TRUE, CREATE_NO_WINDOW,
-                        nullptr, nullptr, &si, &pi)) {
+                        nullptr,
+                        cwdNative.empty() ? nullptr : cwdNative.c_str(),
+                        &si, &pi)) {
         DWORD err = GetLastError();
         CloseHandle(hOutRead); CloseHandle(hOutWrite);
         CloseHandle(hErrRead); CloseHandle(hErrWrite);
@@ -159,7 +166,10 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds) 
 
     pid_t child = fork();
     if (child == 0) {
-        // 子进程：通过 sh 执行命令
+        // 子进程：切到指定工作目录后通过 sh 执行命令
+        if (!cwd.empty() && chdir(cwd.c_str()) != 0) {
+            _exit(126);  // 与 shell 的"命令不可执行"退出码一致
+        }
         execl("/bin/sh", "sh", "-c", cmdWithRedirect.c_str(), nullptr);
         _exit(127);
     } else if (child > 0) {

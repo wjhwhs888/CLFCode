@@ -387,6 +387,22 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             continue;
         }
 
+        // S2-2: 危险命令强制确认——**不受安全模式影响**，Auto 模式同样拦截。
+        // 定位为提示层（模型可绕过），仅降低误操作概率，不替代上面的模式管控。
+        if (it->m_name == "execute_command") {
+            std::string cmdText;
+            try {
+                auto argJson = nlohmann::json::parse(call.m_arguments);
+                cmdText = argJson.value("command", "");
+            } catch (...) {
+                cmdText = call.m_arguments;  // 解析失败则按原文匹配，宁可多确认
+            }
+            if (m_securityPolicy.isDangerousCommand(cmdText)) {
+                needConfirm = true;
+                if (m_output) m_output->emitContent("  ⎿ ⚠ 命中危险命令模式，需确认\n");
+            }
+        }
+
         // ================================================================
         // Write 工具的 diff 预览 + 确认流程（设计 §2.1 Step 1–7）
         // ================================================================

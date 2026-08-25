@@ -51,6 +51,7 @@ CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
     , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode))
     , m_summarizer(std::make_unique<CLFSessionSummarizer>(m_httpClient, m_config)) {
     m_httpClient->setTimeout(config.m_maxResponseDelaySec);
+    m_securityPolicy.setCommandAllowlist(config.m_commandAllowlist);  // S2-2
     injectSystemPrompt();
 }
 

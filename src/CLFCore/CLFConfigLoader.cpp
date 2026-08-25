@@ -159,6 +159,17 @@ bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig
             if (agent.contains("security_mode") && agent["security_mode"].is_string()) {
                 outConfig.m_securityMode = agent["security_mode"].get<std::string>();
             }
+            // S2-1: read_file 是否允许越出工作区（逃生口，默认关）
+            if (agent.contains("allow_absolute_read") && agent["allow_absolute_read"].is_boolean()) {
+                outConfig.m_allowAbsoluteRead = agent["allow_absolute_read"].get<bool>();
+            }
+            // S2-2: 危险命令检测的前缀白名单
+            if (agent.contains("command_allowlist") && agent["command_allowlist"].is_array()) {
+                outConfig.m_commandAllowlist.clear();
+                for (const auto& item : agent["command_allowlist"]) {
+                    if (item.is_string()) outConfig.m_commandAllowlist.push_back(item.get<std::string>());
+                }
+            }
         }
 
         // —— logging（日志配置）——
