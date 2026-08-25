@@ -403,6 +403,23 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             }
         }
 
+        // S2-5: web_fetch 工具本身按 Read 级注册（GET/HEAD 本质是读取），
+        // 但 POST 有远端副作用——此处动态升级为强制确认，即使 Auto 模式。
+        if (it->m_name == "web_fetch") {
+            try {
+                auto argJson = nlohmann::json::parse(call.m_arguments);
+                std::string method = argJson.value("method", "GET");
+                std::transform(method.begin(), method.end(), method.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+                if (method == "POST") {
+                    needConfirm = true;
+                    if (m_output) m_output->emitContent("  ⎿ ⚠ POST 请求有远端副作用，需确认\n");
+                }
+            } catch (...) {
+                // 参数解析失败：按默认 GET 处理，不额外升级
+            }
+        }
+
         // ================================================================
         // Write 工具的 diff 预览 + 确认流程（设计 §2.1 Step 1–7）
         // ================================================================

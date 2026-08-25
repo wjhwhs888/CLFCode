@@ -15,6 +15,7 @@
 #include "CLFTools/CLFCommandExec.hpp"
 #include "CLFTools/CLFFileOps.hpp"
 #include "CLFTools/CLFSearchContent.hpp"
+#include "CLFTools/CLFWebFetch.hpp"
 
 namespace CLF::CLFTools {
 
@@ -176,6 +177,49 @@ std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
 
         // ③ 行范围切片
         result["content"] = detail::sliceLines(fileResult.m_content, offset, limit);
+    } catch (const std::exception& e) {
+        result["success"] = false;
+        result["error"]   = std::string("Handler error: ") + e.what();
+    }
+    return result.dump();
+}
+
+// S2-5: 网络抓取。注意 CLFWebFetch 内部不携带任何凭据（详见其头文件说明）
+std::string webFetchHandler(const std::string& args) {
+    using json = nlohmann::json;
+    json result;
+    try {
+        json params = json::parse(args);
+
+        CLFWebRequest req;
+        req.m_url        = params.value("url", "");
+        req.m_method     = params.value("method", "GET");
+        req.m_body       = params.value("body", "");
+        req.m_timeoutSec = params.value("timeout", 15);
+        if (params.contains("headers") && params["headers"].is_object()) {
+            for (auto it = params["headers"].begin(); it != params["headers"].end(); ++it) {
+                if (it.value().is_string()) {
+                    req.m_headers[it.key()] = it.value().get<std::string>();
+                }
+            }
+        }
+        if (req.m_url.empty()) {
+            result["success"] = false;
+            result["error"]   = "url is required";
+            return result.dump();
+        }
+
+        const auto resp = CLF::CLFTools::webFetch(req);
+        result["success"] = resp.m_success;
+        if (!resp.m_success) {
+            result["error"] = resp.m_error;
+            return result.dump();
+        }
+        result["status"]  = resp.m_status;
+        result["headers"] = resp.m_headers;
+        result["body"]    = resp.m_body;
+        if (resp.m_truncated) result["truncated"] = true;
+        if (resp.m_binary)    result["binary"]    = true;
     } catch (const std::exception& e) {
         result["success"] = false;
         result["error"]   = std::string("Handler error: ") + e.what();
@@ -373,6 +417,29 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     })";
     execCmdTool.m_handler = executeCommandHandler;
     agent.registerTool(execCmdTool);
+
+    // —— 网络 ——
+    // 风险级取 Read：GET/HEAD 本质是读取，与 read_file 同级。
+    // POST 有远端副作用，由 CLFToolExecutor 动态升级为强制确认（同 S2-2 模式）。
+    CLFTool webFetchTool;
+    webFetchTool.m_name        = "web_fetch";
+    webFetchTool.m_description =
+        "抓取 URL 内容。响应上限 1MB，正文按 head 8KB + tail 2KB 截断；"
+        "二进制内容自动跳过。不会携带本机任何凭据";
+    webFetchTool.m_risk        = CLF::CLFCore::CLFToolRisk::Read;
+    webFetchTool.m_parametersSchema = R"({
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "完整 URL，形如 https://host/path"},
+            "method": {"type": "string", "description": "GET（默认）/ POST / HEAD"},
+            "headers": {"type": "object", "description": "可选的额外请求头"},
+            "body": {"type": "string", "description": "POST 请求体"},
+            "timeout": {"type": "integer", "description": "超时秒数，默认 15，上限 60"}
+        },
+        "required": ["url"]
+    })";
+    webFetchTool.m_handler = webFetchHandler;
+    agent.registerTool(webFetchTool);
 
     CLFTool timeTool;
     timeTool.m_name        = "get_current_time";
