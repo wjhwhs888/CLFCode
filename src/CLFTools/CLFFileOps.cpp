@@ -25,24 +25,7 @@ namespace CLF::CLFTools {
 
 namespace {
 
-// 判定字节序列是否为合法 UTF-8（文件内容编码探测用）
-bool isValidUtf8(const std::string& s) {
-    size_t i = 0;
-    while (i < s.size()) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        if (c < 0x80) { ++i; continue; }
-        size_t extra;
-        if ((c & 0xE0) == 0xC0) extra = 1;
-        else if ((c & 0xF0) == 0xE0) extra = 2;
-        else if ((c & 0xF8) == 0xF0) extra = 3;
-        else return false;
-        if (i + extra >= s.size()) return false;
-        for (size_t j = 1; j <= extra; ++j)
-            if ((static_cast<unsigned char>(s[i + j]) & 0xC0) != 0x80) return false;
-        i += extra + 1;
-    }
-    return true;
-}
+// UTF-8 合法性判定已提取至 CLFEncoding::isValidUtf8（S2-4：search 也要用，避免两份实现）
 
 // UTF-8 路径 → 系统原生路径（Windows：宽字符；Linux：原样）
 fs::path toNativePath(const std::string& utf8Path) {
@@ -167,7 +150,7 @@ CLFFileResult readFile(const std::string& path) {
     std::string raw = oss.str();
     // 内容编码判定：合法 UTF-8 直接采用（项目文件多为 UTF-8——按 ACP 解释会
     // 产生乱码或抛 "No mapping" 转换异常）；否则按 ACP 转 UTF-8
-    result.m_content = isValidUtf8(raw) ? raw : CLF::CLFCore::CLFEncoding::toUtf8(raw);
+    result.m_content = CLF::CLFCore::CLFEncoding::isValidUtf8(raw) ? raw : CLF::CLFCore::CLFEncoding::toUtf8(raw);
     result.m_success = true;
     return result;
 }

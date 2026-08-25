@@ -18,6 +18,13 @@ public:
 
     // UTF-8 → 系统代码页（ACP/GBK）
     static std::string fromUtf8(const std::string& utf8);
+
+    //校验字节序列是否为合法 UTF-8
+    // 用于区分"UTF-8 文本"与"GBK/二进制内容"：前者直接采用，
+    // 后者需转码或跳过（search 遇非法序列会污染 JSON 结果）
+    // example:
+    //   if (!CLFEncoding::isValidUtf8(raw)) skipFile();
+    static bool isValidUtf8(const std::string& s);
 };
 
 } // namespace CLF::CLFCore

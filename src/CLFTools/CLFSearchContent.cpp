@@ -3,6 +3,7 @@
 // 跳过忽略目录、超大文件，限制结果行数
 
 #include "CLFTools/CLFSearchContent.hpp"
+#include "CLFTypes/CLFEncoding.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -25,9 +26,31 @@ constexpr int    kMaxDepth      = 20;
 constexpr int    kHeadLines     = 240;
 constexpr int    kTailLines     = 240;
 
-const std::set<std::string> kIgnoreDirs = {
+// ⚠ 以下三张表刻意用 constexpr 数组而非 std::set/std::vector：
+//   后者是带动态初始化与析构的静态对象，而 boost::ut 在**静态析构阶段**运行
+//   测试，跨 TU 的析构顺序未定义——测试期访问已析构的容器会直接段错误
+//   （S2-4 实测：把 matchesExtension 的空分支从 `return true` 改为查表后立即复现）。
+//   同理也不用函数局部 static：MSVC magic static 走全局锁，A1 已因此死锁过一次。
+constexpr const char* const kIgnoreDirs[] = {
     ".git", "node_modules", "__pycache__", "build", "dist",
-    ".cache", "vendor", ".svn", ".hg"
+    ".cache", "vendor", ".svn", ".hg",
+    // S2-4 补充：构建产物与 IDE 元数据目录
+    "bin", "lib", "out", ".idea", ".vscode"
+};
+
+// S2-4: 前缀忽略——CLion/CMake 的构建目录带配置后缀（cmake-build-debug 等），
+// 无法用固定名匹配
+constexpr const char* const kIgnoreDirPrefixes[] = {
+    "cmake-build-"
+};
+
+// S2-4: 未指定 fileTypes 时的默认文本扩展名白名单。
+// 原行为是"不过滤"，会扫 .dll/.exe 等二进制——既慢，又会把二进制字节
+// 混进结果污染 JSON（08-18 日志实证 tool 报错）。
+constexpr const char* const kDefaultTextExts[] = {
+    ".md", ".txt", ".cpp", ".hpp", ".h", ".c", ".cc", ".cxx", ".hxx",
+    ".json", ".jsonl", ".yml", ".yaml", ".py", ".js", ".ts", ".tsx",
+    ".sh", ".ps1", ".cmake", ".ini", ".toml", ".xml", ".log", ".csv"
 };
 
 // 按 , 分割并 trim 空格，统一转小写，过滤不带点的无效项
@@ -51,8 +74,14 @@ std::vector<std::string> parseFileTypes(const std::string& fileTypes) {
 }
 
 bool isIgnoredDir(const fs::path& p) {
-    std::string name = p.filename().string();
-    return kIgnoreDirs.count(name) > 0;
+    const std::string name = p.filename().string();
+    for (const char* ignored : kIgnoreDirs) {
+        if (name == ignored) return true;
+    }
+    for (const char* prefix : kIgnoreDirPrefixes) {
+        if (name.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
 }
 
 bool isFileTooLarge(const fs::path& p) {
@@ -61,10 +90,17 @@ bool isFileTooLarge(const fs::path& p) {
 }
 
 bool matchesExtension(const fs::path& p, const std::vector<std::string>& exts) {
-    if (exts.empty()) return true;
     std::string ext = p.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    // S2-4: 未指定 fileTypes 时回落到默认文本白名单（原为"全放行"）；
+    // 模型显式传 fileTypes 时以参数为准
+    if (exts.empty()) {
+        for (const char* known : kDefaultTextExts) {
+            if (ext == known) return true;
+        }
+        return false;
+    }
     return std::find(exts.begin(), exts.end(), ext) != exts.end();
 }
 
@@ -102,6 +138,11 @@ void searchDir(const fs::path& dir, const std::string& pattern,
             while (std::getline(file, line) && resultCount < kMaxResults) {
                 ++lineNum;
                 if (line.find(pattern) != std::string::npos) {
+                    // S2-4: 命中行若非合法 UTF-8（GBK 文本 / 二进制残留）则跳过——
+                    // 直接输出会让结果 JSON 序列化抛异常（08-18 日志实证）。
+                    // 只校验命中行而非整个文件：省去无谓开销，且 GBK 文件里的
+                    // ASCII 行仍可正常匹配。
+                    if (!CLF::CLFCore::CLFEncoding::isValidUtf8(line)) continue;
                     // P0-2: 前 kHeadLines 条进 head；其余进 tail 环形（容量 kTailLines，挤掉最旧）
                     std::string entry = relative + ":" + std::to_string(lineNum) + ": " + line;
                     if (resultCount < kHeadLines) {

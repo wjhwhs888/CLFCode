@@ -405,7 +405,9 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     // —— search_content ——
     CLFTool searchTool;
     searchTool.m_name        = "search_content";
-    searchTool.m_description = "在目录中搜索文件内容（纯文本匹配），跳过 .git/node_modules 等目录，跳过 >1MB 文件，结果上限 500 行";
+    searchTool.m_description =
+        "在目录中搜索文件内容（纯文本匹配）。省略 fileTypes 时只搜常见文本扩展名（不扫二进制）；"
+        "跳过 .git/node_modules/build/cmake-build-* 等目录，跳过 >1MB 文件，结果上限 500 行";
     searchTool.m_parametersSchema = R"({
         "type": "object",
         "properties": {
@@ -419,7 +421,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
             },
             "fileTypes": {
                 "type": "string",
-                "description": "逗号分隔的扩展名过滤（如 .cpp,.h），省略则不过滤"
+                "description": "逗号分隔的扩展名过滤（如 .cpp,.h）；省略则使用默认文本扩展名白名单"
             }
         },
         "required": ["pattern", "directory"]

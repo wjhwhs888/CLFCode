@@ -55,4 +55,23 @@ std::string CLFEncoding::fromUtf8(const std::string& utf8) {
 #endif
 }
 
+bool CLFEncoding::isValidUtf8(const std::string& s) {
+    size_t i = 0;
+    while (i < s.size()) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c < 0x80) { ++i; continue; }
+        size_t extra;
+        if      ((c & 0xE0) == 0xC0) extra = 1;
+        else if ((c & 0xF0) == 0xE0) extra = 2;
+        else if ((c & 0xF8) == 0xF0) extra = 3;
+        else return false;
+        if (i + extra >= s.size()) return false;
+        for (size_t j = 1; j <= extra; ++j) {
+            if ((static_cast<unsigned char>(s[i + j]) & 0xC0) != 0x80) return false;
+        }
+        i += extra + 1;
+    }
+    return true;
+}
+
 } // namespace CLF::CLFCore
