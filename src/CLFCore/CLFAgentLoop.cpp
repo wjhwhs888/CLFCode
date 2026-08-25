@@ -7,6 +7,7 @@
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
 #include "CLFCore/CLFStreamAccumulator.hpp"
+#include "CLFTypes/CLFPeriodicTimer.hpp"
 #include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
@@ -79,61 +80,41 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
 
     // Timer #2：StatusLine 持续计时
+    // 用 CLFPeriodicTimer（条件变量唤醒）而非 sleep 轮询：后者 join 时平均要
+    // 空等 ~0.8s，每个 runTurn 白白多花近一秒。异常兜底已在定时器内部
+    // （B1 教训：线程体逸出异常会 std::terminate，静默退出码 3）。
     auto turnStart = std::chrono::steady_clock::now();
-    std::atomic<bool> turnTimerOn{true};
-    std::thread turnTimer([&]() {
-        // B1: 线程体包 try/catch——event 队列曾被无锁并发破坏导致 push_back 抛异常，
-        //     无兜底会 std::terminate 静默退出（退出码 3）。A 修复后此处为纯防御。
-        try {
-            while (turnTimerOn.load(std::memory_order_relaxed)) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                if (!turnTimerOn.load(std::memory_order_relaxed)) break;
-                if (!m_output) continue;
-                auto s = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::steady_clock::now() - turnStart).count();
-                // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）
-                if (s >= 15)
-                    m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
-                // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
-                m_output->requestRefresh();
-            }
-        } catch (const std::exception& e) {
-            CLFLogger::instance().error(
-                std::string("[TurnTimer] exception: ") + e.what());
-        } catch (...) {
-            CLFLogger::instance().error("[TurnTimer] unknown exception");
-        }
+    CLF::CLFTypes::CLFPeriodicTimer turnTimer(std::chrono::seconds(1), [this, turnStart]() {
+        if (!m_output) return;
+        auto s = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - turnStart).count();
+        // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）
+        if (s >= 15)
+            m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
+        // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
+        m_output->requestRefresh();
     });
     struct TurnGuard {
-        std::atomic<bool>& on;
-        std::thread& t;
+        CLF::CLFTypes::CLFPeriodicTimer& timer;
         CLF::CLFTypes::ICLFOutput* out;
         ~TurnGuard() {
-            on.store(false, std::memory_order_relaxed);
-            if (t.joinable()) t.join(); // 必须 join，detach 会悬空引用
+            timer.stop();               // 立即唤醒退出
             if (out) out->setStatus("");
         }
-    } turnGuard{turnTimerOn, turnTimer, m_output};
+    } turnGuard{turnTimer, m_output};
 
     std::string finalContent;
     int consecutiveErrors = 0;
 
     for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
         // Timer #1：只计数（不调用 output，安全）
-        std::atomic<bool> thinkingActive{true};
+        // 声明顺序要紧：thinkingSec 必须先于 timer，析构逆序才能保证
+        // 定时器线程停止后计数器才被销毁
         std::atomic<int> thinkingSec{0};
-        std::thread thinkingTimer([&]() {
-            while (thinkingActive.load(std::memory_order_relaxed)) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                if (!thinkingActive.load(std::memory_order_relaxed)) break;
-                thinkingSec.fetch_add(1);
-            }
-        });
-        struct ThinkGuard {
-            std::atomic<bool>& active;
-            std::thread& t;
-            ~ThinkGuard() { active.store(false); if (t.joinable()) t.join(); }
-        } thinkGuard{thinkingActive, thinkingTimer};
+        CLF::CLFTypes::CLFPeriodicTimer thinkingTimer(
+            std::chrono::seconds(1),
+            [&thinkingSec]() { thinkingSec.fetch_add(1); });
+        // 定时器析构即 stop，无需额外 guard
         // ① 每次循环迭代前检查中断
         if (m_interrupted) {
             emitInterrupted();

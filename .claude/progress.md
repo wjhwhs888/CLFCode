@@ -25,6 +25,15 @@
 
 ## 已完成
 
+### 2026-08-25 定时器退出机制优化 ✅（v0.4.1 待发布）
+- **背景**：`qa_CLFAgentLoop` 28.6s → **1.38s**（20.7×），全量 ctest 30s → **1.26s**
+- **CLFThinkingIndicator 线程删除**：查证为纯空转——循环体算的 `elapsed` 从未使用（StatusLine 已由 turnTimer 统一管理）、`m_http` 成员从未被引用；唯一实效是退出时 `setStatus("")`，同步做即可。`stop()` 现在立即返回
+- **新增 `CLFPeriodicTimer`**（`clf_types`）：条件变量唤醒，`stop()` 不等剩余间隔；回调执行期放锁防拖住 stop；回调异常在定时器内兜住（线程逸出异常 = std::terminate，v0.3.3 事故根因之一）。放 clf_types 是因 AgentLoop(core) 与 ThinkingIndicator(network) 都依赖
+- **turnTimer / thinkingTimer 换用新定时器**：thinkingSec 曾被怀疑可删线程，但 `CLFToolExecutor.cpp:594` 确实读值，保留计数
+- 新增 `qa_CLFPeriodicTimer`（8 用例）：核心断言 stop() 在 30s 间隔下 200ms 内返回；回调抛异常后线程不死（stderr 见 "boom" 兜底）
+- ⚠ **用户验收**：状态行 `Working for Ns…` 每秒递增 / 回合结束状态清理 / 工具执行期刷新 / Esc 中断 + 安装目录 exe 替换测试，全部通过
+- ⚠ **验证盲区事故**：A2 全程只跑 ctest 没启动主程序 → `main.cpp.obj` 陈旧（A2 改了 `CLFAgentConfig` 布局但 main.cpp 未重编）→ 主程序启动段错误（139 零输出）。用户当场抓出。教训已写设计文档：改公共结构必须干净重建 + 验证必须含主程序启动冒烟
+
 ### 2026-08-25 A1（=S1）小修批 ✅（v0.3.5）
 - **S1-1 edit_file 空 old_string 校验**：`CLFFileOps::editFile` 入口提前返回。原行为不是死循环而是**误导性错误**——`find("")` 每个位置都算命中，会遍历全文后报 "matches N times"（N = 文件长度+1）。校验刻意置于 `readFile` 之前，qa 用 F2 用例钉死该顺序
 - **S1-2 force 文案**：去掉 `CLFToolExecutor` 中对不存在参数的引用（两处：`m_content` 与 `emitContent`）
