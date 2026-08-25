@@ -9,7 +9,7 @@
 - 设计文档：`.claude/plans/设计/设计-功能修复与工具补充.md`（由《设计-功能审查与修复二》+《设计-工具检查与补充》合并而成，两份原文档已删除；合并原因：5 组重叠项落在同一段代码，分开排期会撞车）
 - 文档已经**四轮核实**（我方两轮自查 + flash 两轮复审），S1-S3 全部前置假设均有源码证据，无悬空引用
 - ~~**S1 小修**~~ ✅ **已完成（v0.3.5，见下方已完成区）**
-- **S2 安全+工具**（2-3 天 → v0.4.0）：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
+- ~~**S2 安全+工具**~~ ✅ **已完成（v0.4.0，见下方已完成区）**｜原计划：：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
 - **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
 - 完成后 dsh 净增点收敛为**仅剩 subagent** → 进入决策门
@@ -33,6 +33,17 @@
 - 新增测试：`qa_CLFRetryPolicy`（16 用例 45 断言）+ `qa_CLFFileOps`（5 用例 12 断言），均已加入 `CLF_TEST_TARGETS` 列表（该列表统一设 `CXX_STANDARD 20`，boost::ut 必需——注册新测试时**必须同时加入此列表**，否则 C++17 下 ut.hpp 编译失败）
 - 构建：MSVC Debug 25/25 通过。**命令行构建需先导入 vcvars64**（CLion 内部自带环境，裸 bash 调用 cl.exe 会找不到 `<atomic>` 等标准库头）
 - ⚠️ **基线记录更正**：progress 原记"ctest 12/13"已过时，实测基线为 **14/15**（唯一失败为 `qa_CLFSessionManager` 既有环境失败）
+
+### 2026-08-25 A2（=S2）安全 + 工具批 ✅（v0.4.0，6 项全完成）
+- **S2-1 read_file 边界+50MB+行范围**：三项均在 **handler 层**实施——`CLFFileOps::readFile` 还被 previewEdit / SystemPromptBuilder 等内部路径调用，在底层加限制会误伤配置读取。边界用 `weakly_canonical` 跟随 symlink 防逃逸；**逐段比较而非字符串前缀**（否则 `<cwd>-evil` 会被误判在 `<cwd>` 内，qa B1e 专门钉死）；逃生口 `agent.allow_absolute_read`
+- **S2-2 危险命令检测**：⚠ **架构修正**——设计文档原写"放 CLFCommandExec"，但它在 clf_tools 而触发确认的 CLFToolExecutor 在 clf_core，依赖方向 tools→core，**core 调不到 tools**。改放 `CLFSecurityPolicy`，allowlist 也挂其上（避免给已有 8 参数的 ToolExecutor 构造再加参数）。命中强制确认，**不受安全模式影响**；定位为提示层，模型可绕过
+- **S2-3 退出码白名单 + cwd**：grep/rg/findstr/diff/fc 退出码 1 判成功；首 token 归一化（去引号/路径/扩展名/大小写）；仅退出码 1 参与白名单（grep 的 2 仍判失败）。cwd 走 `lpCurrentDirectory`(Win)/`chdir`(POSIX)。**env 移入 S4**：两平台合计 60-80 行，而 `set VAR=x && cmd` 可变通
+- **S2-4 search 增强**：默认文本扩展名白名单 / 忽略目录补 bin·lib·out·cmake-build-*·.idea·.vscode / 命中行非法 UTF-8 则跳过（只校验命中行，GBK 文件里的 ASCII 行仍可匹配）。`isValidUtf8` 提取到 `CLFEncoding` 供 fileops 与 search 共用
+- **S2-5 web_fetch**（新模块）：⚠ **刻意不复用 CLFHttpClient**——后者恒带 `Authorization: Bearer`，抓第三方 URL 会泄漏 API key。1MB 上限 + head8K/tail2K **字节级**截断（`headTailCapWithMarker` 是 vector 模板按元素数，语义不同不可复用）+ NUL 二进制探测。风险级取 Read，**POST 由执行器动态升级为强制确认**（`m_risk` 是单值不能随参数变）
+- **S2-6 todo_write**：并入会话状态、不独立落盘（对标 dsh/Claude Code 实证）。`CLFTodoItem` 放 CLFTypes（分层约束：codec 在 core，不能依赖 tools）；codec/SessionManager 加**带默认值**的 todos 参数，`version` 维持 1 双向兼容；**首个捕获 agent 引用的 handler**——已给 `CLFAgentLoop` 显式 `= delete` 拷贝/移动钉死自引用约束
+- 新增测试 4 套：`qa_CLFBuiltinTools`(16/33) `qa_CLFWebFetch`(11/37) `qa_CLFMessageCodec`(7/21) + `qa_CLFSecurityPolicy` 扩展(+6 用例)
+- 🚨 **踩坑：静态非平凡对象（本项目第二次）**——S2-4 首版三张查表用文件级 `std::set/std::vector`，`qa_CLFSearchContent` 立即段错误（零输出）。根因：boost::ut 在**静态析构阶段**运行测试，跨 TU 析构顺序未定义。改 `constexpr const char* const[]` + 线性查找解决。与 A1 的 magic static 死锁同源，已写入设计文档为项目级教训
+- 验证：MSVC Debug 构建通过；**ctest 17/18**（唯一失败 `qa_CLFSessionManager` 为既有环境问题）
 
 ### 2026-08-25 qa_CLFAgentLoop 超时根因排查 ✅（两个独立问题，非"单一既有问题"）
 - **排查手段**：ctest 输出为空曾被误判为"早期挂起"——实为 stdout 重定向到管道是全缓冲、进程被 kill 时缓冲区丢失。改用 **stderr 逐用例插桩**（无缓冲）定位到 case 5 = T6b，再逐行插桩收窄到 `S4b → S9` 之间

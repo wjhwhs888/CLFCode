@@ -184,6 +184,96 @@ std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
     return result.dump();
 }
 
+bool isValidTodoStatus(const std::string& s) {
+    return s == "pending" || s == "in_progress" || s == "completed";
+}
+
+// S2-6: 待办清单。**这是首个需要捕获状态的工具**——其余 handler 都是无捕获
+// lambda。捕获 agent 引用后 lambda 又存进 agent.m_tools，构成自引用，因此
+// CLFAgentLoop 实例注册工具后不可拷贝/移动（否则悬垂）。
+std::string todoWriteHandlerImpl(const std::string& args,
+                                 CLF::CLFCore::CLFAgentLoop& agent) {
+    using json = nlohmann::json;
+    using CLF::CLFCore::CLFTodoItem;
+    json result;
+    try {
+        json params = json::parse(args);
+        const std::string action = params.value("action", "list");
+
+        auto renderList = [&agent]() {
+            json arr = json::array();
+            for (const auto& t : agent.getTodos()) {
+                arr.push_back({{"id", t.m_id}, {"content", t.m_content},
+                               {"status", t.m_status}});
+            }
+            return arr;
+        };
+
+        if (action == "list") {
+            result["success"] = true;
+            result["todos"]   = renderList();
+        } else if (action == "clear") {
+            agent.setTodos({});
+            result["success"] = true;
+            result["todos"]   = json::array();
+        } else if (action == "create") {
+            // 整表替换语义（对齐 dsh 的 whole-list replacement）
+            std::vector<CLFTodoItem> items;
+            int autoId = 1;
+            if (params.contains("todos") && params["todos"].is_array()) {
+                for (const auto& t : params["todos"]) {
+                    if (!t.is_object()) continue;
+                    CLFTodoItem item;
+                    item.m_content = t.value("content", "");
+                    if (item.m_content.empty()) continue;
+                    item.m_id     = t.value("id", std::to_string(autoId++));
+                    item.m_status = t.value("status", "pending");
+                    if (!isValidTodoStatus(item.m_status)) item.m_status = "pending";
+                    items.push_back(std::move(item));
+                }
+            }
+            agent.setTodos(std::move(items));
+            result["success"] = true;
+            result["todos"]   = renderList();
+        } else if (action == "update") {
+            const std::string id = params.value("id", "");
+            auto items = agent.getTodos();   // 取副本后整体写回
+            bool found = false;
+            for (auto& t : items) {
+                if (t.m_id != id) continue;
+                found = true;
+                if (params.contains("status") && params["status"].is_string()) {
+                    const auto st = params["status"].get<std::string>();
+                    if (!isValidTodoStatus(st)) {
+                        result["success"] = false;
+                        result["error"]   = "status 非法（应为 pending/in_progress/completed）: " + st;
+                        return result.dump();
+                    }
+                    t.m_status = st;
+                }
+                if (params.contains("content") && params["content"].is_string()) {
+                    t.m_content = params["content"].get<std::string>();
+                }
+            }
+            if (!found) {
+                result["success"] = false;
+                result["error"]   = "未找到 id=" + id + " 的待办项";
+                return result.dump();
+            }
+            agent.setTodos(std::move(items));
+            result["success"] = true;
+            result["todos"]   = renderList();
+        } else {
+            result["success"] = false;
+            result["error"]   = "未知 action（应为 create/update/list/clear）: " + action;
+        }
+    } catch (const std::exception& e) {
+        result["success"] = false;
+        result["error"]   = std::string("Handler error: ") + e.what();
+    }
+    return result.dump();
+}
+
 // S2-5: 网络抓取。注意 CLFWebFetch 内部不携带任何凭据（详见其头文件说明）
 std::string webFetchHandler(const std::string& args) {
     using json = nlohmann::json;
@@ -417,6 +507,42 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     })";
     execCmdTool.m_handler = executeCommandHandler;
     agent.registerTool(execCmdTool);
+
+    // —— 协作 ——
+    // 待办不独立落盘，随会话持久化（见 CLFTypes::CLFTodoItem 说明）
+    CLFTool todoTool;
+    todoTool.m_name        = "todo_write";
+    todoTool.m_description =
+        "维护当前会话的待办清单。create 为整表替换；随会话保存，/resume 后自动恢复。"
+        "状态取值：pending / in_progress / completed";
+    todoTool.m_risk        = CLF::CLFCore::CLFToolRisk::Read;
+    todoTool.m_parametersSchema = R"({
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "create（整表替换）/ update / list / clear"},
+            "todos": {
+                "type": "array",
+                "description": "create 用：待办数组，元素含 content（必填）、可选 id 与 status",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "content": {"type": "string"},
+                        "status": {"type": "string"}
+                    }
+                }
+            },
+            "id": {"type": "string", "description": "update 用：目标待办的 id"},
+            "status": {"type": "string", "description": "update 用：pending / in_progress / completed"},
+            "content": {"type": "string", "description": "update 用：新的内容文本"}
+        },
+        "required": ["action"]
+    })";
+    // 唯一捕获 agent 引用的 handler——见 todoWriteHandlerImpl 的自引用说明
+    todoTool.m_handler = [&agent](const std::string& args) {
+        return todoWriteHandlerImpl(args, agent);
+    };
+    agent.registerTool(todoTool);
 
     // —— 网络 ——
     // 风险级取 Read：GET/HEAD 本质是读取，与 read_file 同级。

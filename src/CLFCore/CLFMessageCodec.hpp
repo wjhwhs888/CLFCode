@@ -21,11 +21,13 @@ public:
     // skills: 已加载的知识库名称列表，非空时写入 "skills" 数组
     // summary: 会话摘要，非空且 m_valid 时写入 "summary" 对象
     // savedAt / title 为空时不写入对应字段
+    // todos: 待办清单（S2-6），非空时写入 "todos" 数组
     static std::string serialize(const std::vector<CLFMessage>& messages,
                                   const std::string& savedAt = "",
                                   const std::string& title = "",
                                   const std::vector<std::string>& skills = {},
-                                  const CLFSessionSummary* summary = nullptr);
+                                  const CLFSessionSummary* summary = nullptr,
+                                  const std::vector<CLFTodoItem>& todos = {});
 
     // 从 JSON 解析消息数组（拦截 nlohmann 异常，失败返回空）
     static std::vector<CLFMessage> parse(const std::string& jsonData);
@@ -37,7 +39,8 @@ public:
                                               std::string* outSavedAt = nullptr,
                                               std::string* outTitle = nullptr,
                                               std::vector<std::string>* outSkills = nullptr,
-                                              CLFSessionSummary* outSummary = nullptr);
+                                              CLFSessionSummary* outSummary = nullptr,
+                                              std::vector<CLFTodoItem>* outTodos = nullptr);
 };
 
 } // namespace CLF::CLFCore

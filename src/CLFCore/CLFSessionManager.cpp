@@ -80,7 +80,8 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
                                      const std::string& dirPath,
                                      bool finalize,
                                      const std::vector<std::string>& skills,
-                                     const CLFSessionSummary* summary) {
+                                     const CLFSessionSummary* summary,
+                                     const std::vector<CLFTodoItem>& todos) {
     std::error_code ec;
     fs::create_directories(fs::u8path(dirPath), ec);
 
@@ -114,7 +115,7 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
 
     // === 覆盖模式：原子写入 latest.json ===
     std::string json = CLFMessageCodec::serialize(
-        messages, timestampStr(), extractTitle(messages), skills, summary);
+        messages, timestampStr(), extractTitle(messages), skills, summary, todos);
     if (json.empty()) {
         CLFLogger::instance().warn("[Save] serialize returned empty JSON");
         return "";
@@ -165,7 +166,8 @@ std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
 bool CLFSessionManager::load(const std::string& filePath,
                               std::vector<CLFMessage>& outMessages,
                               std::vector<std::string>* outSkills,
-                              CLFSessionSummary* outSummary) {
+                              CLFSessionSummary* outSummary,
+                              std::vector<CLFTodoItem>* outTodos) {
     CLFLogger::instance().debug("[Load] opening: " + filePath);
 
     std::ifstream file(fs::u8path(filePath));
@@ -184,7 +186,7 @@ bool CLFSessionManager::load(const std::string& filePath,
     }
 
     outMessages = CLFMessageCodec::parseFull(oss.str(), nullptr, nullptr, nullptr,
-                                              outSkills, outSummary);
+                                              outSkills, outSummary, outTodos);
 
     if (outMessages.empty()) {
         // 损坏文件 → 备份为 .bak，不崩溃

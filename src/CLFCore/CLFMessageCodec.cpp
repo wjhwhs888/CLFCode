@@ -10,7 +10,8 @@ std::string CLFMessageCodec::serialize(const std::vector<CLFMessage>& messages,
                                         const std::string& savedAt,
                                         const std::string& title,
                                         const std::vector<std::string>& skills,
-                                        const CLFSessionSummary* summary) {
+                                        const CLFSessionSummary* summary,
+                                        const std::vector<CLFTodoItem>& todos) {
     nlohmann::json data;
     data["version"]      = 1;
     data["messageCount"] = static_cast<int>(messages.size());
@@ -22,6 +23,16 @@ std::string CLFMessageCodec::serialize(const std::vector<CLFMessage>& messages,
         nlohmann::json sk = nlohmann::json::array();
         for (const auto& s : skills) sk.push_back(s);
         data["skills"] = std::move(sk);
+    }
+
+    // todos 数组（S2-6，照 skills 模式：空则不写字段。version 维持 1——
+    // 旧版读新文件会忽略该字段，新版读旧文件视为空清单，双向兼容）
+    if (!todos.empty()) {
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& t : todos) {
+            arr.push_back({{"id", t.m_id}, {"content", t.m_content}, {"status", t.m_status}});
+        }
+        data["todos"] = std::move(arr);
     }
 
     // summary 对象
@@ -87,7 +98,8 @@ std::vector<CLFMessage> CLFMessageCodec::parseFull(const std::string& jsonData,
                                                      std::string* outSavedAt,
                                                      std::string* outTitle,
                                                      std::vector<std::string>* outSkills,
-                                                     CLFSessionSummary* outSummary) {
+                                                     CLFSessionSummary* outSummary,
+                                                     std::vector<CLFTodoItem>* outTodos) {
     std::vector<CLFMessage> result;
     try {
         nlohmann::json data = nlohmann::json::parse(jsonData);
@@ -105,6 +117,21 @@ std::vector<CLFMessage> CLFMessageCodec::parseFull(const std::string& jsonData,
             if (data.contains("skills") && data["skills"].is_array()) {
                 for (const auto& s : data["skills"]) {
                     if (s.is_string()) outSkills->push_back(s.get<std::string>());
+                }
+            }
+        }
+
+        // todos 数组（S2-6）——字段缺失即视为空清单，保证旧会话文件照常加载
+        if (outTodos) {
+            outTodos->clear();
+            if (data.contains("todos") && data["todos"].is_array()) {
+                for (const auto& t : data["todos"]) {
+                    if (!t.is_object()) continue;
+                    CLFTodoItem item;
+                    item.m_id      = t.value("id", "");
+                    item.m_content = t.value("content", "");
+                    item.m_status  = t.value("status", "pending");
+                    if (!item.m_content.empty()) outTodos->push_back(std::move(item));
                 }
             }
         }

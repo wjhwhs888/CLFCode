@@ -91,6 +91,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFSessionManager qa_CLFAgentLoop qa_CLFStreamAccumulator
                      qa_CLFHeadTail qa_CLFSearchContent qa_CLFToolExecutor
                      qa_CLFRetryPolicy qa_CLFFileOps qa_CLFBuiltinTools qa_CLFWebFetch
+                     qa_CLFMessageCodec
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
                      qa_CLFInputRender qa_CLFPasserby)
 
@@ -153,6 +154,10 @@ if(WIN32)
     target_link_libraries(qa_CLFWebFetch PRIVATE ws2_32 crypt32)
 endif()
 add_test(NAME qa_CLFWebFetch COMMAND qa_CLFWebFetch)
+
+add_executable(qa_CLFMessageCodec test/qa_CLFMessageCodec.cpp)
+target_link_libraries(qa_CLFMessageCodec PRIVATE clf_core)
+add_test(NAME qa_CLFMessageCodec COMMAND qa_CLFMessageCodec)
 
 add_executable(qa_CLFPasteCoalescer test/qa_CLFPasteCoalescer.cpp)
 target_link_libraries(qa_CLFPasteCoalescer PRIVATE clf_core clf_ui)

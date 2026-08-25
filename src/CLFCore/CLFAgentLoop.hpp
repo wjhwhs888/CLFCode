@@ -27,6 +27,14 @@ public:
                           const CLFTimerLabels& labels = {});
     ~CLFAgentLoop();
 
+    // 注册工具后，m_tools 中的 handler 可能捕获 *this 的引用
+    // （如 todo_write 需读写 m_todos），构成自引用。
+    // 拷贝/移动会让已注册 handler 指向旧对象 → 悬垂，故显式禁用。
+    CLFAgentLoop(const CLFAgentLoop&)            = delete;
+    CLFAgentLoop& operator=(const CLFAgentLoop&) = delete;
+    CLFAgentLoop(CLFAgentLoop&&)                 = delete;
+    CLFAgentLoop& operator=(CLFAgentLoop&&)      = delete;
+
     // 注入输出通道 + 注册中断回调.
     // 析构时自动清空回调.
     void setOutput(CLF::CLFTypes::ICLFOutput* output);
@@ -61,6 +69,14 @@ public:
 
     // 从会话文件恢复（跳过 system 消息，回显历史，重新注入 skills）
     bool restoreSession(const std::string& filePath);
+
+    //待办清单读写（S2-6：随会话持久化，不独立落盘）
+    // 由 todo_write 工具 handler 通过捕获的 agent 引用调用
+    // example:
+    //   agent.setTodos(parsedTodos);
+    //   for (const auto& t : agent.getTodos()) show(t);
+    const std::vector<CLFTodoItem>& getTodos() const { return m_todos; }
+    void setTodos(std::vector<CLFTodoItem> todos) { m_todos = std::move(todos); }
 
     // —— 查询 ——
 
@@ -106,6 +122,7 @@ private:
     std::vector<std::string>          m_loadedSkills;
     std::unique_ptr<CLFSessionSummarizer> m_summarizer;
     CLFSessionSummary                 m_cachedSummary;    // /exit 时生成，saveSession 时消费
+    std::vector<CLFTodoItem>          m_todos;            // S2-6: 待办清单，saveSession 时随会话写入
     ToolStats                         m_lastToolStats;
     long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;

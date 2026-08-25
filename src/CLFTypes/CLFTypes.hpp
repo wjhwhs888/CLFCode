@@ -123,6 +123,16 @@ struct CLFTool {
 // 会话摘要（/exit 时生成，/resume 时注入为 system 消息）
 // ============================================================================
 
+// 待办项（S2-6）
+// 刻意不独立落盘：对标 dsh（todo 是会话事件）与 Claude Code（按会话分片存），
+// 二者都不往用户工作目录写元数据。此处随会话一起持久化。
+// 状态取值对齐 dsh：pending / in_progress / completed
+struct CLFTodoItem {
+    std::string m_id;
+    std::string m_content;
+    std::string m_status = "pending";
+};
+
 struct CLFSessionSummary {
     std::string              m_summary;        // 总体摘要文本
     std::string              m_currentPlan;    // 当前计划/任务描述

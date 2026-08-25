@@ -37,11 +37,13 @@ public:
     // skills: 已加载的知识库名称列表，写入 JSON 的 skills 字段
     // summary: 会话摘要，写入 JSON 的 summary 对象（nullptr 或 m_valid=false 时跳过）
     // 返回文件路径，失败返回空串
+    // todos: 待办清单（S2-6），随会话一起持久化
     static std::string save(const std::vector<CLFMessage>& messages,
                             const std::string& dirPath,
                             bool finalize,
                             const std::vector<std::string>& skills = {},
-                            const CLFSessionSummary* summary = nullptr);
+                            const CLFSessionSummary* summary = nullptr,
+                            const std::vector<CLFTodoItem>& todos = {});
 
     // 从文件加载消息
     // 返回 false = 文件不存在/格式损坏/内容为空
@@ -50,7 +52,8 @@ public:
     static bool load(const std::string& filePath,
                      std::vector<CLFMessage>& outMessages,
                      std::vector<std::string>* outSkills = nullptr,
-                     CLFSessionSummary* outSummary = nullptr);
+                     CLFSessionSummary* outSummary = nullptr,
+                     std::vector<CLFTodoItem>* outTodos = nullptr);
 
     // 列出会话（按修改时间倒序，limit 条）
     // latest.json 排在最前面，标记 m_isLatest=true
