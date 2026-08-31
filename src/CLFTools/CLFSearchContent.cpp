@@ -125,14 +125,16 @@ void searchDir(const fs::path& dir, const std::string& pattern,
         } else if (entry.is_regular_file(ec)) {
             if (!matchesExtension(entry.path(), fileTypes)) continue;
             if (isFileTooLarge(entry.path())) {
-                skippedLarge.emplace_back(entry.path().string(),
+                // u8string：string() 按 ANSI 代码页转窄字符，中文路径乱码
+                skippedLarge.emplace_back(entry.path().u8string(),
                     std::to_string(fs::file_size(entry.path(), ec)) + " bytes");
                 continue;
             }
             // 读取文件并逐行匹配
             std::ifstream file(entry.path());
             if (!file.is_open()) continue;
-            std::string relative = fs::relative(entry.path(), dir).string();
+            // u8string：string() 按 ANSI 代码页转窄字符，中文路径乱码
+            std::string relative = fs::relative(entry.path(), dir).u8string();
             std::string line;
             int lineNum = 0;
             while (std::getline(file, line) && resultCount < kMaxResults) {

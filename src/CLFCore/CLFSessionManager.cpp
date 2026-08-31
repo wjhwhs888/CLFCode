@@ -271,10 +271,12 @@ std::vector<CLFSessionInfo> CLFSessionManager::list(const std::string& dirPath, 
             CLFMessageCodec::parseFull(oss.str(), nullptr, &info.m_savedAt, &title);
             info.m_title = title.empty() ? "(untitled)" : title;
         } catch (...) {
-            info.m_title = entry.path().stem().string();
+            // u8string：中文会话标题的 fallback 不再乱码
+            info.m_title = entry.path().stem().u8string();
         }
         if (info.m_title.empty() || info.m_title == "(untitled)") {
-            std::ifstream file(info.m_path);
+            // u8path：窄字符 ifstream 打开按 ANSI 代码页解释路径，中文路径打开失败
+            std::ifstream file(fs::u8path(info.m_path));
             std::ostringstream oss;
             oss << file.rdbuf();
             auto msgs = CLFMessageCodec::parse(oss.str());

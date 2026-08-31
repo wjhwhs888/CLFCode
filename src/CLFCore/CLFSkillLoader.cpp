@@ -25,10 +25,11 @@ int CLFSkillLoader::loadFromDir(const std::string& dirPath) {
     for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
         if (!entry.is_regular_file()) continue;
 
-        std::string path = entry.path().string();
-        std::string name = entry.path().stem().string(); // 不含 .md 后缀
+        // u8string/u8path：窄字符转换与打开按 ANSI 代码页解释，中文路径乱码/失败
+        std::string path = entry.path().u8string();
+        std::string name = entry.path().stem().u8string(); // 不含 .md 后缀
 
-        std::ifstream file(path);
+        std::ifstream file(fs::u8path(path));
         if (!file.is_open()) continue;
 
         std::ostringstream oss;

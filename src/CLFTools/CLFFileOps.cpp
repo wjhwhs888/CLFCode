@@ -31,7 +31,7 @@ namespace {
 fs::path toNativePath(const std::string& utf8Path) {
 #ifdef _WIN32
     int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Path.c_str(), -1, nullptr, 0);
-    if (wideLen <= 1) return fs::path(utf8Path);
+    if (wideLen <= 1) return fs::u8path(utf8Path);  // fallback 也按 UTF-8 解释
     std::wstring wide(wideLen - 1, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, utf8Path.c_str(), -1, wide.data(), wideLen - 1);
     return fs::path(wide);

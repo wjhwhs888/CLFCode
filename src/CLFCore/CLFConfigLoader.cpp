@@ -28,10 +28,11 @@ std::string CLFConfigLoader::findProjectRoot() {
     // 1. 获取可执行文件所在目录
     std::string exeDir;
 #ifdef _WIN32
-    char buf[MAX_PATH];
-    DWORD len = GetModuleFileNameA(nullptr, buf, sizeof(buf));
-    if (len > 0 && len < sizeof(buf)) {
-        exeDir = fs::path(buf).parent_path().string();
+    // W 版本 + u8string：A 版本按 ANSI 代码页读取路径，exe 位于中文目录时乱码
+    wchar_t wbuf[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, wbuf, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        exeDir = fs::path(wbuf).parent_path().u8string();
     }
 #else
     char buf[PATH_MAX];
@@ -43,20 +44,21 @@ std::string CLFConfigLoader::findProjectRoot() {
 #endif
 
     // 2. 从 exe 目录向上查找 CMakeLists.txt（开发环境：项目根目录）
-    fs::path dir = exeDir.empty() ? fs::current_path() : fs::path(exeDir);
+    // u8path 构造：exeDir 为 UTF-8 窄字符，按 ANSI 代码页构造 path 会乱码
+    fs::path dir = exeDir.empty() ? fs::current_path() : fs::u8path(exeDir);
     while (!dir.empty() && dir != dir.root_path()) {
         if (fs::exists(dir / "CMakeLists.txt")) {
-            s_projectRoot = dir.string();
+            s_projectRoot = dir.u8string();
             return s_projectRoot;
         }
         dir = dir.parent_path();
     }
 
     // 3. 从 exe 目录向上查找 config/agent_settings.json（独立安装场景）
-    dir = exeDir.empty() ? fs::current_path() : fs::path(exeDir);
+    dir = exeDir.empty() ? fs::current_path() : fs::u8path(exeDir);
     while (!dir.empty() && dir != dir.root_path()) {
         if (fs::exists(dir / "config" / "agent_settings.json")) {
-            s_projectRoot = dir.string();
+            s_projectRoot = dir.u8string();
             return s_projectRoot;
         }
         dir = dir.parent_path();

@@ -283,7 +283,8 @@ bool cmdInit(const std::string&, const std::string&,
     }
 
     // 生成初始模板
-    std::string projectName = std::filesystem::path(projectRoot).filename().string();
+    // u8path 构造 + u8string：窄字符 path 构造按 ANSI 代码页解码，中文目录名乱码
+    std::string projectName = std::filesystem::u8path(projectRoot).filename().u8string();
     std::string templateContent =
         "# " + projectName + " 项目规则\n"
         "\n"
