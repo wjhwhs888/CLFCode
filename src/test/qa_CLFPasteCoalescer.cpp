@@ -75,8 +75,19 @@ const boost::ut::suite<"CLFPasteCoalescer"> tests = [] {
         expect(c.consumePendingConfirmation() == true);
     };
 
-    "P7 单行粘贴带尾换行（无后续）→ 一次提交"_test = [] {
+    "P7 单行粘贴带尾换行（前置突发）→ 窗满不提交，显式二次 Enter 提交"_test = [] {
         CLFPasteCoalescer c([] {}, 5);
+        auto t0 = Clock::now();
+        expect(c.onCharacter(t0) == Action::PassThrough);              // 粘贴字符突发
+        expect(c.onCharacter(t0 + std::chrono::milliseconds(2))
+               == Action::PassThrough);
+        // 粘贴尾换行：Return 距最后字符 3ms < 40ms → 粘贴上下文
+        expect(c.onReturn(t0 + std::chrono::milliseconds(3),
+                          std::string("echo hi")) == Action::Consume);
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        expect(!c.pendingConfirmed());                                  // 窗满不提交
+        // 显式二次 Enter：距最后字符 >60ms → 手打路径 → 提交
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
         expect(c.onReturn(Clock::now(), std::string("echo hi")) == Action::Consume);
         expect(waitConfirmed(c, 100));
         expect(c.consumePendingConfirmation() == true);
@@ -92,7 +103,8 @@ const boost::ut::suite<"CLFPasteCoalescer"> tests = [] {
     };
 
     "P3 粘贴态静默后 Enter → 退出粘贴态按真回车提交"_test = [] {
-        CLFPasteCoalescer c([] {}, 5);
+        // burst=5ms：静默 30ms > 突发窗，第二次 Enter 判为手打真提交
+        CLFPasteCoalescer c([] {}, /*quietWindowMs=*/5, /*pasteBurstMs=*/5);
         auto t0 = Clock::now();
         std::string text = "x";
         expect(c.onReturn(t0, text) == Action::Consume);          // 进入 PENDING
@@ -175,6 +187,82 @@ const boost::ut::suite<"CLFPasteCoalescer"> tests = [] {
         text += "o";
         expect(text == "\nfoo");
         expect(!c.pendingConfirmed());
+    };
+
+    // ========== 前置突发检测（2026-08-31 自问自答 Bug：注入末尾 Return 不得自动提交） ==========
+
+    "N1 手打回车（字符后静默 > 突发窗）→ 一次提交不回归"_test = [] {
+        CLFPasteCoalescer c([] {}, 5);
+        expect(c.onCharacter(Clock::now()) == Action::PassThrough);
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));  // 手打间隔 > 40ms
+        expect(c.onReturn(Clock::now(), std::string("hello")) == Action::Consume);
+        expect(waitConfirmed(c, 100));
+        expect(c.consumePendingConfirmation() == true);
+    };
+
+    "N2 粘贴末尾 Return 窗满不提交，且不唤醒主循环（零自动请求）"_test = [] {
+        std::atomic<int> wakes{0};
+        CLFPasteCoalescer c([&] { wakes++; }, 5);
+        auto t0 = Clock::now();
+        expect(c.onCharacter(t0) == Action::PassThrough);          // 注入字符突发
+        expect(c.onReturn(t0 + std::chrono::milliseconds(2),
+                          std::string("txt")) == Action::Consume); // 注入尾换行
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        expect(!c.pendingConfirmed());
+        expect(wakes.load() == 0);  // 不提交 → wakeCb 未触发 → 无 Custom → 无 doSubmit
+    };
+
+    "N3 粘贴末尾不提交后状态复位 Idle，后续字符正常放行"_test = [] {
+        CLFPasteCoalescer c([] {}, 5);
+        auto t0 = Clock::now();
+        expect(c.onCharacter(t0) == Action::PassThrough);
+        expect(c.onReturn(t0 + std::chrono::milliseconds(1),
+                          std::string("x")) == Action::Consume);
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        expect(!c.pendingConfirmed());
+        expect(c.onCharacter(Clock::now()) == Action::PassThrough);  // 已回 Idle
+    };
+
+    "N4 多行粘贴（前置突发）中间 Return 转 PasteMode，零中途提交"_test = [] {
+        CLFPasteCoalescer c([] {}, 200);
+        auto t0 = Clock::now();
+        std::string text = "a";
+        expect(c.onCharacter(t0) == Action::PassThrough);          // 粘贴 'a' 突发
+        expect(c.onReturn(t0 + std::chrono::milliseconds(1), text)
+               == Action::Consume);                                 // Return₁ 粘贴上下文
+        expect(c.onCharacter(t0 + std::chrono::milliseconds(2))
+               == Action::RestoreAndAppendChar);                    // 窗内字符 → PasteMode
+        text = c.pendingText() + "\n" + "b";
+        expect(c.onReturn(t0 + std::chrono::milliseconds(3), text)
+               == Action::InsertNewline);                           // 尾换行
+        text += "\n";
+        expect(text == "a\nb\n");
+        expect(!c.pendingConfirmed());
+        // 静默后用户显式 Enter → 一次提交完整内容
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        expect(c.onReturn(Clock::now(), text) == Action::Consume);
+        expect(waitConfirmed(c, 300));
+        expect(c.consumePendingConfirmation() == true);
+    };
+
+    "N5 突发判定边界：恰好等于突发窗 → 粘贴上下文不提交"_test = [] {
+        CLFPasteCoalescer c([] {}, 5, /*pasteBurstMs=*/10);
+        auto t0 = Clock::now();
+        expect(c.onCharacter(t0) == Action::PassThrough);
+        expect(c.onReturn(t0 + std::chrono::milliseconds(10),
+                          std::string("x")) == Action::Consume);  // 恰好 10ms（≤ 判定）
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        expect(!c.pendingConfirmed());
+    };
+
+    "N6 突发判定边界：突发窗 + 1ms → 手打提交"_test = [] {
+        CLFPasteCoalescer c([] {}, 5, /*pasteBurstMs=*/10);
+        auto t0 = Clock::now();
+        expect(c.onCharacter(t0) == Action::PassThrough);
+        expect(c.onReturn(t0 + std::chrono::milliseconds(11),
+                          std::string("x")) == Action::Consume);  // 11ms > 10ms
+        expect(waitConfirmed(c, 100));
+        expect(c.consumePendingConfirmation() == true);
     };
 
     "IDLE 态普通字符与事件：PassThrough 放行"_test = [] {

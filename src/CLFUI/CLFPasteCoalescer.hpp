@@ -21,8 +21,12 @@ public:
     using TimePoint = std::chrono::steady_clock::time_point;
 
     // wakeCb：定时线程唤醒主循环的通道（CLFRepl 注入 PostEvent(Custom)）；
-    // quietWindowMs：静默窗时长，默认 40ms，测试注入小值加速
-    explicit CLFPasteCoalescer(std::function<void()> wakeCb, int quietWindowMs = 40);
+    // quietWindowMs：静默窗时长，默认 40ms，测试注入小值加速；
+    // pasteBurstMs：Return 前置突发判定窗口——Return 前此窗口内有字符事件即视为
+    //   粘贴批次末尾的换行（非用户提交意图），窗满不提交、文本留在输入框，
+    //   须用户显式再按 Enter 才提交（二次 Enter，2026-08-31 自问自答 Bug 修复）
+    explicit CLFPasteCoalescer(std::function<void()> wakeCb, int quietWindowMs = 40,
+                               int pasteBurstMs = 40);
     ~CLFPasteCoalescer();  // 常驻定时线程 join
 
     // 事件入口（CLFRepl CatchEvent 调用，仅主循环）。now 注入以便单测。
@@ -64,15 +68,18 @@ private:
     State       m_state = State::Idle;
     std::string m_pendingText;
     TimePoint   m_lastPasteEvent;
+    TimePoint   m_lastCharTime{};        // 最近字符事件时刻（epoch = 从未有字符，突发检测锚点）
     TimePoint   m_deadline;
     std::mutex  m_mutex;                 // 保护 m_state/m_pendingText/m_deadline/m_pendingActive/m_stopRequested
     std::condition_variable m_cv;
     bool        m_pendingActive = false; // cv 谓词
+    bool        m_pendingFromPaste = false; // 本次 PENDING 由粘贴上下文 Return 建立（窗满不提交）
     bool        m_stopRequested = false;
     std::thread m_timer;                 // 常驻线程：wait(active && now>=deadline) → 置 confirmed + wakeCb
     std::function<void()> m_wakeCb;
     std::atomic<bool> m_pendingConfirmed{false};
     int         m_quietWindowMs;
+    int         m_pasteBurstMs;          // Return 前置突发判定窗口
 };
 
 } // namespace CLF::CLFUI

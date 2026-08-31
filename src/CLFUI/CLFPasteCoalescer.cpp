@@ -6,9 +6,11 @@
 
 namespace CLF::CLFUI {
 
-CLFPasteCoalescer::CLFPasteCoalescer(std::function<void()> wakeCb, int quietWindowMs)
+CLFPasteCoalescer::CLFPasteCoalescer(std::function<void()> wakeCb, int quietWindowMs,
+                                     int pasteBurstMs)
     : m_wakeCb(std::move(wakeCb))
-    , m_quietWindowMs(quietWindowMs) {
+    , m_quietWindowMs(quietWindowMs)
+    , m_pasteBurstMs(pasteBurstMs) {
     m_timer = std::thread([this] {
         std::unique_lock<std::mutex> lock(m_mutex);
         for (;;) {
@@ -19,8 +21,17 @@ CLFPasteCoalescer::CLFPasteCoalescer(std::function<void()> wakeCb, int quietWind
                 });
                 if (m_stopRequested) break;
                 if (!m_pendingActive) continue;  // 被取消（取消不 notify，到点醒来见谓词）
-                // deadline 到且仍 active → 确认
+                // deadline 到且仍 active
                 m_pendingActive = false;
+                if (m_pendingFromPaste) {
+                    // 粘贴上下文的 Return（前 pasteBurstMs 内有字符突发）：
+                    // 静默窗满不提交——文本留在输入框，须用户显式再按 Enter
+                    // （届时为手打路径）才提交（2026-08-31 自问自答 Bug 修复）
+                    m_pendingFromPaste = false;
+                    m_state = State::Idle;
+                    continue;
+                }
+                // 手打回车 → 确认
                 m_pendingConfirmed.store(true);
                 auto cb = m_wakeCb;
                 lock.unlock();
@@ -66,6 +77,7 @@ void CLFPasteCoalescer::enterPendingLocked(const std::string& inputText, TimePoi
 
 void CLFPasteCoalescer::cancelPendingLocked() {
     m_pendingActive = false;  // 定时线程到点后见谓词 false 继续休眠，无需 notify
+    m_pendingFromPaste = false;
 }
 
 CLFPasteCoalescer::Action CLFPasteCoalescer::onReturn(TimePoint now,
@@ -76,6 +88,11 @@ CLFPasteCoalescer::Action CLFPasteCoalescer::onReturn(TimePoint now,
         // 空文本也进 PENDING：粘贴以空行开头（"\nfoo"）的首个 Return 即空文本，
         // 短路会丢前导空行。窗满后 doSubmit 对空文本 no-op，现有空回车语义不变
         enterPendingLocked(inputText, now);
+        // 粘贴上下文判定：Return 前 pasteBurstMs 内有字符事件 → 粘贴批次末尾的换行，
+        // 非用户提交意图。多行粘贴中间换行仍由窗内检测转 PasteMode；
+        // 单行粘贴末尾换行则窗满不提交（须用户显式二次 Enter）
+        m_pendingFromPaste =
+            (now - m_lastCharTime <= std::chrono::milliseconds(m_pasteBurstMs));
         return Action::Consume;  // Return 被消费，提交由窗满确认路径执行
 
     case State::PendingSubmit: {
@@ -104,6 +121,7 @@ CLFPasteCoalescer::Action CLFPasteCoalescer::onReturn(TimePoint now,
 
 CLFPasteCoalescer::Action CLFPasteCoalescer::onCharacter(TimePoint now) {
     std::unique_lock<std::mutex> lock(m_mutex);
+    m_lastCharTime = now;  // 所有字符事件刷新突发检测锚点（含 PassThrough）
     switch (m_state) {
     case State::Idle:
         return Action::PassThrough;

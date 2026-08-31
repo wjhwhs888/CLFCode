@@ -25,6 +25,19 @@
 
 ## 已完成
 
+### 2026-08-31 自问自答 P0 Bug 修复 ✅（v0.4.2 已提交推送 + tag 已打，发布由用户执行）
+- **现象**：用户 16:26 提交后零输入零按键，16:31:49 自动提交（会话 JSON [51] "你猜我咋想的…"），16:02:46 同类（[36]）；长回复时概率高（触发轮 21474 字符）
+- **根因**（三重证据 + 用户实证，推翻初稿"上膛残留 5 分钟"推断）：终端注入 → Char 突发进 inputText → 末尾 Return → 40ms 窗满自动提交。核心缺陷 = 40ms 窗只检测"Return 后"不检测"**Return 前字符突发**"→ 单行注入末尾 Return 与手打回车在事件层同构，机制无法区分；「一次 Return+40ms 静默=提交意图」是脆弱假设
+- **注入源**：右键粘贴用户同一终端实测排除（两次）；**Shift+Insert 与 Ctrl+V 实测注入生效** → 16:31 最可能为滚轮翻看时误触 Ctrl+V、剪贴板残留草稿（含行尾换行）。精确方式未做事件级确认，但不影响修复（机制级防住所有注入）
+- **修复**（用户定案 2026-08-31：粘贴后二次 Enter）：`CLFPasteCoalescer` 前置突发检测——`onCharacter` 刷新 `m_lastCharTime`；`onReturn(Idle)` 判定 `now-lastChar ≤ 40ms` → 置 `m_pendingFromPaste`；定时线程窗满时粘贴上下文 → **不置 confirmed、复位 Idle**（文本留输入框、零自动请求、wakeCb 零触发）；手打回车（间隔>40ms）窗满提交不变。构造加 `pasteBurstMs` 参数（默认 40，测试注入）
+- 测试：qa_CLFPasteCoalescer P1-P10 全绿 + 新增 N1-N6（粘贴末尾不提交+wakeCb 零触发 / 手打不回归 / 二次 Enter 提交 / 多行粘贴 PasteMode / 阈值边界）；P3 注入 burst=5ms；P7 重写为新语义
+- 验证：MSVC Debug 全量重建 **18/19**（唯一失败 qa_CLFSessionManager 既有环境问题不变）；主程序 --version 冒烟 exit=0
+- **实机验收（用户执行，全过）**：busy 期间 Ctrl+V 多次注入 → 零自动提交（agent 日志无自动 [Submit]）；注入文本停输入框（含末尾换行）；二次 Enter 提交残留；5.4 万字符超长回复期间注入无干扰；多行粘贴全链路正确（PENDING→PasteMode→InsertNewline 换行全保留）
+- 排除项：右键粘贴（终端层不注入）；CLFPasserby 与提交无关
+- 设计文档已归档：`.claude/plans/设计/归档/归档-自问自答严重Bug分析与修复.md`；原 F0-F5 不实施（F0 与 P8 时序矛盾且对注入场景无效，F1/F2 现状已防，F4 留作可选增强）
+- 踩坑：vcvars64.bat 在 VS 18 环境 call 失败 → 手动组装 INCLUDE/LIB/LIBPATH（MSVC 14.51.36231 + Windows Kits 10.0.26100.0 均在 D 盘）绕过，方法已存 memory
+- 顺带发现：`m_maxToolCallIterations` 实测为 48（progress 旧记 16 已过时）
+
 ### 2026-08-25 定时器退出机制优化 ✅（v0.4.1 已提交推送 + tag 已打，发布由用户执行）
 - **背景**：`qa_CLFAgentLoop` 28.6s → **1.38s**（20.7×），全量 ctest 30s → **1.26s**
 - **CLFThinkingIndicator 线程删除**：查证为纯空转——循环体算的 `elapsed` 从未使用（StatusLine 已由 turnTimer 统一管理）、`m_http` 成员从未被引用；唯一实效是退出时 `setStatus("")`，同步做即可。`stop()` 现在立即返回
