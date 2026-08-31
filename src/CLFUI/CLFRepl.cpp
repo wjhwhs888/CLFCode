@@ -385,7 +385,9 @@ int CLFRepl::run() {
                   | ftxui::color(ftxui::Color::RedLight)
                   | ftxui::bold,
                 sep(),
-                ftxui::text(" 📁 " + std::filesystem::path(
+                // u8path 构造：getWorkingDir 返回 UTF-8，窄字符 path 构造会按
+                // ANSI 代码页（CP936）转宽字符 → 中文目录名乱码（v0.4.2 修复）
+                ftxui::text(" 📁 " + std::filesystem::u8path(
                     CLFConfigLoader::getWorkingDir()).filename().u8string())
                   | ftxui::color(ftxui::Color::GreenLight),
                 sep(),

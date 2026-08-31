@@ -25,7 +25,17 @@
 
 ## 已完成
 
-### 2026-08-31 自问自答 P0 Bug 修复 ✅（v0.4.2 已提交推送 + tag 已打，发布由用户执行）
+### 2026-08-31 中文路径乱码修复 ✅（已提交推送，**未发布**——攒入下一个版本）
+- **现象**：状态栏工作目录显示 `📁 椤圭洰`（应为"项目"）；用户从含中文目录名的路径启动时触发
+- **根因**：UTF-8/GBK 编码族问题（v0.3.2 同族）——`std::filesystem::path(utf8)` 窄字符构造按系统 ANSI 代码页（CP936）把 UTF-8 字节转宽字符，"项目"的 UTF-8 字节 E9A1B9E79BAE 被 GBK 解码为"椤圭洰"
+- **修复**（3 处同族泄漏，一行式）：
+  - `CLFRepl.cpp:388` modeLine 目录显示：`path(getWorkingDir())` → `u8path(getWorkingDir())`（复用 `CLFBuiltinTools.cpp:42` 先例）
+  - `CLFCommands.cpp:275` `/init` 项目根：`current_path().string()` → `.u8string()`
+  - `CLFAgentLoop.cpp:531` system prompt workspaceRoot：`current_path().string()` → `.u8string()`——**模型看到的项目路径此前在中文目录下一直是乱码**
+- 验证：MSVC Debug 增量构建 24/24；ctest 18/19（唯一失败 qa_CLFSessionManager 既有环境问题）；**用户中文目录实测待做**
+- 发布策略：**攒入下一个版本**（CHANGELOG 已加"未发布"段落；VERSION 保持 v0.4.2 不打 tag）
+
+### 2026-08-31 自问自答 P0 Bug 修复 ✅（v0.4.2 已发布，全流程闭环）
 - **现象**：用户 16:26 提交后零输入零按键，16:31:49 自动提交（会话 JSON [51] "你猜我咋想的…"），16:02:46 同类（[36]）；长回复时概率高（触发轮 21474 字符）
 - **根因**（三重证据 + 用户实证，推翻初稿"上膛残留 5 分钟"推断）：终端注入 → Char 突发进 inputText → 末尾 Return → 40ms 窗满自动提交。核心缺陷 = 40ms 窗只检测"Return 后"不检测"**Return 前字符突发**"→ 单行注入末尾 Return 与手打回车在事件层同构，机制无法区分；「一次 Return+40ms 静默=提交意图」是脆弱假设
 - **注入源**：右键粘贴用户同一终端实测排除（两次）；**Shift+Insert 与 Ctrl+V 实测注入生效** → 16:31 最可能为滚轮翻看时误触 Ctrl+V、剪贴板残留草稿（含行尾换行）。精确方式未做事件级确认，但不影响修复（机制级防住所有注入）

@@ -528,7 +528,8 @@ void CLFAgentLoop::injectSystemPrompt() {
 
 CLFSystemPromptBuilder::Context CLFAgentLoop::buildSystemPromptContext() const {
     CLFSystemPromptBuilder::Context ctx;
-    ctx.workspaceRoot       = std::filesystem::current_path().string();
+    // u8string：string() 按 ANSI 代码页转窄字符，中文路径乱码（v0.4.2 修复）
+    ctx.workspaceRoot       = std::filesystem::current_path().u8string();
     ctx.interactionLanguage = m_config.m_interactionLanguage;
     ctx.modelName           = m_config.m_modelName;
     ctx.maxContextWindow    = m_config.m_maxContextWindow;

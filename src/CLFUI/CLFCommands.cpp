@@ -272,7 +272,8 @@ bool cmdVersion(const std::string&, const std::string&,
 bool cmdInit(const std::string&, const std::string&,
              CLFAgentLoop&, const std::string&,
              ICLFOutput* output) {
-    std::string projectRoot = std::filesystem::current_path().string();
+    // u8string：string() 按 ANSI 代码页转窄字符，中文路径乱码（v0.4.2 修复）
+    std::string projectRoot = std::filesystem::current_path().u8string();
     std::string rulesPath = projectRoot + "/PROJECTRULES.md";
 
     if (std::filesystem::exists(rulesPath)) {
