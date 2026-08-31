@@ -25,15 +25,19 @@
 
 ## 已完成
 
-### 2026-08-31 中文路径乱码修复 ✅（已提交推送，**未发布**——攒入下一个版本）
-- **现象**：状态栏工作目录显示 `📁 椤圭洰`（应为"项目"）；用户从含中文目录名的路径启动时触发
-- **根因**：UTF-8/GBK 编码族问题（v0.3.2 同族）——`std::filesystem::path(utf8)` 窄字符构造按系统 ANSI 代码页（CP936）把 UTF-8 字节转宽字符，"项目"的 UTF-8 字节 E9A1B9E79BAE 被 GBK 解码为"椤圭洰"
-- **修复**（3 处同族泄漏，一行式）：
-  - `CLFRepl.cpp:388` modeLine 目录显示：`path(getWorkingDir())` → `u8path(getWorkingDir())`（复用 `CLFBuiltinTools.cpp:42` 先例）
-  - `CLFCommands.cpp:275` `/init` 项目根：`current_path().string()` → `.u8string()`
-  - `CLFAgentLoop.cpp:531` system prompt workspaceRoot：`current_path().string()` → `.u8string()`——**模型看到的项目路径此前在中文目录下一直是乱码**
-- 验证：MSVC Debug 增量构建 24/24；ctest 18/19（唯一失败 qa_CLFSessionManager 既有环境问题）；**用户中文目录实测待做**
-- 发布策略：**攒入下一个版本**（CHANGELOG 已加"未发布"段落；VERSION 保持 v0.4.2 不打 tag）
+### 2026-08-31 中文路径全链路编码修复 ✅（两批，已提交推送，**未发布**——攒入下一个版本）
+- **第一批（36a33cc）**：状态栏目录显示乱码（"椤圭洰"应为"项目"）→ `CLFRepl.cpp` modeLine 改 `u8path`；`CLFCommands.cpp` /init 项目根、`CLFAgentLoop.cpp` workspaceRoot（模型提示词中的项目路径）改 `.u8string()`。**用户已实测 modeLine 修复生效**
+- **第二批（b3a1244，系统性排查）**——`path::string()`/窄字符 path 构造/A 系列 WinAPI 三类编码陷阱全扫：
+  - `/init` 项目名 `path(projectRoot)` 窄构造双重乱码 → `u8path(...).filename().u8string()`
+  - `CLFSearchContent` 结果相对路径与超限文件路径输出 → `.u8string()`（模型看到的搜索结果路径此前中文乱码）
+  - `CLFConfigLoader` `GetModuleFileNameA` → **W 版本**（exe 位于中文目录时配置加载乱码）+ `path(exeDir)` → `u8path(exeDir)` + `dir.string()` → `.u8string()`
+  - `CLFSessionManager` 会话列表中文标题 fallback → `.u8string()`；窄字符 `ifstream file(info.m_path)` → `u8path`（中文路径打开失败）
+  - `CLFSkillLoader` skills 文件枚举/打开 → `.u8string()` + `u8path`
+  - `CLFFileOps::toNativePath` fallback → `u8path`
+  - **保留不动**：ASCII 名单比较类 `filename().string()`（后缀匹配乱码无害）、旧版兼容区（findIncomplete/promote/migrate，注释明确"新代码不应使用"，jsonl 方案将重写）
+- 根因族：MSVC 窄字符文件系统 API 按 `GetACP()`（CP936）解释 UTF-8 字节——注意 `main.cpp` 的 `SetConsoleCP(CP_UTF8)` **不改 GetACP()**，只影响控制台 I/O
+- 验证：MSVC Debug 构建 28/28；ctest 18/19（唯一失败 qa_CLFSessionManager 既有环境问题不变）
+- 发布策略：**攒入下一个版本**（CHANGELOG"未发布"段落已更新；VERSION 保持 v0.4.2 不打 tag）
 
 ### 2026-08-31 自问自答 P0 Bug 修复 ✅（v0.4.2 已发布，全流程闭环）
 - **现象**：用户 16:26 提交后零输入零按键，16:31:49 自动提交（会话 JSON [51] "你猜我咋想的…"），16:02:46 同类（[36]）；长回复时概率高（触发轮 21474 字符）
