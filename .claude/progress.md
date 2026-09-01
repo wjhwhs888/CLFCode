@@ -21,7 +21,10 @@
   - ✅ **与 S3 无冲突，用户定案：本批次先实施，S3 顺延**（jsonl 先行反为 S3 铺路——summary 行已预留；若 S3 摘要移到后台线程，§3.8 防御性 mutex 覆盖）
   - 📅 **实施排期（约 3 天，含测试与人工验收缓冲）**：
     - ✅ **D1 上午（已完成）**：T1+T2（`m_todos` 加锁，getTodos 值返回/setTodos 锁内替换；saveSession 副本、restoreSession 走 setTodos）+ J1（codec 行函数：serializeHeaderLine/TurnLine/TodoSnapshot/CompleteLine/SummaryLine + parse 系列；字段级 helpers 提取重构 serialize/parseFull 行为等价）+ 单测（qa_CLFMessageCodec L1-L8 行往返/type 不匹配/缺字段、qa_CLFAgentLoop U1 并发读写）——构建 33/33，ctest 18/19 基线一致（qa_CLFSessionManager 3 个 _incomplete 旧语义用例既有失败，J2 重写区域）
-    - D1 下午：J2（SessionManager append*/loadJsonl/list/cleanupOld）+ 单测 qa_CLFSessionManager
+    - ✅ **D1 下午（已完成）**：J2（SessionManager appendHeader/Turn/TodoSnapshot/Complete/Summary + loadJsonl 逐行解析 + list [当前] 重定义/.jsonl 过滤 + cleanupOld 适配）+ qa_CLFSessionManager 重写（删 3 个 _incomplete 过时用例 + 修 1 个过时断言 + 新增 J1-J10 十个 jsonl 用例）——**ctest 19/19 历史首次全绿**
+      - 实施期修复 3 个真 bug：① up() helper 无限递归（replace_all 误伤自身函数体）→ SegFault 根因 ② loadJsonl/旧 load 的 .bak 备份 rename 前未关文件（MSVC fstream 默认共享模式不含 FILE_SHARE_DELETE → rename 静默失败）③ 测试中文窄字面量直接拼 path 被 CP936 解码（不同字节序列有的乱码通过、有的抛异常——与 memory 编码陷阱族同根）
+      - 设计遗漏修复：jsonl header 行补 skills 字段（S2-6 起 skills 随会话持久化，原 header 无载体）；§3.9 契约微调（append* 收行文本 string 而非 json——SessionManager 文件 IO 层与 codec 格式层不越界）
+      - 踩坑记录：静态非平凡对象第三次（g_appendMutex 文件级 → 函数内 magic static）
     - D2 上午：J3（AgentLoop 四状态 + 9 接口 + restoreSession 分流 + T6 完成分支 + m_turnStartMsgCount）+ submit 清空判定
     - D2 下午：J4（submit 三处接线）+ J5（命令层 /exit /clear /resume）+ handler 接线（appendTodoSnapshotNow/markTodosDirty/T7 描述）+ T3（ToolExecutor requestRefresh）
     - D3 上午：T4/T5（buildTodoPanel 面板渲染）+ J6（resume 回显清单行）+ 单测 qa_CLFTodoPanel / qa_CLFToolExecutor

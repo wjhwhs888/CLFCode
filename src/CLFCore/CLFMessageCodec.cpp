@@ -247,7 +247,8 @@ std::vector<CLFMessage> CLFMessageCodec::parseFull(const std::string& jsonData,
 std::string CLFMessageCodec::serializeHeaderLine(const std::string& title,
                                                  const std::string& startedAt,
                                                  const std::string& sessionId,
-                                                 const std::string& model) {
+                                                 const std::string& model,
+                                                 const std::vector<std::string>& skills) {
     nlohmann::json line;
     line["type"]       = "header";
     line["version"]    = 1;
@@ -255,6 +256,12 @@ std::string CLFMessageCodec::serializeHeaderLine(const std::string& title,
     line["started_at"] = startedAt;
     line["session_id"] = sessionId;
     line["model"]      = model;
+    // skills 为会话级状态（S2-6 起随会话持久化）——header 是唯一的会话级元数据行，语义归位
+    if (!skills.empty()) {
+        nlohmann::json sk = nlohmann::json::array();
+        for (const auto& s : skills) sk.push_back(s);
+        line["skills"] = std::move(sk);
+    }
     return dumpLine(line);
 }
 
@@ -352,13 +359,22 @@ bool CLFMessageCodec::parseHeaderLine(const nlohmann::json& obj,
                                       std::string* outTitle,
                                       std::string* outStartedAt,
                                       std::string* outSessionId,
-                                      std::string* outModel) {
+                                      std::string* outModel,
+                                      std::vector<std::string>* outSkills) {
     try {
         if (!obj.is_object() || obj.value("type", "") != "header") return false;
         if (outTitle)     *outTitle     = obj.value("title", "");
         if (outStartedAt) *outStartedAt = obj.value("started_at", "");
         if (outSessionId) *outSessionId = obj.value("session_id", "");
         if (outModel)     *outModel     = obj.value("model", "");
+        if (outSkills) {
+            outSkills->clear();
+            if (obj.contains("skills") && obj["skills"].is_array()) {
+                for (const auto& s : obj["skills"]) {
+                    if (s.is_string()) outSkills->push_back(s.get<std::string>());
+                }
+            }
+        }
         return true;
     } catch (const nlohmann::json::exception&) {
         return false;

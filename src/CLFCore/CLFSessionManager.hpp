@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <nlohmann/json.hpp>
+
 #include <string>
 #include <vector>
 
@@ -56,8 +58,39 @@ public:
                      std::vector<CLFTodoItem>* outTodos = nullptr);
 
     // 列出会话（按修改时间倒序，limit 条）
-    // latest.json 排在最前面，标记 m_isLatest=true
-    static std::vector<CLFSessionInfo> list(const std::string& dirPath, int limit);
+    // activeFilePath：当前活跃会话文件路径（nullptr = 无活跃文件，如启动时）
+    //   [当前] 标记（m_isLatest=true）重定义（设计-会话追加式保存.jsonl §3.9，2026-09-02）：
+    //   - 活跃文件路径匹配某个 .jsonl → 该文件标 [当前]
+    //   - activeFilePath 为空且目录存在旧 latest.json → latest.json 标 [当前]（旧版兼容期）
+    //   - 两者都有时以活跃文件为准，latest.json 作普通归档参与排序
+    static std::vector<CLFSessionInfo> list(const std::string& dirPath, int limit,
+                                            const std::string* activeFilePath = nullptr);
+
+    // —— jsonl 追加式保存（设计-会话追加式保存.jsonl.md §3.2/§3.9，2026-09-02）——
+    // line 为已序列化的完整行文本（不含换行，由 CLFMessageCodec 行函数产出）
+    // 每个 append*：static mutex（防御性，§3.8）→ ios::app 打开 → 写 → flush → 关闭
+    // 返回 false = 打开/写入失败（warn 日志，不抛异常）；空行直接返回 false
+    // example:
+    //   CLFSessionManager::appendHeader(path, CLFMessageCodec::serializeHeaderLine(...));
+    static bool appendHeader(const std::string& jsonlPath, const std::string& line);
+    static bool appendTurn(const std::string& jsonlPath, const std::string& line);
+    static bool appendTodoSnapshot(const std::string& jsonlPath, const std::string& line);
+    static bool appendComplete(const std::string& jsonlPath, const std::string& line);
+    static bool appendSummary(const std::string& jsonlPath, const std::string& line);
+
+    // 逐行解析 jsonl 会话文件（设计 §3.4.2，2026-09-02）
+    // turn 行 messages 按行序并入 outMessages；header 行元数据 → outHeaderInfo
+    // 恢复取值优先级（outTodos）：最后一条可解析 todo_snapshot > 最后带 todos 的 turn 行
+    // outSummary：最后一条可解析 summary 行；outCompleteTodos：最后一条 complete 行的清单（回显用，J6）
+    // 损坏行/不完整尾行：跳过（warn 日志），不整体失败
+    // 返回 false = 文件不存在/打开失败
+    static bool loadJsonl(const std::string& filePath,
+                          std::vector<CLFMessage>& outMessages,
+                          std::vector<std::string>* outSkills = nullptr,
+                          CLFSessionSummary* outSummary = nullptr,
+                          std::vector<CLFTodoItem>* outTodos = nullptr,
+                          std::vector<CLFTodoItem>* outCompleteTodos = nullptr,
+                          CLFSessionInfo* outHeaderInfo = nullptr);
 
     // —— 旧版兼容（保留以支持测试，新代码不应使用） ——
     static std::string findIncomplete(const std::string& dirPath);
@@ -70,7 +103,10 @@ public:
 
     // —— 清理 ——
     static bool remove(const std::string& filePath);
-    static int cleanupOld(const std::string& dirPath, int maxAgeDays);
+    // 清理过期会话（.json 与 .jsonl 一并处理）
+    // activeFilePath：活跃会话文件——清理是删除动作，绝不能删正在写的会话（设计 §6 边界表）
+    static int cleanupOld(const std::string& dirPath, int maxAgeDays,
+                          const std::string* activeFilePath = nullptr);
 };
 
 } // namespace CLF::CLFCore

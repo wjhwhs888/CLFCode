@@ -54,7 +54,8 @@ public:
     static std::string serializeHeaderLine(const std::string& title,
                                            const std::string& startedAt,
                                            const std::string& sessionId,
-                                           const std::string& model);
+                                           const std::string& model,
+                                           const std::vector<std::string>& skills = {});
     static std::string serializeTurnLine(const std::vector<CLFMessage>& messages,
                                          const std::string& ts,
                                          const std::vector<CLFTodoItem>* todos = nullptr);
@@ -79,7 +80,8 @@ public:
                                 std::string* outTitle = nullptr,
                                 std::string* outStartedAt = nullptr,
                                 std::string* outSessionId = nullptr,
-                                std::string* outModel = nullptr);
+                                std::string* outModel = nullptr,
+                                std::vector<std::string>* outSkills = nullptr);
 };
 
 } // namespace CLF::CLFCore
