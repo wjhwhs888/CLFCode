@@ -89,6 +89,44 @@ public:
         m_todos = std::move(todos);
     }
 
+    // —— 会话文件上下文（jsonl 追加式保存，设计-会话追加式保存.jsonl §3.9，2026-09-02）——
+    // 所有访问全在 asyncSubmit 工作线程串行（§3.8），锁为防御性
+
+    // 注入历史目录（CLFRepl 构造时调用；beginSessionFile 建文件用）
+    void setHistoryDir(const std::string& dir) { m_historyDir = dir; }
+
+    // 当前活动会话文件（空串 = 无活动文件）
+    void        setActiveSessionFile(const std::string& jsonlPath);
+    std::string getActiveSessionFile() const;   // 锁内拷贝（m_sessionCtxMutex）
+
+    // 懒创建会话文件（CLFRepl::submit 在第一条新对话输入时调用）：
+    //   m_resumedFrom 非空 → 复制源文件全部行（header 原样，session_id 延续语义）
+    //                        为"时间戳_标题续.jsonl"，随后清 m_resumedFrom
+    //   为空            → 全新文件"时间戳_标题.jsonl"（header 含 skills 快照）
+    // 返回新文件路径（失败返回空串）
+    std::string beginSessionFile(const std::string& firstInput);
+
+    // todo_write handler 在 create/update/clear 成功 setTodos 后立即调用：
+    // 锁内取快照 → 追加 todo_snapshot 行 + flush（防崩溃丢进度）；失败 warn 不抛
+    void appendTodoSnapshotNow();
+
+    // 轮末由 CLFRepl::submit 调用（替换原 saveSession(false) 覆盖写）：
+    // 追加 turn 行（本轮消息差集 + m_todoDirty 时的 todos 快照）→ 清 m_todoDirty
+    // 无活动文件 / 本轮无消息 → 跳过；返回活动文件路径（跳过返回空串）
+    std::string appendTurnLine();
+
+    // m_todoDirty：仅 create/update/clear 置位（list 不调）；决定 turn 行是否带 todos 快照
+    void markTodosDirty() { m_todoDirty.store(true); }
+
+    // resume 续写态（restoreSession 内部置位；/clear 与 beginSessionFile 清除）
+    void              setResumedFrom(const std::string& p) { m_resumedFrom = p; }
+    const std::string& getResumedFrom() const { return m_resumedFrom; }
+
+    // todo 面板显示开关（设计-任务清单UI显示 §3.9）：置位后面板隐藏；
+    // create 时清除、全完成收尾时置位、resume 恢复非全完成快照时清除、新回合（submit）时置位
+    void setTodoPanelDone(bool done) { m_todoPanelDone.store(done); }
+    bool isTodoPanelDone() const      { return m_todoPanelDone.load(); }
+
     // —— 查询 ——
 
     // 获取当前配置（/config 命令用）
@@ -135,6 +173,14 @@ private:
     CLFSessionSummary                 m_cachedSummary;    // /exit 时生成，saveSession 时消费
     std::vector<CLFTodoItem>          m_todos;            // S2-6: 待办清单，saveSession 时随会话写入
     mutable std::mutex                m_todosMutex;       // 2026-09-02: 工作线程写 ↔ 主线程渲染读（设计 §3.9）
+    // —— jsonl 会话上下文（设计 §3.9，2026-09-02）——
+    std::atomic<bool>                 m_todoPanelDone{false};  // 面板显示开关（工作线程置位 ↔ 渲染读）
+    std::atomic<bool>                 m_todoDirty{false};      // 本轮操作过 create/update/clear（list 不置）
+    std::string                       m_activeSessionFile;     // 活动会话文件（防御性互斥见下）
+    mutable std::mutex                m_sessionCtxMutex;       // m_activeSessionFile 读写互斥（防御性）
+    std::string                       m_resumedFrom;           // 非空 = resume 续写态（工作线程串行，无锁）
+    std::string                       m_historyDir;            // 会话历史目录（CLFRepl 构造时注入）
+    size_t                            m_turnStartMsgCount = 0; // runTurn 入口轮初消息数（appendTurnLine 差集）
     ToolStats                         m_lastToolStats;
     long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;

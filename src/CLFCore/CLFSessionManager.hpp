@@ -67,6 +67,23 @@ public:
                                             const std::string* activeFilePath = nullptr);
 
     // —— jsonl 追加式保存（设计-会话追加式保存.jsonl.md §3.2/§3.9，2026-09-02）——
+
+    // 行时间戳（"YYYY-MM-DD_HH-MM-SS"，jsonl 行 ts 与文件名前缀共用）
+    static std::string timestampNow();
+
+    // 会话 id（时间戳紧凑 + 4 位随机 hex，如 "20260902_092053_a3f9"）——header 自我标识用
+    static std::string makeSessionId();
+
+    // 新会话文件路径命名：dirPath/时间戳_标题[suffix].jsonl
+    // 标题从 firstInput 提取（首行、换行转空格、UTF-8 安全截断、非法字符安全化）
+    // suffix 非空时拼在标题后（如"续"）；重名冲突自动加序号（照 save 归档模式）
+    static std::string makeNewSessionPath(const std::string& dirPath,
+                                          const std::string& firstInput,
+                                          const std::string& suffix = "");
+
+    // 逐行复制会话文件（resume 续写：源文件冻结快照 → 新续写文件；header 原样，
+    // session_id 延续语义）。返回 false = 打开/写入失败
+    static bool copyLines(const std::string& srcPath, const std::string& dstPath);
     // line 为已序列化的完整行文本（不含换行，由 CLFMessageCodec 行函数产出）
     // 每个 append*：static mutex（防御性，§3.8）→ ios::app 打开 → 写 → flush → 关闭
     // 返回 false = 打开/写入失败（warn 日志，不抛异常）；空行直接返回 false

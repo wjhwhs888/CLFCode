@@ -3,6 +3,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFCore/CLFMessageCodec.hpp"
 #include "CLFCore/CLFRetryPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
@@ -20,6 +21,8 @@
 #include <thread>
 
 namespace CLF::CLFCore {
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -74,6 +77,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     m_interrupted = false;  // 新 turn 开始时重置中断标志
     if (m_output) m_output->clearThinking();  // 清空上一轮推理内容
     m_lastReasoningSize = 0;  // 重置推理增量追踪
+    // J3: 轮初消息数（appendTurnLine 的差集基准；user 消息计入本轮新增）
+    m_turnStartMsgCount = m_context.getMessages().size();
     m_context.addMessage("user", userInput);
     m_lastToolStats = {};
     // P1-1: 状态点接线——Running 于 turn 开始
@@ -330,6 +335,38 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             // 完成
             {
+                // T6: todo 全完成收尾（设计-任务清单UI显示 §3.7，2026-09-02）
+                // 判定：m_todos 非空 && 全部 completed && !m_todoPanelDone（无 m_todoDirty，§八 补丁 5）
+                // 时序：总结已流式输出完毕 → 清单行 → ✻ worked（顺序=显示顺序）
+                if (!m_todoPanelDone.load()) {
+                    const auto todosSnapshot = getTodos();
+                    bool allDone = !todosSnapshot.empty();
+                    for (const auto& t : todosSnapshot) {
+                        if (t.m_status != "completed") { allDone = false; break; }
+                    }
+                    if (allDone) {
+                        // ① 数据：complete 行先落盘（无活动文件跳过；append 内部自兜底不抛）
+                        const std::string sessionFile = getActiveSessionFile();
+                        if (!sessionFile.empty()) {
+                            const std::string line = CLFMessageCodec::serializeCompleteLine(
+                                todosSnapshot, CLFSessionManager::timestampNow());
+                            CLFSessionManager::appendComplete(sessionFile, line);
+                        }
+                        // ② 显示：emit 收尾行（try/catch 隔离——异常不得逸出到外层
+                        //    catch（重试处理），最高优先级原则 §一）
+                        try {
+                            if (m_output) {
+                                std::string summary = "\n📋 任务清单（全部完成）:";
+                                for (const auto& t : todosSnapshot)
+                                    summary += " ✓ " + t.m_content;
+                                m_output->emitContent(summary + "\n");
+                            }
+                        } catch (...) {}
+                        // ③ 显示：置位（面板隐藏，等待下一次 create）
+                        m_todoPanelDone.store(true);
+                    }
+                }
+
                 auto s = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - turnStart).count();
                 std::string worked = "\n \n✻ " + m_labels.worked + " for " + formatDurationSeconds(s) + "\n \n";
@@ -437,6 +474,124 @@ std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool finalize)
     return path;
 }
 
+// ============================================================================
+// jsonl 会话文件上下文（设计-会话追加式保存.jsonl §3.9，2026-09-02）
+// ============================================================================
+
+void CLFAgentLoop::setActiveSessionFile(const std::string& jsonlPath) {
+    std::lock_guard<std::mutex> lock(m_sessionCtxMutex);
+    m_activeSessionFile = jsonlPath;
+}
+
+std::string CLFAgentLoop::getActiveSessionFile() const {
+    std::lock_guard<std::mutex> lock(m_sessionCtxMutex);
+    return m_activeSessionFile;
+}
+
+std::string CLFAgentLoop::beginSessionFile(const std::string& firstInput) {
+    const std::string resumedFrom = m_resumedFrom;   // 本地副本（末尾清）
+    const bool isContinuation = !resumedFrom.empty();
+
+    // 续写：新文件以源文件标题命名（读源 header 的 title，失败用源文件 stem）
+    std::string titleForName = firstInput;
+    if (isContinuation) {
+        titleForName.clear();
+        std::ifstream src(fs::u8path(resumedFrom));
+        std::string firstLine;
+        if (std::getline(src, firstLine)) {
+            try {
+                const nlohmann::json obj = nlohmann::json::parse(firstLine);
+                CLFMessageCodec::parseHeaderLine(obj, &titleForName);
+            } catch (...) {}
+        }
+        if (titleForName.empty()) {
+            titleForName = fs::u8path(resumedFrom).stem().u8string();
+        }
+    }
+
+    const std::string path = CLFSessionManager::makeNewSessionPath(
+        m_historyDir, titleForName, isContinuation ? "续" : "");
+    if (path.empty()) return "";
+
+    if (isContinuation) {
+        // 复制源文件全部行（header 原样——session_id 延续语义；源文件冻结在 resume 时点）
+        if (!CLFSessionManager::copyLines(resumedFrom, path)) {
+            CLFLogger::instance().warn("[SessionFile] copy failed: "
+                                       + resumedFrom + " -> " + path);
+            return "";
+        }
+        // 生命周期定案（§八 补丁 4）：续写文件创建后清 m_resumedFrom，
+        // 此后轮次按普通语义（新回合清面板）
+        m_resumedFrom.clear();
+    } else {
+        // 全新文件：header（含 skills 快照——S2-6 起随会话持久化的载体）
+        const std::string header = CLFMessageCodec::serializeHeaderLine(
+            titleForName, CLFSessionManager::timestampNow(),
+            CLFSessionManager::makeSessionId(),
+            m_config.m_modelName, m_loadedSkills);
+        if (!CLFSessionManager::appendHeader(path, header)) {
+            CLFLogger::instance().warn("[SessionFile] header write failed: " + path);
+            return "";
+        }
+    }
+
+    setActiveSessionFile(path);
+    CLFLogger::instance().info("[SessionFile] created: " + path
+        + (isContinuation ? std::string(" (continuation of ") + resumedFrom + ")"
+                          : std::string()));
+    return path;
+}
+
+void CLFAgentLoop::appendTodoSnapshotNow() {
+    const std::string path = getActiveSessionFile();
+    if (path.empty()) {
+        CLFLogger::instance().debug("[TodoSnapshot] skipped: no active session file");
+        return;
+    }
+    const std::string line = CLFMessageCodec::serializeTodoSnapshot(
+        getTodos(), CLFSessionManager::timestampNow());
+    if (!CLFSessionManager::appendTodoSnapshot(path, line)) {
+        CLFLogger::instance().warn("[TodoSnapshot] append failed: " + path);
+    }
+}
+
+std::string CLFAgentLoop::appendTurnLine() {
+    const std::string path = getActiveSessionFile();
+    if (path.empty()) {
+        CLFLogger::instance().debug("[AppendTurn] skipped: no active session file");
+        return "";
+    }
+    const auto& msgs = m_context.getMessages();
+    if (msgs.size() <= m_turnStartMsgCount) {
+        CLFLogger::instance().debug("[AppendTurn] skipped: no new messages");
+        return "";
+    }
+
+    // 本轮新增消息差集（user + assistant + tool，全量字段照现有序列化）
+    std::vector<CLFMessage> newMsgs(msgs.begin() + m_turnStartMsgCount, msgs.end());
+    m_turnStartMsgCount = msgs.size();
+
+    // 轮末 todos 快照：仅本轮操作过 create/update/clear 才带（m_todoDirty 读取并清除）
+    std::vector<CLFTodoItem> todosSnapshot;
+    const std::vector<CLFTodoItem>* todosPtr = nullptr;
+    if (m_todoDirty.exchange(false)) {
+        todosSnapshot = getTodos();
+        todosPtr = &todosSnapshot;
+    }
+
+    const std::string line = CLFMessageCodec::serializeTurnLine(
+        newMsgs, CLFSessionManager::timestampNow(), todosPtr);
+    if (line.empty()) {
+        CLFLogger::instance().warn("[AppendTurn] serialize failed");
+        return "";
+    }
+    if (!CLFSessionManager::appendTurn(path, line)) {
+        CLFLogger::instance().warn("[AppendTurn] append failed: " + path);
+        return "";
+    }
+    return path;
+}
+
 void CLFAgentLoop::generateAndCacheSummary() {
     if (!m_config.m_contextCompression) return;
     m_cachedSummary = m_summarizer->generate(m_context.getMessages());
@@ -448,9 +603,33 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
     std::vector<CLFMessage> messages;
     std::vector<std::string> skills;
     CLFSessionSummary summary;
-    std::vector<CLFTodoItem> todos;   // S2-6: 旧会话文件无 todos 字段 → 空清单
-    if (!CLFSessionManager::load(filePath, messages, &skills, &summary, &todos)) return false;
+    std::vector<CLFTodoItem> todos;         // S2-6: 旧会话文件无 todos 字段 → 空清单
+    std::vector<CLFTodoItem> completeTodos; // jsonl complete 行（折叠块回显用，J6）
+    CLFSessionInfo headerInfo;
+
+    // J3: 按扩展名分流——.jsonl 走追加式解析，.json 走覆盖式（旧归档永久兼容）
+    bool ok;
+    if (filePath.size() >= 6
+        && filePath.compare(filePath.size() - 6, 6, ".jsonl") == 0) {
+        ok = CLFSessionManager::loadJsonl(filePath, messages, &skills, &summary,
+                                          &todos, &completeTodos, &headerInfo);
+    } else {
+        ok = CLFSessionManager::load(filePath, messages, &skills, &summary, &todos);
+    }
+    if (!ok) return false;
     setTodos(std::move(todos));   // T2: 走锁内替换（§3.9）
+
+    // J3: resume 续写态（§八 补丁 4）——恢复即进入续写；面板状态按最后快照：
+    // 全完成 → 置 done（完成记录已在历史）；非全完成 → 清 done（面板重现，续写起点）
+    m_resumedFrom = filePath;
+    {
+        const auto snap = getTodos();
+        bool allDone = !snap.empty();
+        for (const auto& t : snap)
+            if (t.m_status != "completed") { allDone = false; break; }
+        setTodoPanelDone(allDone);
+    }
+    (void)completeTodos;   // J6 回显用（折叠块每轮清单状态行 + complete 收尾行）
 
     CLFLogger::instance().info("[Restore] loaded: "
                                + std::to_string(messages.size()) + " msgs, "

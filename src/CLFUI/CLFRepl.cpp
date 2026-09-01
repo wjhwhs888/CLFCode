@@ -48,6 +48,8 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
     , m_passerby(m_output) {
     m_agent.setConfirmCallback(
         [this](const std::string& prompt) { return confirmDialog(prompt); });
+    // J3: jsonl 会话文件目录注入（beginSessionFile 建文件用，设计 §3.9）
+    m_agent.setHistoryDir(historyDir);
 }
 
 CLFRepl::~CLFRepl() = default;
@@ -884,6 +886,15 @@ void CLFRepl::submit(const std::string& input) {
     try {
         if (m_output) m_output->emitContent("\n● " + CLFTerminal::cyan("CLFCode") + ":\n ");
     } catch (...) {}
+
+    // J3/J4: 新回合清面板（resume 续写不清空，§八 补丁 4/5）
+    if (m_agent.getResumedFrom().empty()) {
+        m_agent.setTodoPanelDone(true);
+    }
+    // J4: 懒创建——第一条新对话输入建文件（resume 续写由 beginSessionFile 内部复制）
+    if (m_agent.getActiveSessionFile().empty()) {
+        m_agent.beginSessionFile(input);
+    }
 
     try {
         std::string response = m_agent.runTurn(input);

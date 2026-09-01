@@ -7,10 +7,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <random>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -111,6 +113,78 @@ bool endsWithSuffix(const std::string& name, const std::string& suffix) {
 }
 
 } // anonymous namespace
+
+// ============================================================================
+// jsonl 会话文件命名/复制 helpers（2026-09-02，设计 §3.9）
+// ============================================================================
+
+std::string CLFSessionManager::timestampNow() {
+    return timestampStr();
+}
+
+std::string CLFSessionManager::makeSessionId() {
+    // 时间戳紧凑（去分隔符）+ 4 位随机 hex（header 自我标识；不承担关键定位职责）
+    std::string compact;
+    for (const char c : timestampStr()) {
+        if (c != '-' && c != '_') compact += c;
+    }
+    char rnd[8];
+    std::snprintf(rnd, sizeof(rnd), "_%04x",
+                  std::random_device{}() & 0xFFFFu);
+    return compact + rnd;
+}
+
+std::string CLFSessionManager::makeNewSessionPath(const std::string& dirPath,
+                                                  const std::string& firstInput,
+                                                  const std::string& suffix) {
+    // 标题 = firstInput 首行、换行转空格、UTF-8 边界安全截断、文件名安全化
+    std::string title = firstInput;
+    for (auto& c : title)
+        if (c == '\n' || c == '\r') c = ' ';
+    if (title.size() > 50) {
+        size_t cut = 47;
+        while (cut > 0
+               && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80)
+            --cut;
+        title = title.substr(0, cut) + "...";
+    }
+    title = sanitizeFilename(title);
+    if (!suffix.empty()) title += suffix;
+
+    std::error_code ec;
+    fs::create_directories(fs::u8path(dirPath), ec);
+    std::string finalPath = dirPath + "/" + timestampStr() + "_" + title + ".jsonl";
+    // 冲突处理：同名加序号（照 save 归档模式）
+    for (int n = 2; fs::exists(fs::u8path(finalPath), ec); ++n) {
+        finalPath = dirPath + "/" + timestampStr() + "_" + title + "-"
+                  + std::to_string(n) + ".jsonl";
+    }
+    return finalPath;
+}
+
+bool CLFSessionManager::copyLines(const std::string& srcPath, const std::string& dstPath) {
+    // 逐行复制（resume 续写：源文件冻结快照 → 新续写文件；header 原样，session_id 延续）
+    std::ifstream src(fs::u8path(srcPath), std::ios::binary);
+    if (!src.is_open()) {
+        CLFLogger::instance().warn("[CopyLines] cannot open source: " + srcPath);
+        return false;
+    }
+    std::ofstream dst(fs::u8path(dstPath), std::ios::out | std::ios::app | std::ios::binary);
+    if (!dst.is_open()) {
+        CLFLogger::instance().warn("[CopyLines] cannot open dest: " + dstPath);
+        return false;
+    }
+    std::string line;
+    while (std::getline(src, line)) {
+        dst << line << "\n";
+    }
+    dst.flush();
+    if (dst.fail()) {
+        CLFLogger::instance().warn("[CopyLines] write failed: " + dstPath);
+        return false;
+    }
+    return true;
+}
 
 // ============================================================================
 // save — 原子写入 latest.json 或归档为时间戳.json

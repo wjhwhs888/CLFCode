@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFMessageCodec.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
 
@@ -17,7 +18,9 @@ using namespace boost::ut;
 using CLF::CLFCore::CLFAgentLoop;
 using CLF::CLFCore::CLFAgentConfig;
 using CLF::CLFCore::CLFMessage;
+using CLF::CLFCore::CLFMessageCodec;
 using CLF::CLFCore::CLFSessionManager;
+using CLF::CLFCore::CLFTodoItem;
 using CLF::CLFCore::CLFTool;
 using CLF::CLFCore::CLFSecurityMode;
 using CLF::CLFNetwork::ICLFHttpClient;
@@ -149,6 +152,45 @@ public:
 
 private:
     std::function<void()> m_cb;
+};
+
+// V 系列（J3，jsonl 会话文件上下文，2026-09-02）：临时目录 + mock + agent 组合
+struct VSetup {
+    std::filesystem::path dir;
+    std::shared_ptr<MockHttpClient> mock;
+    std::unique_ptr<CLFAgentLoop> agent;
+
+    VSetup() {
+        dir = std::filesystem::temp_directory_path()
+            / ("clf_agent_v_" + std::to_string(
+                   std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(dir);
+        mock = std::make_shared<MockHttpClient>();
+        agent = makeAgent(mock);
+        agent->setHistoryDir(dir.string());   // temp 路径无中文，string() 安全
+    }
+    ~VSetup() {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+    void pushStop(const std::string& content = "回答") {
+        const std::string body =
+            "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\""
+            + content + "\"},\"finish_reason\":\"stop\"}]}";
+        mock->pushResponse(body);
+    }
+    // 读 jsonl 全部行（nlohmann 对象列表）
+    // ⚠️ 窄字符 ifstream 按 CP936 解释路径——中文文件名必须 u8path（编码陷阱族）
+    static std::vector<nlohmann::json> readLines(const std::string& path) {
+        std::vector<nlohmann::json> lines;
+        std::ifstream f(std::filesystem::u8path(path));
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty()) continue;
+            try { lines.push_back(nlohmann::json::parse(line)); } catch (...) {}
+        }
+        return lines;
+    }
 };
 
 } // anonymous namespace
@@ -526,6 +568,202 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         stop.store(true);
         writer.join();
+    };
+
+    // ========== V 系列：jsonl 会话文件上下文（J3，设计-会话追加式保存.jsonl §3.9，2026-09-02） ==========
+
+    "V1 beginSessionFile 建文件 + appendTurnLine 差集与快照字段"_test = [] {
+        VSetup s;
+        std::string path = s.agent->beginSessionFile("帮我查看项目");
+        expect(!path.empty());
+        expect(std::filesystem::exists(std::filesystem::u8path(path)));
+
+        // 第一轮：无 todo 操作 → turn 行无 todos 字段
+        s.pushStop("第一答");
+        s.agent->runTurn("第一问");
+        expect(s.agent->appendTurnLine() == path);
+
+        auto lines = VSetup::readLines(path);
+        expect(lines.size() == 2_ul);                 // header + turn
+        expect(lines[0]["type"] == std::string("header"));
+        expect(lines[0]["title"] == std::string("帮我查看项目"));
+        expect(lines[1]["type"] == std::string("turn"));
+        expect(lines[1]["messages"].size() == 2_ul);  // user + assistant
+        expect(!lines[1].contains("todos"));          // 未操作 todo → 无快照字段
+
+        // 第二轮：markTodosDirty + setTodos → turn 行带 todos 快照；轮末 m_todoDirty 清除。
+        // ⚠️ 清单须非全完成（1✓1○）——否则会意外触发 T6 收尾（complete 行 + 面板置位），
+        // 干扰"turn 行快照字段"断言（T6 行为由 V2 专门覆盖）
+        s.agent->setTodos({{"1", "任务1", "completed"}, {"2", "任务2", "pending"}});
+        s.agent->markTodosDirty();
+        s.pushStop("第二答");
+        s.agent->runTurn("第二问");
+        s.agent->appendTurnLine();
+
+        lines = VSetup::readLines(path);
+        expect(lines.size() == 3_ul);
+        expect(lines[2]["todos"].size() == 2_ul);
+        expect(lines[2]["todos"][0]["status"] == std::string("completed"));
+        expect(lines[2]["todos"][1]["status"] == std::string("pending"));
+
+        // m_todoDirty 已清除 → 第三轮（不碰 todo）无 todos 字段
+        s.pushStop("第三答");
+        s.agent->runTurn("第三问");
+        s.agent->appendTurnLine();
+        lines = VSetup::readLines(path);
+        expect(!lines[3].contains("todos"));
+    };
+
+    "V2 T6 全完成收尾：complete 行 + emit 收尾行 + 面板置位"_test = [] {
+        VSetup s;
+        MockOutput out;
+        s.agent->setOutput(&out);
+        s.agent->beginSessionFile("任务会话");
+        s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "completed"}});
+
+        s.pushStop("总结");
+        s.agent->runTurn("完成吧");
+        s.agent->appendTurnLine();
+
+        expect(s.agent->isTodoPanelDone());   // 面板置位
+
+        // 收尾行已 emit 到对话流
+        bool found = false;
+        for (const auto& c : out.contents)
+            if (c.find("任务清单（全部完成）") != std::string::npos) found = true;
+        expect(found);
+
+        // 文件含 complete 行（在 turn 行之前——T6 在 runTurn 完成分支，appendTurnLine 在轮末）
+        auto lines = VSetup::readLines(s.agent->getActiveSessionFile());
+        bool hasComplete = false;
+        for (const auto& l : lines)
+            if (l.value("type", "") == "complete") hasComplete = true;
+        expect(hasComplete);
+    };
+
+    "V2b 非全完成不触发收尾 + 中断残留补收尾"_test = [] {
+        VSetup s;
+        MockOutput out;
+        s.agent->setOutput(&out);
+        s.agent->beginSessionFile("任务会话");
+        s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "pending"}});
+
+        s.pushStop("未完成");
+        s.agent->runTurn("继续");
+        s.agent->appendTurnLine();
+
+        expect(!s.agent->isTodoPanelDone());   // 面板保留
+        bool found = false;
+        for (const auto& c : out.contents)
+            if (c.find("任务清单（全部完成）") != std::string::npos) found = true;
+        expect(!found);
+
+        // 中断残留场景（§八 补丁 5）：清单变全✓但上一轮未收尾 → 本轮完成分支补收尾
+        s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "completed"}});
+        s.pushStop("再来");
+        s.agent->runTurn("再聊一轮");
+        s.agent->appendTurnLine();
+        expect(s.agent->isTodoPanelDone());
+    };
+
+    "V3 appendTodoSnapshotNow 即时写快照行（不等轮末）"_test = [] {
+        VSetup s;
+        s.agent->beginSessionFile("快照会话");
+        s.agent->setTodos({{"1", "任务", "in_progress"}});
+        s.agent->markTodosDirty();
+        s.agent->appendTodoSnapshotNow();
+
+        auto lines = VSetup::readLines(s.agent->getActiveSessionFile());
+        expect(lines.size() == 2_ul);   // header + todo_snapshot（无 turn 行——未轮末）
+        expect(lines[1]["type"] == std::string("todo_snapshot"));
+        expect(lines[1]["todos"].size() == 1_ul);
+        expect(lines[1]["todos"][0]["status"] == std::string("in_progress"));
+    };
+
+    "V4 restoreSession .jsonl 分流：m_resumedFrom 置位 + 面板按快照"_test = [] {
+        // 造一个 jsonl 会话：最后快照非全完成（1 completed + 1 in_progress）
+        auto dir = std::filesystem::temp_directory_path()
+                 / ("clf_agent_v4_" + std::to_string(
+                        std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(dir);
+        std::string srcPath = dir.string() + "/2026-08-25_10-00-00_旧会话.jsonl";  // 纯字符串拼接（UTF-8 字节），避免 path 窄构造按 CP936 解码
+        {
+            std::ofstream f(std::filesystem::u8path(srcPath), std::ios::binary);
+            f << CLFMessageCodec::serializeHeaderLine("旧会话", "t", "sid", "model") << "\n";
+            std::vector<CLFMessage> turn{{"user", "问"}, {"assistant", "答"}};
+            f << CLFMessageCodec::serializeTurnLine(turn, "ts-1") << "\n";
+            std::vector<CLFTodoItem> todos{{"1", "任务1", "completed"},
+                                           {"2", "任务2", "in_progress"}};
+            f << CLFMessageCodec::serializeTodoSnapshot(todos, "ts-2") << "\n";
+        }
+
+        VSetup s;
+        expect(s.agent->restoreSession(srcPath));
+        expect(s.agent->getResumedFrom() == srcPath);   // 恢复即续写态
+        expect(!s.agent->isTodoPanelDone());            // 非全完成 → 面板重现
+        const auto todos = s.agent->getTodos();
+        expect(todos.size() == 2_ul);
+        expect(todos[0].m_status == std::string("completed"));
+        expect(todos[1].m_status == std::string("in_progress"));
+
+        // 全完成快照 → 面板不显示（置位）
+        std::string donePath = dir.string() + "/2026-08-25_11-00-00_全完成.jsonl";
+        {
+            std::ofstream f(std::filesystem::u8path(donePath), std::ios::binary);
+            f << CLFMessageCodec::serializeHeaderLine("全完成", "t", "sid", "model") << "\n";
+            std::vector<CLFMessage> turn{{"user", "问"}, {"assistant", "答"}};
+            f << CLFMessageCodec::serializeTurnLine(turn, "ts-1") << "\n";
+            std::vector<CLFTodoItem> todos{{"1", "任务1", "completed"}};
+            f << CLFMessageCodec::serializeTodoSnapshot(todos, "ts-2") << "\n";
+        }
+        VSetup s2;
+        expect(s2.agent->restoreSession(donePath));
+        expect(s2.agent->isTodoPanelDone());   // 全完成 → 不显示
+
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    };
+
+    "V5 beginSessionFile 续写复制：源文件冻结 + resumedFrom 清除"_test = [] {
+        // 造源文件（header + turn 共 2 行）
+        auto dir = std::filesystem::temp_directory_path()
+                 / ("clf_agent_v5_" + std::to_string(
+                        std::chrono::steady_clock::now().time_since_epoch().count()));
+        std::filesystem::create_directories(dir);
+        std::string srcPath = dir.string() + "/2026-08-25_09-00-00_源会话.jsonl";
+        {
+            std::ofstream f(std::filesystem::u8path(srcPath), std::ios::binary);
+            f << CLFMessageCodec::serializeHeaderLine("源会话", "t", "sid", "model") << "\n";
+            std::vector<CLFMessage> turn{{"user", "第一问"}, {"assistant", "第一答"}};
+            f << CLFMessageCodec::serializeTurnLine(turn, "ts-1") << "\n";
+        }
+
+        VSetup s;
+        s.agent->setResumedFrom(srcPath);   // 模拟 restoreSession 已置位
+        std::string contPath = s.agent->beginSessionFile("继续做");
+
+        expect(!contPath.empty());
+        expect(contPath != srcPath);
+        expect(contPath.find("续.jsonl") != std::string::npos);   // 续命名
+        expect(s.agent->getResumedFrom().empty());                // 生命周期：创建后清除
+        expect(s.agent->getActiveSessionFile() == contPath);
+
+        // 续文件 = 源文件全部行原样复制（header 原样——session_id 延续）
+        auto srcLines  = VSetup::readLines(srcPath);
+        auto contLines = VSetup::readLines(contPath);
+        expect(contLines.size() == srcLines.size());
+        expect(contLines[0]["session_id"] == std::string("sid"));
+        expect(contLines[1]["messages"].size() == 2_ul);
+
+        // 源文件冻结不变（续写后的轮次只写续文件）
+        s.pushStop("续答");
+        s.agent->runTurn("续问");
+        s.agent->appendTurnLine();
+        expect(VSetup::readLines(srcPath).size() == 2_ul);       // 源文件仍 2 行
+        expect(VSetup::readLines(contPath).size() == 3_ul);      // 续文件 +1 行
+
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
     };
 };
 
