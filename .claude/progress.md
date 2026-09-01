@@ -10,6 +10,23 @@
 - 文档已经**四轮核实**（我方两轮自查 + flash 两轮复审），S1-S3 全部前置假设均有源码证据，无悬空引用
 - ~~**S1 小修**~~ ✅ **已完成（v0.3.5，见下方已完成区）**
 - ~~**S2 安全+工具**~~ ✅ **已完成（v0.4.0，见下方已完成区）**｜原计划：：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
+- **【插入批】todo 面板 + jsonl 追加式保存**（设计定稿待实施；2026-08-25 用户与 flash 合作产出，2026-09-02 我方独立审查）：
+  - 文档（未提交 git）：`.claude/plans/设计/设计-任务清单UI显示.md`（todo 常驻面板，显示层）+ `.claude/plans/设计/设计-会话追加式保存.jsonl.md`（每轮一行 jsonl 追加，数据层配套；两份相互引用）
+  - 内容：S2-6 的 todo 数据层已有、UI 从未显示 → 常驻面板（contentArea 与 progressElements 之间）；覆盖式 latest.json → 追加式 jsonl（turn 行 + todo_snapshot 即时行防崩溃丢进度 + complete 收尾行；懒创建/懒复制续写/无改名归档）
+  - 排期参考：UI 0.5-1 天 + jsonl 1-1.5 天，可插 S3 前（文档 §七自述）
+  - ✅ **2026-09-02 我方审查定案并补入文档 + 终审**（UI 文档新增 §八 审查补丁 6 条；jsonl 文档新增 §3.9 API 契约 + summary 行类型 + 边界表补丁；断言级核实 40+ 处全部属实）：
+    - 线程模型核实：CLFAsyncSubmit 单工作线程串行（launch 前 join）→ jsonl 写路径无并发；SessionManager::append* 加 static mutex 为防御性（照 CLFLogger 三件套惯例）
+    - 接线定案：m_todoPanelDone / m_activeSessionFile / m_resumedFrom / m_todoDirty 四状态统一放 AgentLoop（命令 handler 签名无 Repl 引用，core 不依赖 UI）；新增 §3.9 API 契约（beginSessionFile / appendTodoSnapshotNow / appendTurnLine / markTodosDirty 等 9 接口 + 调用点总表）
+    - 缺陷修复：T6 判定移除 m_todoDirty（修复中断残留全✓面板永不消失；终审修正——收尾行在中断场景不补发，面板由新回合清空解决，符合"被打断"语义）；m_resumedFrom 生命周期定案（建续写文件后即清）；list 增加 activeFilePath 参数（**终审修正：不排除活跃文件，仅 [当前] 标记重定义**——resume 活跃文件 = 复制续写、原文件冻结，与现状 resume [当前] 语义对齐；cleanupOld 则必须排除活跃文件，勿混淆）；新增 summary 行类型（/clear 时生成，S3 摘要复用此行格式）；cleanupOld 适配 .jsonl
+  - ✅ **与 S3 无冲突，用户定案：本批次先实施，S3 顺延**（jsonl 先行反为 S3 铺路——summary 行已预留；若 S3 摘要移到后台线程，§3.8 防御性 mutex 覆盖）
+  - 📅 **实施排期（约 3 天，含测试与人工验收缓冲）**：
+    - D1 上午：T1+T2（m_todos 加锁）+ J1（codec 行序列化/解析）+ 单测 qa_CLFAgentLoop 并发 / qa_CLFMessageCodec 行往返
+    - D1 下午：J2（SessionManager append*/loadJsonl/list/cleanupOld）+ 单测 qa_CLFSessionManager
+    - D2 上午：J3（AgentLoop 四状态 + 9 接口 + restoreSession 分流 + T6 完成分支 + m_turnStartMsgCount）+ submit 清空判定
+    - D2 下午：J4（submit 三处接线）+ J5（命令层 /exit /clear /resume）+ handler 接线（appendTodoSnapshotNow/markTodosDirty/T7 描述）+ T3（ToolExecutor requestRefresh）
+    - D3 上午：T4/T5（buildTodoPanel 面板渲染）+ J6（resume 回显清单行）+ 单测 qa_CLFTodoPanel / qa_CLFToolExecutor
+    - D3 下午：全量干净重建 + ctest + 人工验收（UI 25 条 + jsonl 29 条）+ 修 bug
+  - 状态：**设计定稿、已排期，待开工**（两份文档相互依赖须同批实施；新测试须加入 CLF_TEST_TARGETS；验证须含主程序启动冒烟——A2 教训）
 - **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
 - 完成后 dsh 净增点收敛为**仅剩 subagent** → 进入决策门
