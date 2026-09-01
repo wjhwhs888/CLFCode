@@ -20,7 +20,7 @@
     - 缺陷修复：T6 判定移除 m_todoDirty（修复中断残留全✓面板永不消失；终审修正——收尾行在中断场景不补发，面板由新回合清空解决，符合"被打断"语义）；m_resumedFrom 生命周期定案（建续写文件后即清）；list 增加 activeFilePath 参数（**终审修正：不排除活跃文件，仅 [当前] 标记重定义**——resume 活跃文件 = 复制续写、原文件冻结，与现状 resume [当前] 语义对齐；cleanupOld 则必须排除活跃文件，勿混淆）；新增 summary 行类型（/clear 时生成，S3 摘要复用此行格式）；cleanupOld 适配 .jsonl
   - ✅ **与 S3 无冲突，用户定案：本批次先实施，S3 顺延**（jsonl 先行反为 S3 铺路——summary 行已预留；若 S3 摘要移到后台线程，§3.8 防御性 mutex 覆盖）
   - 📅 **实施排期（约 3 天，含测试与人工验收缓冲）**：
-    - D1 上午：T1+T2（m_todos 加锁）+ J1（codec 行序列化/解析）+ 单测 qa_CLFAgentLoop 并发 / qa_CLFMessageCodec 行往返
+    - ✅ **D1 上午（已完成）**：T1+T2（`m_todos` 加锁，getTodos 值返回/setTodos 锁内替换；saveSession 副本、restoreSession 走 setTodos）+ J1（codec 行函数：serializeHeaderLine/TurnLine/TodoSnapshot/CompleteLine/SummaryLine + parse 系列；字段级 helpers 提取重构 serialize/parseFull 行为等价）+ 单测（qa_CLFMessageCodec L1-L8 行往返/type 不匹配/缺字段、qa_CLFAgentLoop U1 并发读写）——构建 33/33，ctest 18/19 基线一致（qa_CLFSessionManager 3 个 _incomplete 旧语义用例既有失败，J2 重写区域）
     - D1 下午：J2（SessionManager append*/loadJsonl/list/cleanupOld）+ 单测 qa_CLFSessionManager
     - D2 上午：J3（AgentLoop 四状态 + 9 接口 + restoreSession 分流 + T6 完成分支 + m_turnStartMsgCount）+ submit 清空判定
     - D2 下午：J4（submit 三处接线）+ J5（命令层 /exit /clear /resume）+ handler 接线（appendTodoSnapshotNow/markTodosDirty/T7 描述）+ T3（ToolExecutor requestRefresh）

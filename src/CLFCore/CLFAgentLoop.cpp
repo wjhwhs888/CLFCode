@@ -424,10 +424,12 @@ std::string CLFAgentLoop::saveSession(const std::string& dirPath, bool finalize)
         ", skills=" + std::to_string(m_loadedSkills.size()) +
         ", summaryCached=" + std::string(m_cachedSummary.m_valid ? "yes" : "no"));
 
+    // T2: 锁内取副本后传参，避免重复加锁（getTodos 已锁内拷贝，§3.9）
+    const std::vector<CLFTodoItem> todosSnapshot = getTodos();
     std::string path = CLFSessionManager::save(
         msgs, dirPath, finalize, m_loadedSkills,
         m_cachedSummary.m_valid ? &m_cachedSummary : nullptr,
-        m_todos);   // S2-6: 待办随会话落盘
+        todosSnapshot);   // S2-6: 待办随会话落盘
     if (path.empty()) {
         CLFLogger::instance().warn("[Save] saveSession failed, finalize="
                                    + std::string(finalize ? "true" : "false"));
@@ -448,7 +450,7 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
     CLFSessionSummary summary;
     std::vector<CLFTodoItem> todos;   // S2-6: 旧会话文件无 todos 字段 → 空清单
     if (!CLFSessionManager::load(filePath, messages, &skills, &summary, &todos)) return false;
-    m_todos = std::move(todos);
+    setTodos(std::move(todos));   // T2: 走锁内替换（§3.9）
 
     CLFLogger::instance().info("[Restore] loaded: "
                                + std::to_string(messages.size()) + " msgs, "

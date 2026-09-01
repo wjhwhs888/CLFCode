@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <nlohmann/json.hpp>
+
 #include <string>
 #include <vector>
 
@@ -41,6 +43,43 @@ public:
                                               std::vector<std::string>* outSkills = nullptr,
                                               CLFSessionSummary* outSummary = nullptr,
                                               std::vector<CLFTodoItem>* outTodos = nullptr);
+
+    // —— jsonl 行编解码（设计-会话追加式保存.jsonl.md §3.2/§3.9，2026-09-02）——
+    // 每行一个自包含 JSON 对象，"type" 字段区分（header/turn/todo_snapshot/complete/summary）
+    // 序列化失败返回空串（调用方 warn + 跳过）；解析失败或 type 不匹配返回 false
+    // 行解析收 nlohmann::json 对象（loadJsonl 逐行 parse 后分发，避免二次解析）
+    // example:
+    //   std::string line = CLFMessageCodec::serializeTurnLine(msgs, ts, &todos);
+    //   std::vector<CLFMessage> out; bool ok = CLFMessageCodec::parseTurnLine(obj, out);
+    static std::string serializeHeaderLine(const std::string& title,
+                                           const std::string& startedAt,
+                                           const std::string& sessionId,
+                                           const std::string& model);
+    static std::string serializeTurnLine(const std::vector<CLFMessage>& messages,
+                                         const std::string& ts,
+                                         const std::vector<CLFTodoItem>* todos = nullptr);
+    static std::string serializeTodoSnapshot(const std::vector<CLFTodoItem>& todos,
+                                             const std::string& ts);
+    static std::string serializeCompleteLine(const std::vector<CLFTodoItem>& todos,
+                                             const std::string& ts);
+    static std::string serializeSummaryLine(const CLFSessionSummary& summary,
+                                            const std::string& ts);
+
+    static bool parseTurnLine(const nlohmann::json& obj,
+                              std::vector<CLFMessage>& outMessages,
+                              std::vector<CLFTodoItem>* outTodos = nullptr,
+                              std::string* outTs = nullptr);
+    static bool parseTodoSnapshotLine(const nlohmann::json& obj,
+                                      std::vector<CLFTodoItem>& outTodos);
+    static bool parseCompleteLine(const nlohmann::json& obj,
+                                  std::vector<CLFTodoItem>& outTodos);
+    static bool parseSummaryLine(const nlohmann::json& obj,
+                                 CLFSessionSummary& outSummary);
+    static bool parseHeaderLine(const nlohmann::json& obj,
+                                std::string* outTitle = nullptr,
+                                std::string* outStartedAt = nullptr,
+                                std::string* outSessionId = nullptr,
+                                std::string* outModel = nullptr);
 };
 
 } // namespace CLF::CLFCore

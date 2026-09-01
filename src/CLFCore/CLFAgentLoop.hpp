@@ -6,6 +6,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -72,11 +73,21 @@ public:
 
     //待办清单读写（S2-6：随会话持久化，不独立落盘）
     // 由 todo_write 工具 handler 通过捕获的 agent 引用调用
+    // 线程安全（2026-09-02，设计-任务清单UI显示 §3.9）：handler 在 asyncSubmit
+    // 工作线程写、UI 主线程渲染读——getTodos 锁内拷贝返回副本，setTodos 锁内替换。
+    // ⚠️ 返回副本：禁止对结果元素取引用/指针后跨语句使用（临时即亡）；
+    // range-for（const auto& t : agent.getTodos()）安全（生命周期延长）
     // example:
     //   agent.setTodos(parsedTodos);
     //   for (const auto& t : agent.getTodos()) show(t);
-    const std::vector<CLFTodoItem>& getTodos() const { return m_todos; }
-    void setTodos(std::vector<CLFTodoItem> todos) { m_todos = std::move(todos); }
+    std::vector<CLFTodoItem> getTodos() const {
+        std::lock_guard<std::mutex> lock(m_todosMutex);
+        return m_todos;
+    }
+    void setTodos(std::vector<CLFTodoItem> todos) {
+        std::lock_guard<std::mutex> lock(m_todosMutex);
+        m_todos = std::move(todos);
+    }
 
     // —— 查询 ——
 
@@ -123,6 +134,7 @@ private:
     std::unique_ptr<CLFSessionSummarizer> m_summarizer;
     CLFSessionSummary                 m_cachedSummary;    // /exit 时生成，saveSession 时消费
     std::vector<CLFTodoItem>          m_todos;            // S2-6: 待办清单，saveSession 时随会话写入
+    mutable std::mutex                m_todosMutex;       // 2026-09-02: 工作线程写 ↔ 主线程渲染读（设计 §3.9）
     ToolStats                         m_lastToolStats;
     long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;

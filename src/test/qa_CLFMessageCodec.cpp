@@ -132,6 +132,119 @@ const boost::ut::suite<"CLFMessageCodec"> tests = [] {
         expect(out.size() == 1_ul);
         expect(out[0].m_id == std::string("2"));
     };
+
+    // ========== L 系列：jsonl 行编解码（2026-09-02，设计-会话追加式保存.jsonl §3.2） ==========
+
+    "L1 header 行往返"_test = [] {
+        const auto line = CLFMessageCodec::serializeHeaderLine(
+            "标题", "2026-08-25_09-20-53", "20260825_092053_a3f9", "deepseek-v4-flash");
+
+        const auto obj = nlohmann::json::parse(line);
+        std::string title, startedAt, sessionId, model;
+        expect(CLFMessageCodec::parseHeaderLine(obj, &title, &startedAt, &sessionId, &model));
+        expect(title == std::string("标题"));
+        expect(startedAt == std::string("2026-08-25_09-20-53"));
+        expect(sessionId == std::string("20260825_092053_a3f9"));
+        expect(model == std::string("deepseek-v4-flash"));
+    };
+
+    "L2 turn 行往返（messages 全字段 + todos + ts）"_test = [] {
+        CLFMessage msg;
+        msg.m_role      = "assistant";
+        msg.m_content    = "总结";
+        msg.m_toolCallId = "call-1";
+        msg.m_name      = "todo_write";
+        msg.m_toolCalls.push_back({"tc-1", "todo_write", "{\"action\":\"list\"}"});
+        std::vector<CLFMessage> msgs{msg};
+
+        const auto line = CLFMessageCodec::serializeTurnLine(msgs, "2026-08-25_09-25-00", nullptr);
+
+        const auto obj = nlohmann::json::parse(line);
+        std::vector<CLFMessage> outMsgs;
+        std::vector<CLFTodoItem> outTodos;
+        std::string outTs;
+        expect(CLFMessageCodec::parseTurnLine(obj, outMsgs, &outTodos, &outTs));
+        expect(outMsgs.size() == 1_ul);
+        expect(outMsgs[0].m_toolCalls.size() == 1_ul);
+        expect(outMsgs[0].m_toolCalls[0].m_name == std::string("todo_write"));
+        expect(outMsgs[0].m_toolCallId == std::string("call-1"));
+        expect(outMsgs[0].m_name == std::string("todo_write"));
+        expect(outTs == std::string("2026-08-25_09-25-00"));
+        expect(outTodos.empty());   // 未带 todos 指针 → 无字段 → 空清单
+    };
+
+    "L3 turn 行带 todos 快照往返"_test = [] {
+        const auto todos = sampleTodos();
+        const auto line = CLFMessageCodec::serializeTurnLine(
+            sampleMessages(), "2026-08-25_09-25-00", &todos);
+        expect(line.find("\"todos\"") != std::string::npos);
+
+        const auto obj = nlohmann::json::parse(line);
+        std::vector<CLFMessage> outMsgs;
+        std::vector<CLFTodoItem> outTodos;
+        expect(CLFMessageCodec::parseTurnLine(obj, outMsgs, &outTodos));
+        expect(outTodos.size() == 3_ul);
+        expect(outTodos[0].m_status == std::string("completed"));
+        expect(outTodos[2].m_status == std::string("pending"));
+    };
+
+    "L4 todo_snapshot 行往返"_test = [] {
+        const auto line = CLFMessageCodec::serializeTodoSnapshot(
+            sampleTodos(), "2026-08-25_09-24-37");
+        const auto obj = nlohmann::json::parse(line);
+        std::vector<CLFTodoItem> out;
+        expect(CLFMessageCodec::parseTodoSnapshotLine(obj, out));
+        expect(out.size() == 3_ul);
+        expect(out[1].m_status == std::string("in_progress"));
+    };
+
+    "L5 complete 行往返"_test = [] {
+        const auto line = CLFMessageCodec::serializeCompleteLine(
+            sampleTodos(), "2026-08-25_09-30-12");
+        const auto obj = nlohmann::json::parse(line);
+        std::vector<CLFTodoItem> out;
+        expect(CLFMessageCodec::parseCompleteLine(obj, out));
+        expect(out.size() == 3_ul);
+    };
+
+    "L6 summary 行往返（含全部可选字段）"_test = [] {
+        CLFSessionSummary summary;
+        summary.m_summary        = "摘要文本";
+        summary.m_method         = "api";
+        summary.m_currentPlan    = "计划";
+        summary.m_keyDecisions   = {"决定1"};
+        summary.m_filesModified  = {"a.cpp"};
+        summary.m_pendingTasks   = {"待办1"};
+        summary.m_valid          = true;
+
+        const auto line = CLFMessageCodec::serializeSummaryLine(
+            summary, "2026-08-25_09-28-00");
+        const auto obj = nlohmann::json::parse(line);
+        CLFSessionSummary out;
+        expect(CLFMessageCodec::parseSummaryLine(obj, out));
+        expect(out.m_valid);
+        expect(out.m_summary == std::string("摘要文本"));
+        expect(out.m_method == std::string("api"));
+        expect(out.m_currentPlan == std::string("计划"));
+        expect(out.m_keyDecisions.size() == 1_ul);
+        expect(out.m_filesModified.size() == 1_ul);
+        expect(out.m_pendingTasks.size() == 1_ul);
+    };
+
+    "L7 type 不匹配返回 false"_test = [] {
+        const auto turnObj = nlohmann::json::parse(
+            CLFMessageCodec::serializeTurnLine(sampleMessages(), "ts", nullptr));
+        std::vector<CLFTodoItem> out;
+        expect(!CLFMessageCodec::parseTodoSnapshotLine(turnObj, out));   // turn 行喂 snapshot 解析
+        CLFSessionSummary sum;
+        expect(!CLFMessageCodec::parseSummaryLine(turnObj, sum));
+    };
+
+    "L8 turn 行缺 messages 字段返回 false"_test = [] {
+        const nlohmann::json obj{{"type", "turn"}, {"ts", "ts"}};
+        std::vector<CLFMessage> outMsgs;
+        expect(!CLFMessageCodec::parseTurnLine(obj, outMsgs));
+    };
 };
 
 int main() {}

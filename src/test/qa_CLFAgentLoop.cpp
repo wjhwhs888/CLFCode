@@ -2,6 +2,7 @@
 // 覆盖：tool-calling 循环、安全策略阻断、流式累积
 
 #include <boost/ut.hpp>
+#include <atomic>
 #include <chrono>
 #include <deque>
 #include <filesystem>
@@ -494,6 +495,37 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(result == "[Interrupted]");
         expect(out.interruptEmissions() == 1);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    // ========== U 系列：m_todos 线程安全（2026-09-02，设计-任务清单UI显示 §3.9） ==========
+
+    // 加锁前该测试在 MSVC 下为数据竞争（UB）：handler 工作线程写 ↔ 渲染线程读。
+    // 加锁后 getTodos 锁内拷贝、setTodos 锁内替换，并发读写必须稳定不崩、快照完整
+    "U1 getTodos/setTodos 并发读写不崩且快照完整"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock);
+        agent->setTodos({{"1", "任务1", "pending"}, {"2", "任务2", "in_progress"}});
+
+        std::atomic<bool> stop{false};
+        std::thread writer([&] {
+            int i = 0;
+            while (!stop.load()) {
+                // 模拟 handler 的"取副本 → 改 → 整体写回"模式（CLFBuiltinTools update 路径）
+                auto todos = agent->getTodos();
+                if (!todos.empty()) todos[0].m_status = (++i % 2) ? "completed" : "pending";
+                agent->setTodos(std::move(todos));
+            }
+        });
+
+        // 模拟 UI 渲染线程读：每帧一次快照拷贝，必须始终完整（2 项，无半截状态）
+        for (int i = 0; i < 20000; ++i) {
+            const auto snapshot = agent->getTodos();
+            expect(snapshot.size() == 2_ul);
+            expect(snapshot[0].m_content == std::string("任务1"));
+        }
+
+        stop.store(true);
+        writer.join();
     };
 };
 
