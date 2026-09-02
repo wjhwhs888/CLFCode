@@ -9,15 +9,15 @@
 - ~~S1 小修~~ ✅（v0.3.5）｜~~S2 安全+工具~~ ✅（v0.4.0）｜~~【插入批】todo 面板 + jsonl 追加式保存~~ ✅｜~~S3 净增点自研~~ ✅——详见下方已完成区
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
 
-### 【B 阶段】dsh 对接 — 🚦 决策门已就绪（2026-09-02，A 阶段全部完成）
-- **A 阶段产出完毕**：S1/S2/S3 + 插入批（todo 面板 + jsonl）全部落地——dsh 的净增点已收敛为**仅剩 subagent**
-- **B0 环境重建 0.5 天** → **B1(=M1) 传输层 3-4 天** → **B2(=M2) 会话层 2-3 天** → **B3(=M3) 收尾 3-5 天**
-- 决策门不走的话：自研轻量 subagent（进程内嵌套 CLFAgentLoop）2-3 天，B 阶段整体作废
-- Spike S0-S5 全过（go 决策），素材齐备：`tools/spike/`（报告 + spike_driver.mjs 五模块 + frames/norm 12 组 fixture）
-- **2026-08-25 上游核实**：仓库已搬到 `E:\deepseek-harness`（Spike 报告的 F: 路径失效）；上游前进 854 提交至 `b150a55`(0.1.1-rc.2)；✅ 协议面几乎未动（`protocol/src/` 零变动，transport.ts 未变）→ fixture 仍有效；❌ platforms.json 仍无 Windows → Node 闭包仍是唯一路径
-- **工时修正**：M1 3-4 天（长驻子进程管理必须新写，CLFCommandExec 无 stdin 管道仅可借鉴 ~20 行）/ M2 2-3 天（UI 侧零改动属实）/ M3 3-5 天高方差（打包未实测 + 确认链未定）/ +0.5 天环境重建 = **全程 8.5-12.5 天**（非原估 6-9 天）
-- 🚦 **决策门问题（待用户回答）**："subagent 值不值 8.5-12.5 天 + 包体量级增长 + rc 阶段外部依赖 + 会话双轨？"
-- 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于 dsh 决策）；若不走 → 自研轻量 subagent（进程内嵌套 CLFAgentLoop，2-3 天）
+### 【B 阶段】dsh 对接 — ⏸ 决策门暂缓（2026-09-02 用户定：慎重、不着急）
+- **用户态度（2026-09-02）**：进入 dsh 前先慎重考虑；dsh 当前为 **alpha 版本、不稳定，不着急**——决策门保持挂起，暂不投入 B 阶段
+- **A 阶段产出完毕**：S1/S2/S3 + 插入批（todo 面板 + jsonl）全部落地并发布 v0.5.0——dsh 的净增点已收敛为**仅剩 subagent**
+- **过渡期选项**（决策门挂起期间的按需工作）：A4 可选批（配置校验 / 多会话 / /reload / 信号 / 并发锁 / git 工具 / list_directory 增强 / ask_user 确认栏）；或**自研轻量 subagent**（进程内嵌套 CLFAgentLoop 2-3 天，不依赖外部后端——若用户想先要 subagent 能力，这是更稳的路线）
+- **决策门复盘素材（存档备查，下次评估时直接引用）**：
+  - B0 环境重建 0.5 天 → B1(=M1) 传输层 3-4 天 → B2(=M2) 会话层 2-3 天 → B3(=M3) 收尾 3-5 天 = 全程 8.5-12.5 天
+  - Spike S0-S5 全过（go 决策），素材齐备：`tools/spike/`（报告 + spike_driver.mjs 五模块 + frames/norm 12 组 fixture）
+  - 2026-08-25 上游核实：仓库 `E:\deepseek-harness`；上游 `b150a55`(0.1.1-rc.2)；协议面几乎未动 → fixture 仍有效；platforms.json 仍无 Windows → Node 闭包唯一路径
+  - 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于决策）；若不走 → 自研轻量 subagent
 
 ## 已完成
 
