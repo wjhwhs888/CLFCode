@@ -918,7 +918,8 @@ void CLFRepl::submit(const std::string& input) {
     m_passerby.onTurnFinished();
 
     auto st = m_agent.getLastToolStats();
-    saveSession(false);  // 每轮都存 latest.json
+    // J4: 轮末 turn 行追加（替换覆盖式 saveSession(false)）——jsonl 追加式保存
+    m_agent.appendTurnLine();
     try {
         if (m_output) m_output->setStatus("");
         if (m_output) m_output->emitContent("\n");

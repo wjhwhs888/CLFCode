@@ -26,19 +26,24 @@ namespace {
 // ============================================================================
 
 bool cmdExit(const std::string&, const std::string&,
-             CLFAgentLoop& agent, const std::string& historyDir,
+             CLFAgentLoop& agent, const std::string&,
              ICLFOutput* output) {
-    agent.generateAndCacheSummary();  // 生成会话摘要
-    agent.saveSession(historyDir, true);  // 归档 latest.json
+    // J5: jsonl 时代 /exit 纯退出——无归档、无搬移、不生成摘要
+    // （会话文件创建即定名、每轮/todo 变化已即时落盘；摘要改由 /clear 触发）
+    agent.setActiveSessionFile("");
     if (output) output->emitContent("● 会话已保存。再见 — CLFCode\n");
     return true;
 }
 
 bool cmdClear(const std::string&, const std::string&,
-              CLFAgentLoop& agent, const std::string& historyDir,
+              CLFAgentLoop& agent, const std::string&,
               ICLFOutput* output) {
-    agent.generateAndCacheSummary();  // 生成会话摘要
-    agent.saveSession(historyDir, true);  // 归档旧会话
+    // J5: 关闭当前会话（生成摘要 → summary 行 → 文件保留为独立会话）
+    agent.closeSessionFileWithSummary();
+    // 新会话语义干净（§6.4-C：清 m_todos + 置面板隐藏 + 清续写态）
+    agent.setResumedFrom("");
+    agent.setTodos({});
+    agent.setTodoPanelDone(true);
     agent.clearContext();
     // F18: 新会话语义从干净状态开始
     if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
@@ -195,9 +200,12 @@ bool cmdSkill(const std::string&, const std::string& args,
 // ============================================================================
 
 bool cmdHistory(const std::string&, const std::string&,
-                CLFAgentLoop&, const std::string& historyDir,
+                CLFAgentLoop& agent, const std::string& historyDir,
                 ICLFOutput* output) {
-    auto sessions = CLFSessionManager::list(historyDir, 10);
+    // J5: [当前] 标记重定义（§八 补丁 6）——活跃文件路径匹配
+    const std::string activeFile = agent.getActiveSessionFile();
+    auto sessions = CLFSessionManager::list(historyDir, 10,
+        activeFile.empty() ? nullptr : &activeFile);
     if (sessions.empty()) {
         if (output) output->emitContent("  ⎿ 暂无已保存的会话\n");
     } else {
@@ -214,7 +222,10 @@ bool cmdHistory(const std::string&, const std::string&,
 bool cmdResume(const std::string&, const std::string& args,
                CLFAgentLoop& agent, const std::string& historyDir,
                ICLFOutput* output) {
-    auto sessions = CLFSessionManager::list(historyDir, 10);
+    // J5: [当前] 标记重定义（§八 补丁 6）——活跃文件路径匹配（不排除，可 resume）
+    const std::string activeFile = agent.getActiveSessionFile();
+    auto sessions = CLFSessionManager::list(historyDir, 10,
+        activeFile.empty() ? nullptr : &activeFile);
     if (sessions.empty()) {
         if (output) output->emitContent("  ⎿ 暂无已保存的会话\n");
         return true;

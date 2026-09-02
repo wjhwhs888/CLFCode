@@ -341,6 +341,14 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     int progressEdits = 0;  // 写类工具计数
 
     for (const auto& call : calls) {
+        // T3: 每次迭代末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
+        // 工具返回即重绘（原仅靠 turnTimer 1Hz 兜底，最长延迟 1 秒）。
+        // RAII 保证 :376/:387 等 continue 提前退出分支也被覆盖
+        struct RefreshGuard {
+            CLF::CLFTypes::ICLFOutput* out;
+            ~RefreshGuard() { if (out) out->requestRefresh(); }
+        } refreshGuard{m_output};
+
         // 中断检查
         if (m_interruptFlag && m_interruptFlag->load()) {
             if (m_output) m_output->emitContent("  ⎿ ⏹ 已中断\n");

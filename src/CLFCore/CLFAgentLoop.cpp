@@ -592,6 +592,21 @@ std::string CLFAgentLoop::appendTurnLine() {
     return path;
 }
 
+void CLFAgentLoop::closeSessionFileWithSummary() {
+    // J5: 生成摘要（开关关时 m_valid=false，跳过行写入）→ 追加 summary 行 → 关闭
+    generateAndCacheSummary();
+    const std::string path = getActiveSessionFile();
+    if (path.empty()) return;
+    if (m_cachedSummary.m_valid) {
+        const std::string line = CLFMessageCodec::serializeSummaryLine(
+            m_cachedSummary, CLFSessionManager::timestampNow());
+        if (!CLFSessionManager::appendSummary(path, line)) {
+            CLFLogger::instance().warn("[Summary] append failed: " + path);
+        }
+    }
+    setActiveSessionFile("");   // 文件保留为独立会话（不删不改名）
+}
+
 void CLFAgentLoop::generateAndCacheSummary() {
     if (!m_config.m_contextCompression) return;
     m_cachedSummary = m_summarizer->generate(m_context.getMessages());

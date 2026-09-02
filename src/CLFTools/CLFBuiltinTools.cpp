@@ -210,10 +210,14 @@ std::string todoWriteHandlerImpl(const std::string& args,
         };
 
         if (action == "list") {
+            // list 不改数据——不置 m_todoDirty、不写快照（§6.4-D）
             result["success"] = true;
             result["todos"]   = renderList();
         } else if (action == "clear") {
             agent.setTodos({});
+            // J3 接线：清单变化即时落盘（防崩溃丢进度，jsonl 文档 §3.2）+ 置脏标志
+            agent.markTodosDirty();
+            agent.appendTodoSnapshotNow();
             result["success"] = true;
             result["todos"]   = json::array();
         } else if (action == "create") {
@@ -233,6 +237,10 @@ std::string todoWriteHandlerImpl(const std::string& args,
                 }
             }
             agent.setTodos(std::move(items));
+            // J3 接线：create 即写快照 + 清面板隐藏标志（新清单重新显示面板，§3.7）
+            agent.markTodosDirty();
+            agent.appendTodoSnapshotNow();
+            agent.setTodoPanelDone(false);
             result["success"] = true;
             result["todos"]   = renderList();
         } else if (action == "update") {
@@ -261,6 +269,9 @@ std::string todoWriteHandlerImpl(const std::string& args,
                 return result.dump();
             }
             agent.setTodos(std::move(items));
+            // J3 接线：update 即写快照（每次状态变化落盘，崩溃进度保留到最近一步）
+            agent.markTodosDirty();
+            agent.appendTodoSnapshotNow();
             result["success"] = true;
             result["todos"]   = renderList();
         } else {
@@ -514,7 +525,9 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     todoTool.m_name        = "todo_write";
     todoTool.m_description =
         "维护当前会话的待办清单。create 为整表替换；随会话保存，/resume 后自动恢复。"
-        "状态取值：pending / in_progress / completed";
+        "状态取值：pending / in_progress / completed。"
+        "继续已有任务时用 update（按 id 改状态），不要用 create 重建；"
+        "create 为整表替换，仅用于全新清单";
     todoTool.m_risk        = CLF::CLFCore::CLFToolRisk::Read;
     todoTool.m_parametersSchema = R"({
         "type": "object",

@@ -118,6 +118,10 @@ public:
     // m_todoDirty：仅 create/update/clear 置位（list 不调）；决定 turn 行是否带 todos 快照
     void markTodosDirty() { m_todoDirty.store(true); }
 
+    // 关闭当前会话文件（/clear 用）：生成摘要 → 追加 summary 行 → 关闭（文件保留为
+    // 独立会话）。摘要开关关/无效时跳过行写入。幂等（无活动文件时仅生成缓存）
+    void closeSessionFileWithSummary();
+
     // resume 续写态（restoreSession 内部置位；/clear 与 beginSessionFile 清除）
     void              setResumedFrom(const std::string& p) { m_resumedFrom = p; }
     const std::string& getResumedFrom() const { return m_resumedFrom; }
