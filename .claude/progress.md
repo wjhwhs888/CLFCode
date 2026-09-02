@@ -10,28 +10,7 @@
 - 文档已经**四轮核实**（我方两轮自查 + flash 两轮复审），S1-S3 全部前置假设均有源码证据，无悬空引用
 - ~~**S1 小修**~~ ✅ **已完成（v0.3.5，见下方已完成区）**
 - ~~**S2 安全+工具**~~ ✅ **已完成（v0.4.0，见下方已完成区）**｜原计划：：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
-- **【插入批】todo 面板 + jsonl 追加式保存**（设计定稿待实施；2026-08-25 用户与 flash 合作产出，2026-09-02 我方独立审查）：
-  - 文档（未提交 git）：`.claude/plans/设计/设计-任务清单UI显示.md`（todo 常驻面板，显示层）+ `.claude/plans/设计/设计-会话追加式保存.jsonl.md`（每轮一行 jsonl 追加，数据层配套；两份相互引用）
-  - 内容：S2-6 的 todo 数据层已有、UI 从未显示 → 常驻面板（contentArea 与 progressElements 之间）；覆盖式 latest.json → 追加式 jsonl（turn 行 + todo_snapshot 即时行防崩溃丢进度 + complete 收尾行；懒创建/懒复制续写/无改名归档）
-  - 排期参考：UI 0.5-1 天 + jsonl 1-1.5 天，可插 S3 前（文档 §七自述）
-  - ✅ **2026-09-02 我方审查定案并补入文档 + 终审**（UI 文档新增 §八 审查补丁 6 条；jsonl 文档新增 §3.9 API 契约 + summary 行类型 + 边界表补丁；断言级核实 40+ 处全部属实）：
-    - 线程模型核实：CLFAsyncSubmit 单工作线程串行（launch 前 join）→ jsonl 写路径无并发；SessionManager::append* 加 static mutex 为防御性（照 CLFLogger 三件套惯例）
-    - 接线定案：m_todoPanelDone / m_activeSessionFile / m_resumedFrom / m_todoDirty 四状态统一放 AgentLoop（命令 handler 签名无 Repl 引用，core 不依赖 UI）；新增 §3.9 API 契约（beginSessionFile / appendTodoSnapshotNow / appendTurnLine / markTodosDirty 等 9 接口 + 调用点总表）
-    - 缺陷修复：T6 判定移除 m_todoDirty（修复中断残留全✓面板永不消失；终审修正——收尾行在中断场景不补发，面板由新回合清空解决，符合"被打断"语义）；m_resumedFrom 生命周期定案（建续写文件后即清）；list 增加 activeFilePath 参数（**终审修正：不排除活跃文件，仅 [当前] 标记重定义**——resume 活跃文件 = 复制续写、原文件冻结，与现状 resume [当前] 语义对齐；cleanupOld 则必须排除活跃文件，勿混淆）；新增 summary 行类型（/clear 时生成，S3 摘要复用此行格式）；cleanupOld 适配 .jsonl
-  - ✅ **与 S3 无冲突，用户定案：本批次先实施，S3 顺延**（jsonl 先行反为 S3 铺路——summary 行已预留；若 S3 摘要移到后台线程，§3.8 防御性 mutex 覆盖）
-  - 📅 **实施排期（约 3 天，含测试与人工验收缓冲）**：
-    - ✅ **D1 上午（已完成）**：T1+T2（`m_todos` 加锁，getTodos 值返回/setTodos 锁内替换；saveSession 副本、restoreSession 走 setTodos）+ J1（codec 行函数：serializeHeaderLine/TurnLine/TodoSnapshot/CompleteLine/SummaryLine + parse 系列；字段级 helpers 提取重构 serialize/parseFull 行为等价）+ 单测（qa_CLFMessageCodec L1-L8 行往返/type 不匹配/缺字段、qa_CLFAgentLoop U1 并发读写）——构建 33/33，ctest 18/19 基线一致（qa_CLFSessionManager 3 个 _incomplete 旧语义用例既有失败，J2 重写区域）
-    - ✅ **D1 下午（已完成）**：J2（SessionManager appendHeader/Turn/TodoSnapshot/Complete/Summary + loadJsonl 逐行解析 + list [当前] 重定义/.jsonl 过滤 + cleanupOld 适配）+ qa_CLFSessionManager 重写（删 3 个 _incomplete 过时用例 + 修 1 个过时断言 + 新增 J1-J10 十个 jsonl 用例）——**ctest 19/19 历史首次全绿**
-      - 实施期修复 3 个真 bug：① up() helper 无限递归（replace_all 误伤自身函数体）→ SegFault 根因 ② loadJsonl/旧 load 的 .bak 备份 rename 前未关文件（MSVC fstream 默认共享模式不含 FILE_SHARE_DELETE → rename 静默失败）③ 测试中文窄字面量直接拼 path 被 CP936 解码（不同字节序列有的乱码通过、有的抛异常——与 memory 编码陷阱族同根）
-      - 设计遗漏修复：jsonl header 行补 skills 字段（S2-6 起 skills 随会话持久化，原 header 无载体）；§3.9 契约微调（append* 收行文本 string 而非 json——SessionManager 文件 IO 层与 codec 格式层不越界）
-      - 踩坑记录：静态非平凡对象第三次（g_appendMutex 文件级 → 函数内 magic static）
-    - ✅ **D2 上午（已完成）**：J3（AgentLoop 四状态 + 9 接口含 beginSessionFile 懒创建/续写复制 + restoreSession 分流 + T6 完成分支 + m_turnStartMsgCount）+ SessionManager helpers（timestampNow/makeSessionId/makeNewSessionPath/copyLines）+ CLFRepl 构造注入 historyDir/submit 清面板+建文件 + 测试 V1-V5——ctest 19/19 全绿
-    - ✅ **D2 下午（已完成）**：J4（轮末 appendTurnLine 替换覆盖写）+ J5（命令层 /exit 纯退出、/clear 关闭会话含摘要行、列表 [当前] 重定义）+ closeSessionFileWithSummary + handler 接线（create/update/clear 即时快照 + create 清面板隐藏）+ T7 描述引导 + T3（ToolExecutor RAII 刷新守卫）——ctest 19/19 全绿
-      - 调试插曲：V1 挂死定位三轮（sed 行号探针 → beginSessionFile 探针 → V1 分步探针）——根因两个：① 测试中文路径窄 ifstream/窄 path 构造（CP936 编码陷阱，第三次踩）② V1 第二轮测试设计失误（单项全✓清单意外触发 T6 收尾）
-      - 教训：sed 删除探针行时误删与探针同行的用例声明行（19 处）——探针插入时换行才是安全做法；已用 git checkout + 重写 V 系列恢复
-    - ✅ **D3 上午（已完成）**：T4/T5（buildTodoPanelLines 纯函数 + 渲染接线）+ J6（restoreSession 行级回显：每轮清单状态行 + complete 收尾行）+ 新测试 qa_CLFTodoPanel P1-P6 + qa_CLFToolExecutor T12——干净重建 161/161 + ctest 20/20 全绿 + 主程序 --version 冒烟 exit=0
-    - ⏳ **D3 下午（待用户实机验收）**：人工验收 54 条（UI 文档 §五 25 条 + jsonl 文档 §五 29 条）+ 验收期修 bug
-  - 状态：**设计定稿、已排期，待开工**（两份文档相互依赖须同批实施；新测试须加入 CLF_TEST_TARGETS；验证须含主程序启动冒烟——A2 教训）
+- ~~**【插入批】todo 面板 + jsonl 追加式保存**~~ ✅ **已完成（2026-09-02，全流程闭环，见下方已完成区）**
 - **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
 - 完成后 dsh 净增点收敛为**仅剩 subagent** → 进入决策门
@@ -46,6 +25,18 @@
 - 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于 dsh 决策）；若不走 → 自研轻量 subagent（进程内嵌套 CLFAgentLoop，2-3 天）
 
 ## 已完成
+
+### 2026-09-02 todo 面板 + jsonl 追加式保存 ✅（全流程闭环，未发布——攒入下一版本）
+
+- **三批实施（D1-D3）**：T1/T2 m_todos 加锁；J1 codec 行编解码（header/turn/todo_snapshot/complete/summary）；J2 SessionManager 追加/逐行解析/list [当前] 重定义/cleanupOld 适配；J3 AgentLoop 会话上下文（四状态 + 9 接口 + beginSessionFile 懒创建/续写复制 + T6 完成分支收尾 + restoreSession 分流）；J4/J5 轮末追加与命令层（/exit 纯退出、/clear 摘要落盘）；T3 刷新链；T4/T5 常驻面板渲染；J6 resume 行级回显（每轮清单状态行 + complete 收尾行）
+- **人工验收 43 项全过**（用户实机两轮：场景 A-F + 补测 exit/clear/强杀/中断；强杀 resume 显示未完成清单 = F20 预期行为实证——07:47 强杀时快照 1✓2✓/3-7 pending，resume 原样重现）
+- **验收期修复 4 个 bug**：BUG-1 update 后面板消失（跨轮场景 update 未清面板隐藏标志，dsh projection 语义）；BUG-2 turn 行序列化失败丢失（非法 UTF-8 零容错 → dumpLine 降级 replace + loadJsonl 判损放宽——无 turn 但有快照的崩溃残留不再误判损坏）；收尾清单格式改多行（标识行 + 每任务一行，实机调整）；QA 中途修 3 个测试编码/设计问题
+- **实施期真 bug 7 个**：up() 无限递归 SegFault、rename 共享冲突、中文窄路径构造 CP936 陷阱×3、静态非平凡对象（第三次）、sed 误删测试声明
+- **设计修订**：审查补丁 §八 6 条（线程模型/四状态归属/API 契约/T6 判定去 m_todoDirty/lifecycle/list 语义）；实施期补丁（header 补 skills 字段、§3.9 契约收行文本）
+- 测试增量：qa_CLFMessageCodec L1-L9、qa_CLFSessionManager J1-J11（重写+扩展）、qa_CLFAgentLoop U1/V1-V5、qa_CLFTodoPanel（新套件 P1-P6）、qa_CLFBuiltinTools B4、qa_CLFToolExecutor T12——**ctest 20/20 全绿（历史首次，旧 qa_CLFSessionManager 3 个过时用例已清理）**
+- 设计文档已归档：`设计/归档/归档-任务清单UI显示.md`、`设计/归档/归档-会话追加式保存.jsonl.md`；测试记录：`测试/测试-todo面板与jsonl保存-人工验收.md` + `补测二.md`
+- **与 S3 衔接**：summary 行类型已预留（S3 摘要自动触发复用同格式）；jsonl 先行反为 S3 铺路
+- **待办**：下一版本发布时并入（CHANGELOG 未发布段落 + 版本号）
 
 ### 2026-08-31 中文路径全链路编码修复 ✅（两批，已提交推送，**未发布**——攒入下一个版本）
 - **第一批（36a33cc）**：状态栏目录显示乱码（"椤圭洰"应为"项目"）→ `CLFRepl.cpp` modeLine 改 `u8path`；`CLFCommands.cpp` /init 项目根、`CLFAgentLoop.cpp` workspaceRoot（模型提示词中的项目路径）改 `.u8string()`。**用户已实测 modeLine 修复生效**
