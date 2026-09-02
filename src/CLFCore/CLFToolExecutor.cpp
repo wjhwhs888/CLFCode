@@ -527,6 +527,9 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 "[ToolExec] executing: " + call.m_name
                 + (keyParam.empty() ? "" : "(" + keyParam + ")"));
             result.m_content = it->m_handler(call.m_arguments);
+            // A5-concludesTurn：仅 handler 成功路径复制静态声明（失败分支
+            // 保持 false——工具失败不应提前结束回合，设计 §四 T2）
+            result.m_concludesTurn = it->m_concludesTurn;
             auto rd = formatToolResult(result.m_content);
             toolOk = rd.ok;
             toolResultText = rd.text;

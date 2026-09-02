@@ -47,6 +47,8 @@ struct CLFToolResult {
     std::string m_toolCallId;
     std::string m_name;      // 工具名
     std::string m_content;
+    // A5-concludesTurn：true = 本工具执行后回合应结束（工具静态声明，仅成功路径置位）
+    bool        m_concludesTurn = false;
 };
 
 struct CLFMessage {
@@ -92,7 +94,9 @@ struct CLFAgentConfig {
 
     // —— agent（Agent 行为参数）——
     int         m_maxContextWindow      = 1048576;
-    int         m_maxToolCallIterations = 16;
+    // A5：默认 48（原 16）——触顶语义改造后上限定义"阶段粒度"而非"任务容量"，
+    // 触顶是阶段完成点不是失败（设计-工具调用循环上限机制改造 §3.2）
+    int         m_maxToolCallIterations = 48;
     bool        m_contextCompression    = false;
     // S3-1: 自动摘要触发阈值（剩余窗口 < 阈值时触发，受 m_contextCompression 开关控制）
     int         m_autoSummaryThreshold  = 4000;
@@ -122,6 +126,8 @@ struct CLFTool {
     std::string m_description;
     std::string m_parametersSchema; // JSON Schema 字符串
     CLFToolRisk m_risk = CLFToolRisk::Read;
+    // A5-concludesTurn：注册时静态声明"本工具执行成功后回合应结束"（当前零工具声明，机制先行）
+    bool m_concludesTurn = false;
     std::function<std::string(const std::string&)> m_handler; // 参数为 JSON string
 };
 

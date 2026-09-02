@@ -20,17 +20,19 @@ else()
     add_compile_options(-Wall -Wextra -Werror)
 endif()
 
-# 第三方头文件路径
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty/httplib)
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty)
-include_directories(${CMAKE_SOURCE_DIR}/3rdparty/boost-ut)
+# 第三方头文件路径（SYSTEM 语义：第三方库的弃用/风格警告不受本工程
+# -Werror 管辖——2026-09-02 系统 OpenSSL 升 4.0.1 后旧 httplib 弃用 API
+# 警告曾阻断构建；自身代码的 -Werror 保持不动）
+include_directories(SYSTEM ${CMAKE_SOURCE_DIR}/3rdparty/httplib)
+include_directories(SYSTEM ${CMAKE_SOURCE_DIR}/3rdparty)
+include_directories(SYSTEM ${CMAKE_SOURCE_DIR}/3rdparty/boost-ut)
 
 # OpenSSL 检测（HTTPS 支持）
 # 优先使用 CMake find_package，失败时尝试常见安装路径 + 预生成 MinGW 导入库
 find_package(OpenSSL QUIET)
 if(OPENSSL_FOUND)
     add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
-    include_directories(${OPENSSL_INCLUDE_DIR})
+    include_directories(SYSTEM ${OPENSSL_INCLUDE_DIR})
     set(CLF_OPENSSL_LIBS OpenSSL::SSL OpenSSL::Crypto)
     message(STATUS "OpenSSL found (find_package) — HTTPS enabled")
 elseif(WIN32)
@@ -40,7 +42,7 @@ elseif(WIN32)
     if(EXISTS "${OSSL_MANUAL_ROOT}/include/openssl/ssl.h" AND
        EXISTS "${OSSL_MANUAL_LIB}/libssl.a")
         add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
-        include_directories("${OSSL_MANUAL_ROOT}/include")
+        include_directories(SYSTEM "${OSSL_MANUAL_ROOT}/include")
         set(CLF_OPENSSL_LIBS "${OSSL_MANUAL_LIB}/libssl.a"
                              "${OSSL_MANUAL_LIB}/libcrypto.a"
                              ws2_32)

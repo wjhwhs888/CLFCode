@@ -189,6 +189,58 @@ const boost::ut::suite<"CLFToolExecutor"> tests = [] {
         executor2.execute({c3});
         expect(out2.refreshCount == 1_i);
     };
+
+    "A5-1 concludesTurn 静态声明：成功路径 result 带标志"_test = [] {
+        std::vector<CLFTool> tools;
+        CLFTool done;
+        done.m_name = "finish_here";
+        done.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        done.m_concludesTurn = true;   // 注册时静态声明
+        done.m_handler = [](const std::string&) { return "done"; };
+        tools.push_back(done);
+
+        MockOutput out;
+        std::atomic<int> thinkingSec{2};
+        CLF::CLFCore::ToolStats stats;
+        auto executor = makeExecutor(tools, out, thinkingSec, stats);
+
+        CLF::CLFCore::CLFToolCall c1; c1.m_name = "finish_here";
+        auto results = executor.execute({c1});
+        expect(results.size() == 1_ul);
+        expect(results[0].m_concludesTurn);   // 成功路径复制声明
+    };
+
+    "A5-2 concludesTurn 静态声明：未声明工具 result 标志 false"_test = [] {
+        std::vector<CLFTool> tools;
+        CLFTool plain;
+        plain.m_name = "read_file";
+        plain.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        plain.m_handler = [](const std::string&) { return "ok"; };
+        tools.push_back(plain);
+
+        MockOutput out;
+        std::atomic<int> thinkingSec{2};
+        CLF::CLFCore::ToolStats stats;
+        auto executor = makeExecutor(tools, out, thinkingSec, stats);
+
+        CLF::CLFCore::CLFToolCall c1; c1.m_name = "read_file";
+        auto results = executor.execute({c1});
+        expect(results.size() == 1_ul);
+        expect(!results[0].m_concludesTurn);
+    };
+
+    "A5-3 concludesTurn：失败路径不复制（工具未找到保持 false）"_test = [] {
+        std::vector<CLFTool> tools;   // 空注册表 → 查找失败
+        MockOutput out;
+        std::atomic<int> thinkingSec{2};
+        CLF::CLFCore::ToolStats stats;
+        auto executor = makeExecutor(tools, out, thinkingSec, stats);
+
+        CLF::CLFCore::CLFToolCall c1; c1.m_name = "not_found_tool";
+        auto results = executor.execute({c1});
+        expect(results.size() == 1_ul);
+        expect(!results[0].m_concludesTurn);   // 失败不提前结束回合（§四 T2）
+    };
 };
 
 int main() {}

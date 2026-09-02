@@ -94,13 +94,15 @@ private:
 };
 
 // 构造带 Mock 的 Agent + 注册 echo 工具
-std::unique_ptr<CLFAgentLoop> makeAgent(std::shared_ptr<MockHttpClient> mock, const std::string& mode = "edit") {
+std::unique_ptr<CLFAgentLoop> makeAgent(std::shared_ptr<MockHttpClient> mock,
+                                        const std::string& mode = "edit",
+                                        int maxIters = 8) {
     CLFAgentConfig config;
     config.m_apiKey    = "test-key";
     config.m_modelName = "test-model";
     config.m_stream    = false;
     config.m_securityMode = mode;
-    config.m_maxToolCallIterations = 8;
+    config.m_maxToolCallIterations = maxIters;
 
     auto agent = std::make_unique<CLFAgentLoop>(config, mock);
 
@@ -192,6 +194,32 @@ struct VSetup {
         return lines;
     }
 };
+
+// A5（2026-09-02）：注册 concludesTurn 工具（静态声明回合结束）
+void registerConcludeTool(CLFAgentLoop& agent) {
+    CLFTool t;
+    t.m_name = "finish_here";
+    t.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+    t.m_concludesTurn = true;
+    t.m_handler = [](const std::string&) { return "turn finished"; };
+    agent.registerTool(t);
+}
+
+// A5：生成单工具 tool_calls 响应体（content 传完整 JSON 值，如 "null" 或 "\"文本\""）
+std::string toolCallBody(const std::string& name, const std::string& id,
+                         const std::string& content = "null",
+                         const std::string& finish = "tool_calls") {
+    return R"({"choices":[{"message":{"role":"assistant","content":)" + content
+         + R"(,"tool_calls":[{"id":")" + id
+         + R"(","type":"function","function":{"name":")" + name
+         + R"(","arguments":"{}"}}]},"finish_reason":")" + finish + R"("}]})";
+}
+
+// A5：生成无工具纯文本响应体
+std::string stopBody(const std::string& content, const std::string& finish = "stop") {
+    return R"({"choices":[{"message":{"role":"assistant","content":")"
+         + content + R"("},"finish_reason":")" + finish + R"("}]})";
+}
 
 } // anonymous namespace
 
@@ -829,6 +857,139 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         const std::string r = agent->compressContextNow();
         expect(r.find("已关闭") != std::string::npos);
+    };
+
+    // ========== A5 系列：concludesTurn / 触顶优雅收尾 / max-tokens（2026-09-02，
+    // 设计-工具调用循环上限机制改造 §五） ==========
+
+    "A5-1 concludesTurn：工具循环停止 + 模型仍有最终响应（Done）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(toolCallBody("finish_here", "call_a"));
+        mock->pushResponse(stopBody("已收到，回合结束"));
+
+        auto agent = makeAgent(mock);
+        registerConcludeTool(*agent);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");
+
+        expect(mock->syncCallCount() == 2);   // 工具轮 + 最终响应轮
+        expect(result.find("已收到") != std::string::npos);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+    };
+
+    "A5-2 concluded 后模型再发工具调用：丢弃 + 收尾（Done）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(toolCallBody("finish_here", "call_a"));
+        mock->pushResponse(toolCallBody("echo", "call_b", "\"我再查一下\""));
+
+        auto agent = makeAgent(mock);
+        registerConcludeTool(*agent);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");
+
+        expect(mock->syncCallCount() == 2);   // 丢弃后无第 3 次请求（若执行了 echo 会 continue）
+        expect(result.find("我再查一下") != std::string::npos);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+    };
+
+    "A5-3 触顶：收尾请求发出 + 总结返回 + 非 [Error] + Warn"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(toolCallBody("echo", "call_1"));   // 两轮工具耗尽上限（2）
+        mock->pushResponse(toolCallBody("echo", "call_2"));
+        mock->pushResponse(stopBody("已完成 A-F，剩余 G-Z")); // 触顶收尾请求
+
+        auto agent = makeAgent(mock, "edit", 2);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("大任务");
+
+        expect(mock->syncCallCount() == 3);   // 2 工具轮 + 1 收尾请求
+        expect(result.find("已完成 A-F") != std::string::npos);
+        expect(result.find("[Error]") == std::string::npos);
+        expect(result.find("已达工具调用上限") != std::string::npos);   // 提示文案
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    "A5-4 收尾请求失败（响应 error）：降级文案 + 不逸出 + Warn"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(toolCallBody("echo", "call_1"));
+        mock->pushResponse("", "network error");   // 收尾请求失败
+
+        auto agent = makeAgent(mock, "edit", 1);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");   // 不抛 = 独立 try/catch 兜住
+
+        expect(result.find("已达工具调用上限") != std::string::npos);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    "A5-5 max-tokens：完成分支 Warn（内容保留）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(stopBody("部分内容", "length"));
+
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");
+
+        expect(result.find("部分内容") != std::string::npos);   // 保留不回滚
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    "A5-6 concluded 后模型只发工具调用且无文本：仅 worked 行收尾"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(toolCallBody("finish_here", "call_a"));
+        mock->pushResponse(toolCallBody("echo", "call_b"));
+
+        auto agent = makeAgent(mock);
+        registerConcludeTool(*agent);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");
+
+        expect(mock->syncCallCount() == 2);
+        expect(result.find("✻") != std::string::npos);   // worked 行
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+    };
+
+    "A5-7 max-tokens 且带 tool_calls：照常继续循环（Done 非 Warn）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        mock->pushResponse(toolCallBody("echo", "call_1", "null", "length"));
+        mock->pushResponse(stopBody("继续后完成"));
+
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");
+
+        expect(mock->syncCallCount() == 2);   // 不强制收尾：执行工具继续
+        expect(result.find("继续后完成") != std::string::npos);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+    };
+
+    "A5-8 并行多工具任一 concludesTurn：结束 + 最终响应"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        // 两个 tool_calls 并行：echo + finish_here（任一 true → 结束）
+        const std::string body =
+            R"({"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[)"
+            R"({"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}},)"
+            R"({"id":"call_2","type":"function","function":{"name":"finish_here","arguments":"{}"}})"
+            R"(]},"finish_reason":"tool_calls"}]})";
+        mock->pushResponse(body);
+        mock->pushResponse(stopBody("两工具都执行，回合结束"));
+
+        auto agent = makeAgent(mock);
+        registerConcludeTool(*agent);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("go");
+
+        expect(mock->syncCallCount() == 2);
+        expect(result.find("两工具都执行") != std::string::npos);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
     };
 };
 

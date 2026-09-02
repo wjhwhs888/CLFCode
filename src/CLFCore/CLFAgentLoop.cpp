@@ -41,6 +41,15 @@ void appendSplitLines(std::vector<std::string>& out, const std::string& text) {
     }
 }
 
+// A5-触顶收尾（设计-工具调用循环上限机制改造 §3.2）：
+// 循环耗尽后追加给模型的收尾提示（仅存 context 内存，不进 jsonl）
+constexpr const char* kTurnCapWrapUpPrompt =
+    "已达本轮工具调用上限。请总结已完成的工作与剩余工作，不要调用工具。";
+
+// 触顶提示文案（用户可见；非 [Error] 开头——触顶是阶段完成点，不是错误）
+constexpr const char* kTurnCapNotice =
+    "\n(已达工具调用上限，任务可能未完成——输入「继续」可接着做)\n";
+
 } // anonymous namespace
 
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
@@ -126,6 +135,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
     std::string finalContent;
     int consecutiveErrors = 0;
+    // A5-concludesTurn：任一工具结果声明回合结束 → 停止工具循环
+    // （但仍给模型一次收尾发言机会，见 hasToolCalls 分支的 concluded break）
+    bool concluded = false;
 
     for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
         // Timer #1：只计数（不调用 output，安全）
@@ -328,6 +340,12 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
             // tool_calls → 执行并继续循环
             if (CLFProtocolAdapter::hasToolCalls(parsed)) {
+                // A5-concludesTurn：工具已声明回合结束，模型却仍发工具调用 →
+                // 丢弃（不执行、不回填、不 addAssistantToolCalls）。
+                // 协议安全：模型文本已在上方累积进 finalContent，无悬空
+                // tool_calls 需 result 配对；break 后经 finishTurn() 正常收尾，
+                // 不落触顶路径（设计 §3.1 改动 3）
+                if (concluded) break;
                 // 中断检查：流式被 abort 后可能累积了 tool call，执行前再检查
                 if (m_interrupted) {
                     emitInterrupted();
@@ -341,6 +359,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 for (const auto& result : results) {
                     m_context.addToolResult(
                         result.m_toolCallId, result.m_name, result.m_content);
+                    if (result.m_concludesTurn) concluded = true;
                 }
                 if (m_interrupted) {
                     emitInterrupted();
@@ -349,55 +368,16 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 continue;
             }
 
-            // 完成
+            // 完成 → 收尾汇聚点（A5 §3.2.1）：自然停 / concluded-break 共用
             {
-                // T6: todo 全完成收尾（设计-任务清单UI显示 §3.7，2026-09-02）
-                // 判定：m_todos 非空 && 全部 completed && !m_todoPanelDone（无 m_todoDirty，§八 补丁 5）
-                // 时序：总结已流式输出完毕 → 清单行 → ✻ worked（顺序=显示顺序）
-                if (!m_todoPanelDone.load()) {
-                    const auto todosSnapshot = getTodos();
-                    bool allDone = !todosSnapshot.empty();
-                    for (const auto& t : todosSnapshot) {
-                        if (t.m_status != "completed") { allDone = false; break; }
-                    }
-                    if (allDone) {
-                        // ① 数据：complete 行先落盘（无活动文件跳过；append 内部自兜底不抛）
-                        const std::string sessionFile = getActiveSessionFile();
-                        if (!sessionFile.empty()) {
-                            const std::string line = CLFMessageCodec::serializeCompleteLine(
-                                todosSnapshot, CLFSessionManager::timestampNow());
-                            CLFSessionManager::appendComplete(sessionFile, line);
-                        }
-                        // ② 显示：emit 收尾行（try/catch 隔离——异常不得逸出到外层
-                        //    catch（重试处理），最高优先级原则 §一）
-                        // 格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
-                        try {
-                            if (m_output) {
-                                std::string summary = "\n📋 任务清单（全部完成）:";
-                                for (const auto& t : todosSnapshot)
-                                    summary += "\n  ✓ " + t.m_content;
-                                m_output->emitContent(summary + "\n");
-                            }
-                        } catch (...) {}
-                        // ③ 显示：置位（面板隐藏，等待下一次 create）
-                        m_todoPanelDone.store(true);
-                    }
-                }
-
-                auto s = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::steady_clock::now() - turnStart).count();
-                std::string worked = "\n \n✻ " + m_labels.worked + " for " + formatDurationSeconds(s) + "\n \n";
-                finalContent += worked;
-                if (m_output && m_config.m_stream)
-                    m_output->emitContent(worked);  // stream 路径需显式 emit
+                // A5-C：max-tokens 收尾——finish_reason == "length" 时状态点
+                // Warn（现状 Done）；已生成内容保留不回滚（设计 §3.3）。
+                // 边界：length 且带 tool_calls 不落此分支（上方已 continue）
+                const auto finishKind = (parsed.m_finishReason == "length")
+                    ? CLF::CLFTypes::ICLFOutput::StatusKind::Warn
+                    : CLF::CLFTypes::ICLFOutput::StatusKind::Done;
+                return finishTurn(finalContent, turnStart, finishKind);
             }
-            m_context.addMessage("assistant", finalContent);
-            // P1-1: 正常完成点——Done 显式接线（TurnGuard 不设 kind，F20）
-            if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Done);
-            CLFLogger::instance().info("[Turn] done, content="
-                + std::to_string(finalContent.size()) + "chars, tools="
-                + std::to_string(m_lastToolStats.totalCalls));
-            return m_config.m_stream ? std::string() : finalContent;
 
         } catch (const std::exception& e) {
             if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
@@ -414,15 +394,127 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         }
     }
 
-    {
-        auto s = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - turnStart).count();
-        finalContent += "\n \n✻ " + m_labels.worked + " for " + formatDurationSeconds(s) + "\n \n";
+    // A5-concludesTurn：模型未按声明停止（发了工具调用被丢弃）→
+    // 已给最终发言机会，直接复用完成分支收尾（Done，设计 §3.1 改动 3）
+    if (concluded) {
+        return finishTurn(finalContent, turnStart,
+                          CLF::CLFTypes::ICLFOutput::StatusKind::Done);
     }
+
+    // ====== 触顶路径（A5-B：优雅收尾，设计 §3.2）======
+    // 触顶 = 阶段完成点，非报错。循环耗尽时 context 尾部是 tool result，
+    // 模型无总结机会 → 触顶收尾请求（同步 + 独立 try/catch：循环内 catch
+    // 管不到这里，任何失败不逸出、不重试，降级返回已累积内容 + 提示文案）
+    if (m_interrupted) {
+        emitInterrupted();
+        return std::string("[Interrupted]");
+    }
+    m_context.addMessage("user", kTurnCapWrapUpPrompt);
+    CLFLogger::instance().info("[Turn] max tool iterations reached ("
+        + std::to_string(m_config.m_maxToolCallIterations) + "), wrap-up request");
+    try {
+        CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
+        std::string body = m_protocolAdapter.buildChatRequest(
+            m_context.getMessages(), m_tools, m_config);
+        CLF::CLFNetwork::CLFHttpResponse response =
+            m_httpClient->postJson("/v1/chat/completions", body);
+        thinking.stop();
+        if (m_interrupted || response.m_wasAborted) {
+            emitInterrupted();
+            return std::string("[Interrupted]");
+        }
+        if (response.m_error.empty()) {
+            CLFAssistantResponse wrapUp =
+                m_protocolAdapter.parseAssistantResponse(response.m_body);
+            // 响应的 tool_calls 忽略（收尾请求只取文本）
+            if (!wrapUp.m_content.empty()) {
+                if (!finalContent.empty()) finalContent += "\n";
+                finalContent += wrapUp.m_content;
+                m_context.addMessage("assistant", wrapUp.m_content);
+                if (m_output && m_config.m_stream)
+                    m_output->emitContent(wrapUp.m_content + "\n");
+            }
+        }
+        // 失败（含 response.m_error 非空）→ 降级：收尾 user 消息保留在
+        // context（连续 user 消息 API 兼容，下轮"继续"时提示语义仍有效）
+    } catch (const std::exception& e) {
+        CLFLogger::instance().warn("[Turn] wrap-up request failed: "
+            + std::string(e.what()));
+    }
+
+    // 顺序：总结文本 → 提示文案 → worked（§3.2.1）
+    if (m_output && m_config.m_stream) {
+        m_output->emitContent(kTurnCapNotice);
+    } else {
+        finalContent += kTurnCapNotice;
+    }
+    appendWorked(finalContent, turnStart);
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
-    return std::string("[Error] Exceeded maximum tool call iterations (")
-           + std::to_string(m_config.m_maxToolCallIterations) + ")";
+    return m_config.m_stream ? std::string() : finalContent;
+}
+
+// ============================================================================
+// A5 收尾 helper（设计-工具调用循环上限机制改造 §3.2.1）
+// ============================================================================
+
+void CLFAgentLoop::appendWorked(std::string& finalContent,
+                                std::chrono::steady_clock::time_point turnStart) {
+    auto s = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - turnStart).count();
+    std::string worked = "\n \n✻ " + m_labels.worked + " for "
+                       + formatDurationSeconds(s) + "\n \n";
+    finalContent += worked;
+    if (m_output && m_config.m_stream)
+        m_output->emitContent(worked);  // stream 路径需显式 emit
+}
+
+std::string CLFAgentLoop::finishTurn(
+    std::string& finalContent,
+    std::chrono::steady_clock::time_point turnStart,
+    CLF::CLFTypes::ICLFOutput::StatusKind kind) {
+    // T6: todo 全完成收尾（设计-任务清单UI显示 §3.7，2026-09-02）
+    // 判定：m_todos 非空 && 全部 completed && !m_todoPanelDone（无 m_todoDirty，§八 补丁 5）
+    // 时序：总结已流式输出完毕 → 清单行 → ✻ worked（顺序=显示顺序）
+    if (!m_todoPanelDone.load()) {
+        const auto todosSnapshot = getTodos();
+        bool allDone = !todosSnapshot.empty();
+        for (const auto& t : todosSnapshot) {
+            if (t.m_status != "completed") { allDone = false; break; }
+        }
+        if (allDone) {
+            // ① 数据：complete 行先落盘（无活动文件跳过；append 内部自兜底不抛）
+            const std::string sessionFile = getActiveSessionFile();
+            if (!sessionFile.empty()) {
+                const std::string line = CLFMessageCodec::serializeCompleteLine(
+                    todosSnapshot, CLFSessionManager::timestampNow());
+                CLFSessionManager::appendComplete(sessionFile, line);
+            }
+            // ② 显示：emit 收尾行（try/catch 隔离——异常不得逸出到外层
+            //    catch（重试处理），最高优先级原则 §一）
+            // 格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
+            try {
+                if (m_output) {
+                    std::string summary = "\n📋 任务清单（全部完成）:";
+                    for (const auto& t : todosSnapshot)
+                        summary += "\n  ✓ " + t.m_content;
+                    m_output->emitContent(summary + "\n");
+                }
+            } catch (...) {}
+            // ③ 显示：置位（面板隐藏，等待下一次 create）
+            m_todoPanelDone.store(true);
+        }
+    }
+
+    appendWorked(finalContent, turnStart);
+    m_context.addMessage("assistant", finalContent);
+    // P1-1: 完成点显式接线（TurnGuard 不设 kind，F20）；kind 由调用方按
+    // 结束原因传入：自然停/concluded = Done，max-tokens = Warn（A5 §3.2.1）
+    if (m_output) m_output->setStatusKind(kind);
+    CLFLogger::instance().info("[Turn] done, content="
+        + std::to_string(finalContent.size()) + "chars, tools="
+        + std::to_string(m_lastToolStats.totalCalls));
+    return m_config.m_stream ? std::string() : finalContent;
 }
 
 // ============================================================================

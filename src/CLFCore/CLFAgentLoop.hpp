@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -169,6 +170,17 @@ private:
 
     // 注入系统身份提示词（构造时 + /clear 后调用）
     void injectSystemPrompt();
+
+    // A5-concludesTurn：收尾汇聚点（设计-工具调用循环上限机制改造 §3.2.1）——
+    // 自然停 / concluded-break 共用；状态点按结束原因传入（Done/Warn）。
+    // 内含 todo 全完成收尾 + worked 拼接 + addMessage + 状态点 + return
+    std::string finishTurn(std::string& finalContent,
+                           std::chrono::steady_clock::time_point turnStart,
+                           CLF::CLFTypes::ICLFOutput::StatusKind kind);
+
+    // A5：worked 行拼接（完成分支与触顶路径两处复用；stream 模式内含显式 emit）
+    void appendWorked(std::string& finalContent,
+                      std::chrono::steady_clock::time_point turnStart);
 
     // 构建 Builder Context（injectSystemPrompt + rebuildSystemMessage 共用）
     CLFSystemPromptBuilder::Context buildSystemPromptContext() const;
