@@ -11,7 +11,7 @@
 - ~~**S1 小修**~~ ✅ **已完成（v0.3.5，见下方已完成区）**
 - ~~**S2 安全+工具**~~ ✅ **已完成（v0.4.0，见下方已完成区）**｜原计划：：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
 - ~~**【插入批】todo 面板 + jsonl 追加式保存**~~ ✅ **已完成（2026-09-02，全流程闭环，见下方已完成区）**
-- **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
+- **S3 净增点自研**（1 天，**2026-09-02 已做 jsonl 衔接修订，可直接开工**）：摘要自动触发+compress_context 工具（`shouldSummarize` 阈值判定需新写；**摘要落盘走 jsonl summary 行**——closeSessionFileWithSummary 已有写入段可提取复用；resume 注入已实现）+ `/model` 切换 + 多模型自适应（**用户定为必做**；header model 字段新会话自动准确，中途切换建议提示"新会话生效"）
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
 - 完成后 dsh 净增点收敛为**仅剩 subagent** → 进入决策门
 
