@@ -627,11 +627,15 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         expect(s.agent->isTodoPanelDone());   // 面板置位
 
-        // 收尾行已 emit 到对话流
-        bool found = false;
-        for (const auto& c : out.contents)
+        // 收尾行已 emit 到对话流（多行格式：标识行 + 每任务一行）
+        bool found = false, foundLine2 = false;
+        for (const auto& c : out.contents) {
             if (c.find("任务清单（全部完成）") != std::string::npos) found = true;
+            if (c.find("\n  ✓ 任务A") != std::string::npos
+                && c.find("\n  ✓ 任务B") != std::string::npos) foundLine2 = true;
+        }
         expect(found);
+        expect(foundLine2);   // 每任务一行（2026-09-02 实机验收调整）
 
         // 文件含 complete 行（在 turn 行之前——T6 在 runTurn 完成分支，appendTurnLine 在轮末）
         auto lines = VSetup::readLines(s.agent->getActiveSessionFile());

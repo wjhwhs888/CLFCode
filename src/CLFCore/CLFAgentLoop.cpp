@@ -354,11 +354,12 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                         }
                         // ② 显示：emit 收尾行（try/catch 隔离——异常不得逸出到外层
                         //    catch（重试处理），最高优先级原则 §一）
+                        // 格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
                         try {
                             if (m_output) {
                                 std::string summary = "\n📋 任务清单（全部完成）:";
                                 for (const auto& t : todosSnapshot)
-                                    summary += " ✓ " + t.m_content;
+                                    summary += "\n  ✓ " + t.m_content;
                                 m_output->emitContent(summary + "\n");
                             }
                         } catch (...) {}
@@ -705,10 +706,10 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
                 } else if (type == "complete") {
                     std::vector<CLFTodoItem> completeLine;
                     if (!CLFMessageCodec::parseCompleteLine(obj, completeLine)) continue;
-                    std::string summary = "📋 任务清单（全部完成）:";
+                    // 多行格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
+                    echoLines.push_back("📋 任务清单（全部完成）:");
                     for (const auto& t : completeLine)
-                        summary += " ✓ " + t.m_content;
-                    echoLines.push_back(summary);
+                        echoLines.push_back("  ✓ " + t.m_content);
                 }
             }
         } else {
