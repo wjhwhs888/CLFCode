@@ -17,6 +17,7 @@
 #include "CLFUI/CLFSelectionModel.hpp"
 #include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
 #include "CLFCore/CLFPasserby.hpp" // 会话节奏观察器（值成员）
+#include "CLFTypes/CLFTypes.hpp"   // CLFTodoItem（buildTodoPanelLines 参数）
 
 namespace CLF::CLFCore { class CLFAgentLoop; }
 namespace CLF::CLFTypes { class ICLFOutput; }
@@ -24,6 +25,21 @@ namespace CLF::CLFTypes { class ICLFOutput; }
 namespace CLF::CLFUI {
 
 class CLFCommandDispatcher;
+
+// 任务面板行（设计-任务清单UI显示 §4.2，2026-09-02）
+struct CLFTodoPanelLine {
+    std::string  text;
+    ftxui::Color color;
+};
+
+// 任务面板行构建（纯函数，可单测，qa_CLFTodoPanel）
+// 入口检查：空清单 / panelDone（已收尾）→ 返回空行集（面板零占用）
+// 图标与颜色：in_progress=⏳ CyanLight / completed=✓ GreenLight / pending=○ GrayDark
+// 溢出截断：>10 项时末行"… 还有 N 项"；空内容显示"(无内容)"兜底
+// example:
+//   auto lines = buildTodoPanelLines(agent.getTodos(), agent.isTodoPanelDone());
+std::vector<CLFTodoPanelLine> buildTodoPanelLines(
+    const std::vector<CLF::CLFCore::CLFTodoItem>& todos, bool panelDone);
 
 class CLFRepl {
 public:

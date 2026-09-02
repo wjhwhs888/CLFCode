@@ -38,6 +38,9 @@ public:
     void emitError(const std::string&) override {}
     void appendThinking(const std::string&) override {}
     void clearThinking() override {}
+    void requestRefresh() override { ++refreshCount; }   // T3 计数
+
+    int refreshCount = 0;
 
     bool anyContentContains(const std::string& needle) const {
         for (const auto& c : contents)
@@ -157,6 +160,34 @@ const boost::ut::suite<"CLFToolExecutor"> tests = [] {
             executor.execute({c1});
             expect(out.progressSummary.find(" tok") == std::string::npos);
         }
+    };
+
+    "T12 工具循环每次迭代末触发 requestRefresh（T3，2026-09-02）"_test = [] {
+        std::vector<CLFTool> tools;
+        CLFTool okRead;
+        okRead.m_name = "read_file";
+        okRead.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        okRead.m_handler = [](const std::string&) { return "{\"success\":true,\"content\":\"data\"}"; };
+        tools.push_back(okRead);
+
+        MockOutput out;
+        std::atomic<int> thinkingSec{2};
+        CLF::CLFCore::ToolStats stats;
+        auto executor = makeExecutor(tools, out, thinkingSec, stats);
+
+        CLF::CLFCore::CLFToolCall c1; c1.m_name = "read_file";
+        CLF::CLFCore::CLFToolCall c2; c2.m_name = "read_file";
+        executor.execute({c1, c2});
+        // 每次迭代末一次（todo_write 等状态类工具返回即重绘，§3.4）
+        expect(out.refreshCount == 2_i);
+
+        // 单个工具也刷新一次（含 continue 提前退出分支——RAII 覆盖）
+        MockOutput out2;
+        CLF::CLFCore::ToolStats stats2;
+        auto executor2 = makeExecutor(tools, out2, thinkingSec, stats2);
+        CLF::CLFCore::CLFToolCall c3; c3.m_name = "not_found_tool";
+        executor2.execute({c3});
+        expect(out2.refreshCount == 1_i);
     };
 };
 

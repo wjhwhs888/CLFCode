@@ -94,7 +94,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFRetryPolicy qa_CLFFileOps qa_CLFBuiltinTools qa_CLFWebFetch
                      qa_CLFMessageCodec qa_CLFPeriodicTimer
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
-                     qa_CLFInputRender qa_CLFPasserby)
+                     qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -179,6 +179,11 @@ add_test(NAME qa_CLFInputRender COMMAND qa_CLFInputRender)
 add_executable(qa_CLFPasserby test/qa_CLFPasserby.cpp)
 target_link_libraries(qa_CLFPasserby PRIVATE clf_core)
 add_test(NAME qa_CLFPasserby COMMAND qa_CLFPasserby)
+
+# 任务面板行构建（设计-任务清单UI显示 §4.2，2026-09-02）
+add_executable(qa_CLFTodoPanel test/qa_CLFTodoPanel.cpp)
+target_link_libraries(qa_CLFTodoPanel PRIVATE clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
+add_test(NAME qa_CLFTodoPanel COMMAND qa_CLFTodoPanel)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

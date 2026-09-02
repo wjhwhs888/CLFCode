@@ -36,6 +36,48 @@ namespace CLF::CLFUI {
 using namespace CLF::CLFCore;
 
 // ============================================================================
+// 任务面板行构建（设计-任务清单UI显示 §4.2，2026-09-02）
+// ============================================================================
+
+std::vector<CLFTodoPanelLine> buildTodoPanelLines(
+    const std::vector<CLFTodoItem>& todos, bool panelDone) {
+    std::vector<CLFTodoPanelLine> lines;
+    if (todos.empty() || panelDone) return lines;   // 入口检查（§4.2 第 1 条）
+
+    size_t completed = 0;
+    for (const auto& t : todos)
+        if (t.m_status == "completed") ++completed;
+
+    // 标题行：📋 任务清单 n/total（执行中形态；全完成收尾走 T6，面板随即清空）
+    lines.push_back({
+        "📋 任务清单 " + std::to_string(completed) + "/" + std::to_string(todos.size()),
+        ftxui::Color::Default});
+
+    // 逐项（>10 截断，§3.2 溢出处理）
+    const size_t showCount = std::min<size_t>(todos.size(), 10);
+    for (size_t i = 0; i < showCount; ++i) {
+        const auto& t = todos[i];
+        std::string icon;
+        ftxui::Color color;
+        if (t.m_status == "in_progress") {
+            icon = "⏳"; color = ftxui::Color::CyanLight;
+        } else if (t.m_status == "completed") {
+            icon = "✓";  color = ftxui::Color::GreenLight;
+        } else {
+            icon = "○";  color = ftxui::Color::GrayDark;   // pending：灰显；未知状态按 pending 兜底
+        }
+        const std::string content = t.m_content.empty() ? "(无内容)" : t.m_content;
+        lines.push_back({"   " + icon + " " + content, color});
+    }
+    if (todos.size() > 10) {
+        lines.push_back({
+            "   … 还有 " + std::to_string(todos.size() - 10) + " 项",
+            ftxui::Color::GrayDark});
+    }
+    return lines;
+}
+
+// ============================================================================
 // 构造 / 析构
 // ============================================================================
 
@@ -411,8 +453,20 @@ int CLFRepl::run() {
                 dbgEvt("Render input=" + std::to_string(inputText.size())
                        + " rows=" + std::to_string(m_lastRowTexts.size()));
 
+            // T4: 任务面板（contentArea 与 progressElements 之间，§3.1）。
+            // getTodos 锁内副本 + isTodoPanelDone 原子——渲染线程安全（§3.9）；
+            // 空清单/已收尾 → 空 Element 零占用
+            ftxui::Elements todoPanelElements;
+            for (const auto& l : buildTodoPanelLines(
+                     m_agent.getTodos(), m_agent.isTodoPanelDone())) {
+                todoPanelElements.push_back(
+                    ftxui::text(l.text) | ftxui::color(l.color));
+            }
+            auto todoPanel = ftxui::vbox(std::move(todoPanelElements));
+
             return ftxui::vbox({
                 contentArea,
+                todoPanel,
                 ftxui::vbox(std::move(progressElements)),
                 statusLine,
                 thinSep(),

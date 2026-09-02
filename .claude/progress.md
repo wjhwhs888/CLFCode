@@ -25,8 +25,10 @@
       - 实施期修复 3 个真 bug：① up() helper 无限递归（replace_all 误伤自身函数体）→ SegFault 根因 ② loadJsonl/旧 load 的 .bak 备份 rename 前未关文件（MSVC fstream 默认共享模式不含 FILE_SHARE_DELETE → rename 静默失败）③ 测试中文窄字面量直接拼 path 被 CP936 解码（不同字节序列有的乱码通过、有的抛异常——与 memory 编码陷阱族同根）
       - 设计遗漏修复：jsonl header 行补 skills 字段（S2-6 起 skills 随会话持久化，原 header 无载体）；§3.9 契约微调（append* 收行文本 string 而非 json——SessionManager 文件 IO 层与 codec 格式层不越界）
       - 踩坑记录：静态非平凡对象第三次（g_appendMutex 文件级 → 函数内 magic static）
-    - D2 上午：J3（AgentLoop 四状态 + 9 接口 + restoreSession 分流 + T6 完成分支 + m_turnStartMsgCount）+ submit 清空判定
-    - D2 下午：J4（submit 三处接线）+ J5（命令层 /exit /clear /resume）+ handler 接线（appendTodoSnapshotNow/markTodosDirty/T7 描述）+ T3（ToolExecutor requestRefresh）
+    - ✅ **D2 上午（已完成）**：J3（AgentLoop 四状态 + 9 接口含 beginSessionFile 懒创建/续写复制 + restoreSession 分流 + T6 完成分支 + m_turnStartMsgCount）+ SessionManager helpers（timestampNow/makeSessionId/makeNewSessionPath/copyLines）+ CLFRepl 构造注入 historyDir/submit 清面板+建文件 + 测试 V1-V5——ctest 19/19 全绿
+    - ✅ **D2 下午（已完成）**：J4（轮末 appendTurnLine 替换覆盖写）+ J5（命令层 /exit 纯退出、/clear 关闭会话含摘要行、列表 [当前] 重定义）+ closeSessionFileWithSummary + handler 接线（create/update/clear 即时快照 + create 清面板隐藏）+ T7 描述引导 + T3（ToolExecutor RAII 刷新守卫）——ctest 19/19 全绿
+      - 调试插曲：V1 挂死定位三轮（sed 行号探针 → beginSessionFile 探针 → V1 分步探针）——根因两个：① 测试中文路径窄 ifstream/窄 path 构造（CP936 编码陷阱，第三次踩）② V1 第二轮测试设计失误（单项全✓清单意外触发 T6 收尾）
+      - 教训：sed 删除探针行时误删与探针同行的用例声明行（19 处）——探针插入时换行才是安全做法；已用 git checkout + 重写 V 系列恢复
     - D3 上午：T4/T5（buildTodoPanel 面板渲染）+ J6（resume 回显清单行）+ 单测 qa_CLFTodoPanel / qa_CLFToolExecutor
     - D3 下午：全量干净重建 + ctest + 人工验收（UI 25 条 + jsonl 29 条）+ 修 bug
   - 状态：**设计定稿、已排期，待开工**（两份文档相互依赖须同批实施；新测试须加入 CLF_TEST_TARGETS；验证须含主程序启动冒烟——A2 教训）

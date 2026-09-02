@@ -623,9 +623,10 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
     CLFSessionInfo headerInfo;
 
     // J3: 按扩展名分流——.jsonl 走追加式解析，.json 走覆盖式（旧归档永久兼容）
+    const bool isJsonl = filePath.size() >= 6
+                      && filePath.compare(filePath.size() - 6, 6, ".jsonl") == 0;
     bool ok;
-    if (filePath.size() >= 6
-        && filePath.compare(filePath.size() - 6, 6, ".jsonl") == 0) {
+    if (isJsonl) {
         ok = CLFSessionManager::loadJsonl(filePath, messages, &skills, &summary,
                                           &todos, &completeTodos, &headerInfo);
     } else {
@@ -644,7 +645,7 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
             if (t.m_status != "completed") { allDone = false; break; }
         setTodoPanelDone(allDone);
     }
-    (void)completeTodos;   // J6 回显用（折叠块每轮清单状态行 + complete 收尾行）
+    (void)completeTodos;   // 行级回显直接解析 complete 行；此输出保留 API 完整性
 
     CLFLogger::instance().info("[Restore] loaded: "
                                + std::to_string(messages.size()) + " msgs, "
@@ -659,16 +660,70 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
     if (m_output) {
         std::vector<std::string> echoLines;
         int userCount = 0, assistantCount = 0;
-        for (const auto& msg : messages) {
-            if (msg.m_role == "user") {
-                appendSplitLines(echoLines, "> " + msg.m_content);
-                ++userCount;
-            } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                appendSplitLines(echoLines, msg.m_content);
-                ++assistantCount;
+
+        if (isJsonl) {
+            // J6: jsonl 行级回显（设计-会话追加式保存.jsonl §3.6）——
+            // 每轮 turn 行尾若带 todos 快照 → 追加"📋 本轮清单 n/total"行；
+            // complete 行 → 追加"任务清单（全部完成）"收尾行；
+            // todo_snapshot/summary/header 行不回显（中间状态与元数据）
+            std::ifstream file(fs::u8path(filePath));
+            std::string line;
+            while (std::getline(file, line)) {
+                if (line.empty()) continue;
+                nlohmann::json obj;
+                try { obj = nlohmann::json::parse(line); } catch (...) { continue; }
+                const std::string type = obj.value("type", "");
+
+                if (type == "turn") {
+                    std::vector<CLFMessage>  turnMsgs;
+                    std::vector<CLFTodoItem> turnTodos;
+                    if (!CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) continue;
+                    for (const auto& msg : turnMsgs) {
+                        if (msg.m_role == "user") {
+                            appendSplitLines(echoLines, "> " + msg.m_content);
+                            ++userCount;
+                        } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
+                            appendSplitLines(echoLines, msg.m_content);
+                            ++assistantCount;
+                        }
+                        // tool 消息跳过（终端不需要显示）
+                    }
+                    if (!turnTodos.empty()) {
+                        size_t done = 0;
+                        for (const auto& t : turnTodos)
+                            if (t.m_status == "completed") ++done;
+                        std::string summary = "📋 本轮清单 " + std::to_string(done)
+                            + "/" + std::to_string(turnTodos.size()) + "：";
+                        for (const auto& t : turnTodos) {
+                            const std::string icon = (t.m_status == "completed") ? "✓"
+                                : (t.m_status == "in_progress") ? "⏳" : "○";
+                            summary += " " + icon + " " + t.m_content + " ·";
+                        }
+                        summary.resize(summary.size() - 2);   // 去掉末尾 " ·"
+                        echoLines.push_back(summary);
+                    }
+                } else if (type == "complete") {
+                    std::vector<CLFTodoItem> completeLine;
+                    if (!CLFMessageCodec::parseCompleteLine(obj, completeLine)) continue;
+                    std::string summary = "📋 任务清单（全部完成）:";
+                    for (const auto& t : completeLine)
+                        summary += " ✓ " + t.m_content;
+                    echoLines.push_back(summary);
+                }
             }
-            // tool / system 消息跳过（终端不需要显示）
+        } else {
+            for (const auto& msg : messages) {
+                if (msg.m_role == "user") {
+                    appendSplitLines(echoLines, "> " + msg.m_content);
+                    ++userCount;
+                } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
+                    appendSplitLines(echoLines, msg.m_content);
+                    ++assistantCount;
+                }
+                // tool / system 消息跳过（终端不需要显示）
+            }
         }
+
         m_output->showFoldedBlock(
             "● 会话已恢复 · " + std::to_string(userCount + assistantCount)
                 + " 条消息（ctrl+r 展开）", echoLines);
