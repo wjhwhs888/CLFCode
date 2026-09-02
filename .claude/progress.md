@@ -29,8 +29,8 @@
     - ✅ **D2 下午（已完成）**：J4（轮末 appendTurnLine 替换覆盖写）+ J5（命令层 /exit 纯退出、/clear 关闭会话含摘要行、列表 [当前] 重定义）+ closeSessionFileWithSummary + handler 接线（create/update/clear 即时快照 + create 清面板隐藏）+ T7 描述引导 + T3（ToolExecutor RAII 刷新守卫）——ctest 19/19 全绿
       - 调试插曲：V1 挂死定位三轮（sed 行号探针 → beginSessionFile 探针 → V1 分步探针）——根因两个：① 测试中文路径窄 ifstream/窄 path 构造（CP936 编码陷阱，第三次踩）② V1 第二轮测试设计失误（单项全✓清单意外触发 T6 收尾）
       - 教训：sed 删除探针行时误删与探针同行的用例声明行（19 处）——探针插入时换行才是安全做法；已用 git checkout + 重写 V 系列恢复
-    - D3 上午：T4/T5（buildTodoPanel 面板渲染）+ J6（resume 回显清单行）+ 单测 qa_CLFTodoPanel / qa_CLFToolExecutor
-    - D3 下午：全量干净重建 + ctest + 人工验收（UI 25 条 + jsonl 29 条）+ 修 bug
+    - ✅ **D3 上午（已完成）**：T4/T5（buildTodoPanelLines 纯函数 + 渲染接线）+ J6（restoreSession 行级回显：每轮清单状态行 + complete 收尾行）+ 新测试 qa_CLFTodoPanel P1-P6 + qa_CLFToolExecutor T12——干净重建 161/161 + ctest 20/20 全绿 + 主程序 --version 冒烟 exit=0
+    - ⏳ **D3 下午（待用户实机验收）**：人工验收 54 条（UI 文档 §五 25 条 + jsonl 文档 §五 29 条）+ 验收期修 bug
   - 状态：**设计定稿、已排期，待开工**（两份文档相互依赖须同批实施；新测试须加入 CLF_TEST_TARGETS；验证须含主程序启动冒烟——A2 教训）
 - **S3 净增点自研**（1 天）：摘要自动触发+compress_context 工具（`CLFSessionSummarizer::isEnabled` 已有判开关；**阈值判定需新写**——原"shouldSummarize 已实现"经 08-25 二次核实为臆造）/ `/model` 切换 + 多模型自适应（**用户定为必做**）
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
