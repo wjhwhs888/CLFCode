@@ -8,7 +8,7 @@
 ### 【A 阶段】本体自研 — ✅ 全部完成（v0.5.0，2026-09-02 tag 已打，发布由用户执行）
 - ~~S1 小修~~ ✅（v0.3.5）｜~~S2 安全+工具~~ ✅（v0.4.0）｜~~【插入批】todo 面板 + jsonl 追加式保存~~ ✅｜~~S3 净增点自研~~ ✅——详见下方已完成区
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
-- **A5【当前优先】工具调用循环上限机制改造（2026-09-02 二轮拍板定稿，已排期）**：设计文档 `设计/设计-工具调用循环上限机制改造.md`（flash 草案 → pro 定稿）。解决三问题：触顶 `[Error] Exceeded` 报错语义 / 工具无法声明回合结束 / 模型长时间无响应无提示。四个机制：A concludesTurn（静态声明、机制先行、本期零工具声明）B 触顶优雅收尾（触顶收尾请求——同步 + 独立 try/catch；默认值 16→48 用户确认）C max-tokens Warn（P2 小改）D Tips 行（config/tips.txt + 硬编码兜底；异常态本期仅静默计时）。收尾路径统一：完成分支 = 唯一汇聚点（自然停/concluded/max-tokens），触顶路径独立收敛（不做 todo 清单收尾）。**排期：阶段一 T1-T3+测试（A/B/C 机制，~1-1.5 天）→ 阶段二 T4-T6+测试（Tips 行，~1 天）→ 验证（干净重建 + ctest + 主程序冒烟）**。插队最前，不影响其他进度
+- **A5 工具调用循环上限机制改造 — ✅ 两阶段全部实施完毕（2026-09-02，待人工验收 Tips 行）**：设计文档 `设计/设计-工具调用循环上限机制改造.md`。阶段一（69ea8c7）：concludesTurn 机制（T1 字段/T2 成功路径传递/T3 concluded-break + finishTurn 汇聚 + appendWorked helper）+ 触顶收尾请求（同步 + 独立 try/catch + 中性文案）+ max-tokens Warn + 默认 48。阶段二（b3d8e6a）：CLFTipsBar（5s 轮播/300s 静默/活动计数）+ ICLFOutput ⑨ notifyActivity + config/tips.txt + release.ps1 打包。验证：MSVC 构建 83+ 目标 / **ctest 21/21 全绿**（A5 系列 14 新用例）/ 主程序 --version 冒烟 exit=0。**待办：Tips 行人工验收（渲染位置/轮播/静默变红/空闲隐藏）+ OpenSSL 4.0 环境问题收尾**（见下）
 
 ### 【B 阶段】dsh 对接 — ⏸ 决策门暂缓（2026-09-02 用户定：慎重、不着急）
 - **用户态度（2026-09-02）**：进入 dsh 前先慎重考虑；dsh 当前为 **alpha 版本、不稳定，不着急**——决策门保持挂起，暂不投入 B 阶段
@@ -21,6 +21,16 @@
   - 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于决策）；若不走 → 自研轻量 subagent
 
 ## 已完成
+
+### 2026-09-02 A5 工具调用循环上限机制改造 ✅（两阶段全落地，待人工验收 Tips 行；未发布——攒入下一版本）
+- **设计**：flash 草案 → pro 三审定稿（`设计/设计-工具调用循环上限机制改造.md`）——三审修 9 处：伪代码结构（finalResponse 机制照草案实现会 fall 触顶路径）、T2 构造复制 vs 成功复制冲突、悬空引用×2、静默计时挂载点（流式回调→输出活动计数）、阈值可注入、触顶文案补"继续"引导、收尾 user 消息 jsonl 语义、max-tokens+tool_calls 边界、concluded 空文本边界
+- **阶段一（69ea8c7）机制 A/B/C**：`CLFToolResult`/`CLFTool` 加 `m_concludesTurn`（仅 handler 成功路径复制）；`CLFAgentLoop` concluded-break（丢弃多余工具调用、协议安全）+ `finishTurn()` 收尾汇聚点（自然停/concluded 共用，max-tokens → Warn）+ `appendWorked()` helper；触顶收尾请求（同步 + 独立 try/catch 不逸出 + 失败降级保留 user 消息）+ 中性文案 `(已达工具调用上限，任务可能未完成——输入「继续」可接着做)`；默认 16→48（用户确认）
+- **阶段二（b3d8e6a）机制 D Tips 行**：新类 `CLFUI/CLFTipsBar`（config/tips.txt 每行一条 + constexpr char* 内置兜底 + 5s 轮播 + 300s 静默阈值 + busy 显隐 + startTimer 参数供 qa）；`ICLFOutput` ⑨ `notifyActivity()` 活动计数（基类实现零破坏；CLFTerminal 7 个内容类 emit 入口接线——状态行/刷新刻意不计，turnTimer 每秒驱动会永不清零）；`CLFRepl` vbox statusLine 与 thinSep 之间插入；release.ps1 打包清单加 tips.txt
+- **测试**：qa_CLFAgentLoop A5-1~8（concludesTurn 最终响应/丢弃收尾/触顶收尾请求 syncCallCount+1/收尾失败降级/max-tokens Warn/空文本仅 worked/length+tool_calls 继续/并行任一）+ qa_CLFToolExecutor A5-1~3（成功复制/未声明 false/失败不复制）+ qa_CLFTipsBar P1-P6 新套件——**ctest 21/21 全绿**
+- **验证**：MSVC（cmake-build-debug 日常目录）构建全过 + ctest 21/21 + 主程序 --version 冒烟 exit=0（A2 教训遵守）
+- **踩坑**：① ftxui::Element 是 shared_ptr<Node> 的 using 别名——前向声明 class Element 与已有定义冲突（C2371），须 include dom/node.hpp ② CLFTipsBar.cpp 漏加 clf_ui 源列表 → LNK2019 ③ 命名空间（CLFUI 内调 CLFCore 类需 using，CLFRepl.cpp 同模式）
+- **⏳ 待人工验收**：Tips 行实机表现（渲染位置/5s 轮播/静默 300s 变红/恢复回灰/空闲隐藏）；触顶收尾请求实机（真实大任务触顶 → 模型总结 + 「继续」衔接）；concludesTurn 本期无声明工具（机制预留）
+- **⚠ OpenSSL 4.0 环境问题（顺手修复 + 收尾待办）**：系统 OpenSSL 升至 4.0.1（`C:/Program Files/OpenSSL-Win64`），旧 httplib 弃用 API + 全局 -Werror 阻断 MinGW build/ 构建 → CMakeLists 3rdparty/OpenSSL 头改 SYSTEM 语义隔离（自身 -Werror 不动，第三方警告不归我们管辖）。**发现**：build/（MinGW）从未成功构建过（无产物），日常构建 = cmake-build-debug（MSVC）。**待办**：3rdparty/openssl/lib 的 libssl.a 版本未确认（头 4.0.1 + 旧导入库 ABI 风险）；长期应升级 3rdparty/httplib + 统一 OpenSSL 版本
 
 ### 2026-09-02 S3 净增点自研 ✅（未发布——攒入下一版本）
 
