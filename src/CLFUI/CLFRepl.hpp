@@ -16,6 +16,7 @@
 
 #include "CLFUI/CLFSelectionModel.hpp"
 #include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
+#include "CLFUI/CLFTipsBar.hpp"    // A5：Tips 行（unique_ptr 成员）
 #include "CLFCore/CLFPasserby.hpp" // 会话节奏观察器（值成员）
 #include "CLFTypes/CLFTypes.hpp"   // CLFTodoItem（buildTodoPanelLines 参数）
 
@@ -60,6 +61,8 @@ private:
     CLF::CLFTypes::ICLFOutput*  m_output;
     std::string m_historyDir;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
+    // A5：Tips 行（输入框上方；ticker 构造即启动，析构即停）
+    std::unique_ptr<CLFTipsBar> m_tipsBar;
     CLF::CLFCore::CLFPasserby m_passerby;   // 会话节奏观察器（构造于 m_output 之后）
 
     // 快捷键状态

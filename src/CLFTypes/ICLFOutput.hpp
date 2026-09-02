@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -99,6 +101,19 @@ public:
         (void)summary;
         (void)lines;
     }
+
+    // ========== ⑨ 输出活动计数（A5 Tips 静默判定数据源，基类实现零破坏） ==========
+
+    // 由具体实现的内容类输出入口调用（模型活动信号）。
+    // 刻意不计状态行/刷新（setStatus/setStatusTextOnly/requestRefresh 等
+    // UI 自身节奏）——turnTimer 每秒驱动状态行，计入会使静默计时永不触发
+    void notifyActivity() { ++m_activityCount; }
+
+    // 活动计数（TipsBar ticker 读取；原子，跨线程安全）
+    uint64_t activityCount() const { return m_activityCount.load(); }
+
+private:
+    std::atomic<uint64_t> m_activityCount{0};
 };
 
 } // namespace CLF::CLFTypes

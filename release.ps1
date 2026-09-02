@@ -134,7 +134,7 @@ Write-Host "  DLLs: $((Get-ChildItem "$ReleaseDir\bin\Release\*.dll").Count) fil
 
 # config / data / doc：从仓库取（发布目录可能被清理，不能依赖上一版）
 # config 排除 agent_settings.local.json（含本地 API Key，绝不进包）
-foreach ($f in @('README.md', 'agent_settings.json', 'system_prompt_template.md')) {
+foreach ($f in @('README.md', 'agent_settings.json', 'system_prompt_template.md', 'tips.txt')) {
     Copy-Item "$ScriptDir\config\$f" "$ReleaseDir\config\" -Force
 }
 Copy-Item "$ScriptDir\data" "$ReleaseDir\" -Recurse -Force

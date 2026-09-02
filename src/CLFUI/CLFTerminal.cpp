@@ -119,6 +119,7 @@ CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
 // ---- ICLFOutput 实现 ----
 
 void CLFTerminal::emitContent(const std::string& text) {
+    notifyActivity();  // A5 ⑨：模型内容输出 = 活动信号（静默判定重置）
     {
         std::lock_guard lock(m_mutex);
         if (!text.empty() && m_thinkingActive) {
@@ -230,6 +231,7 @@ void CLFTerminal::flushTable() {
 }
 
 void CLFTerminal::emitRaw(const std::string& data) {
+    notifyActivity();  // A5 ⑨
     {
         std::lock_guard lock(m_mutex);
         // flush m_pendingLine (切换输出模式, 防混合)
@@ -268,6 +270,7 @@ void CLFTerminal::setStatus(const std::string& title, int cur, int total) {
 }
 
 void CLFTerminal::emitStyledLine(const std::string& line, LineStyle style) {
+    notifyActivity();  // A5 ⑨
     {
         std::lock_guard lock(m_mutex);
         m_contentBuffer.push_back(line);
@@ -285,6 +288,7 @@ void CLFTerminal::setStatusTextOnly(const std::string& title) {
 }
 
 void CLFTerminal::showProgress(const std::vector<std::string>& lines) {
+    notifyActivity();  // A5 ⑨：工具进度 = 活动信号（工具执行期无流式输出）
     {
         std::lock_guard lock(m_progressMutex);
         m_progressLines = lines;
@@ -293,6 +297,7 @@ void CLFTerminal::showProgress(const std::vector<std::string>& lines) {
 }
 
 void CLFTerminal::finishProgress(const std::string& summary) {
+    notifyActivity();  // A5 ⑨
     // 先写 summary 到永久缓冲（需要 m_mutex），再清除 progress
     // 保持与 contentSnapshot 一致的锁顺序：m_mutex → m_progressMutex
     if (!summary.empty()) {
@@ -335,6 +340,7 @@ void CLFTerminal::onInterrupt(std::function<void()> cb) {
 }
 
 void CLFTerminal::emitError(const std::string& msg) {
+    notifyActivity();  // A5 ⑨
     // P0-1: 错误折叠摘要 = 首行 + 截断（dsh "错误首行即摘要"模式）
     emitContent(red("✗ ") + firstLineCapped(msg, 200));
 }
@@ -342,6 +348,7 @@ void CLFTerminal::emitError(const std::string& msg) {
 // ---- 思考内容（与 emitContent 分离，UI 层 Ctrl+O 折叠/展开） ----
 
 void CLFTerminal::appendThinking(const std::string& text) {
+    notifyActivity();  // A5 ⑨：思考内容 = 活动信号（深度思考期非静默）
     {
         std::lock_guard lock(m_mutex);
         if (m_thinkingBuffer.empty())

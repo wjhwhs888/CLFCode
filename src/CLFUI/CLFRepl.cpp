@@ -92,6 +92,8 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
         [this](const std::string& prompt) { return confirmDialog(prompt); });
     // J3: jsonl 会话文件目录注入（beginSessionFile 建文件用，设计 §3.9）
     m_agent.setHistoryDir(historyDir);
+    // A5：Tips 行（默认 5s 轮播 / 300s 静默阈值；数据源 config/tips.txt + 内置兜底）
+    m_tipsBar = std::make_unique<CLFTipsBar>(m_output);
 }
 
 CLFRepl::~CLFRepl() = default;
@@ -469,6 +471,10 @@ int CLFRepl::run() {
                 todoPanel,
                 ftxui::vbox(std::move(progressElements)),
                 statusLine,
+                // A5：Tips 行——仅请求处理中显示（busy），空闲自动空 Element；
+                // 原子读 busy/ticker 状态，渲染线程安全（设计 §3.4）
+                m_tipsBar ? m_tipsBar->render(asyncSubmit.busy())
+                          : ftxui::emptyElement(),
                 thinSep(),
                 input->Render(),
                 thinSep(),

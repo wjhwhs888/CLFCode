@@ -60,6 +60,7 @@ add_library(clf_ui STATIC
     CLFUI/CLFRepl.cpp
     CLFUI/CLFScrollView.cpp
     CLFUI/CLFTerminal.cpp
+    CLFUI/CLFTipsBar.cpp
 )
 target_link_libraries(clf_ui PUBLIC clf_core ftxui::screen ftxui::dom ftxui::component)
 target_include_directories(clf_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -94,7 +95,8 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFRetryPolicy qa_CLFFileOps qa_CLFBuiltinTools qa_CLFWebFetch
                      qa_CLFMessageCodec qa_CLFPeriodicTimer
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
-                     qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel)
+                     qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel
+                     qa_CLFTipsBar)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -185,6 +187,11 @@ add_test(NAME qa_CLFPasserby COMMAND qa_CLFPasserby)
 add_executable(qa_CLFTodoPanel test/qa_CLFTodoPanel.cpp)
 target_link_libraries(qa_CLFTodoPanel PRIVATE clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
 add_test(NAME qa_CLFTodoPanel COMMAND qa_CLFTodoPanel)
+
+# Tips 行（设计-工具调用循环上限机制改造 §3.4，2026-09-02）
+add_executable(qa_CLFTipsBar test/qa_CLFTipsBar.cpp)
+target_link_libraries(qa_CLFTipsBar PRIVATE clf_core clf_ui)
+add_test(NAME qa_CLFTipsBar COMMAND qa_CLFTipsBar)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
