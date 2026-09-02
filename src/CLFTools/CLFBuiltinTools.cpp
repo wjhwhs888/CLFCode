@@ -191,8 +191,9 @@ bool isValidTodoStatus(const std::string& s) {
 // S2-6: 待办清单。**这是首个需要捕获状态的工具**——其余 handler 都是无捕获
 // lambda。捕获 agent 引用后 lambda 又存进 agent.m_tools，构成自引用，因此
 // CLFAgentLoop 实例注册工具后不可拷贝/移动（否则悬垂）。
-std::string todoWriteHandlerImpl(const std::string& args,
-                                 CLF::CLFCore::CLFAgentLoop& agent) {
+// 实现留在 anonymous（仅本 TU 可见），顶层同名薄壳在 §"内置工具注册" 前
+std::string todoWriteHandlerImplInternal(const std::string& args,
+                                         CLF::CLFCore::CLFAgentLoop& agent) {
     using json = nlohmann::json;
     using CLF::CLFCore::CLFTodoItem;
     json result;
@@ -270,8 +271,11 @@ std::string todoWriteHandlerImpl(const std::string& args,
             }
             agent.setTodos(std::move(items));
             // J3 接线：update 即写快照（每次状态变化落盘，崩溃进度保留到最近一步）
+            // + 清面板隐藏标志——跨轮场景"新回合清空"后面板须随 update 重现
+            // （dsh projection 语义：任何 todo/write 事件重建投影，§3.3）
             agent.markTodosDirty();
             agent.appendTodoSnapshotNow();
+            agent.setTodoPanelDone(false);
             result["success"] = true;
             result["todos"]   = renderList();
         } else {
@@ -429,6 +433,13 @@ std::string executeCommandHandler(const std::string& args) {
 }
 
 } // anonymous namespace
+
+// hpp 暴露的单测入口（qa_CLFBuiltinTools B4）——实现即 anonymous 内的
+// todoWriteHandlerImplInternal；注册 lambda（本 TU 顶层）经此消歧
+std::string todoWriteHandlerImpl(const std::string& args,
+                                 CLF::CLFCore::CLFAgentLoop& agent) {
+    return todoWriteHandlerImplInternal(args, agent);
+}
 
 // ============================================================================
 // 注册入口

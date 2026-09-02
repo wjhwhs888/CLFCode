@@ -5,6 +5,13 @@
 > **编号**：UI n = 《设计-任务清单UI显示.md》§五 第 n 条；J n = 《设计-会话追加式保存.jsonl.md》§五 第 n 条
 > **程序**：`bin/Debug/CLFCode.exe`；会话文件目录：`doc/contextHistory/`
 
+## 验收发现与修复记录
+
+- **BUG-1（已修复，2026-09-02）**：场景 A 第三步（update 第一项 in_progress）时任务面板消失。
+  - 根因：submit 的"新回合清空"置 `m_todoPanelDone=true` 后，todo_write **update** 分支只做了快照落盘、未清面板隐藏标志（仅 create 清了）——跨轮场景面板随 update 无法重现（dsh projection 语义：任何 todo/write 事件重建投影）
+  - 修复：update 分支补 `setTodoPanelDone(false)`（与 create 一致）；设计文档 §3.3 update 行同步；qa_CLFBuiltinTools 新增 B4 回归用例（todoWriteHandlerImpl 暴露为单测入口）；ctest 20/20
+  - 请从场景 A 重新执行 A1-A8
+
 ---
 
 ## 场景 A：面板完整生命周期（约 10 分钟）

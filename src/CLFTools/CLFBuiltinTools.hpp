@@ -20,6 +20,13 @@ namespace CLF::CLFTools {
 //       execute_command, get_current_time, echo
 void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent);
 
+// todo_write handler——暴露仅为单测可达（qa_CLFBuiltinTools B4），
+// 正常使用经 registerBuiltinTools 注册的工具
+// example:
+//   auto result = todoWriteHandlerImpl(R"({"action":"list"})", agent);
+std::string todoWriteHandlerImpl(const std::string& args,
+                                 CLF::CLFCore::CLFAgentLoop& agent);
+
 // ============================================================================
 // 内部辅助函数——暴露仅为单测可达，正常使用无需直接调用
 // ============================================================================

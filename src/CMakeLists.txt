@@ -143,7 +143,8 @@ add_test(NAME qa_CLFFileOps COMMAND qa_CLFFileOps)
 # clf_tools 经 clf_core 间接拉入 clf_network（httplib+SSL），静态库按需拉取
 # 会带出 CLFHttpClient.obj 的 OpenSSL 符号，故须显式链接 OpenSSL
 add_executable(qa_CLFBuiltinTools test/qa_CLFBuiltinTools.cpp)
-target_link_libraries(qa_CLFBuiltinTools PRIVATE clf_tools ${CLF_OPENSSL_LIBS})
+# B4 用例构造 CLFAgentLoop（默认 http 客户端）需 clf_core/clf_network
+target_link_libraries(qa_CLFBuiltinTools PRIVATE clf_tools clf_core clf_network ${CLF_OPENSSL_LIBS})
 if(WIN32)
     target_link_libraries(qa_CLFBuiltinTools PRIVATE ws2_32 crypt32)
 endif()

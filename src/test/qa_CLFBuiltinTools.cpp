@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <string>
 
+#include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
 using namespace boost::ut;
@@ -15,6 +16,7 @@ namespace fs = std::filesystem;
 using CLF::CLFTools::detail::exitCodeMeansSuccess;
 using CLF::CLFTools::detail::isWithinWorkspace;
 using CLF::CLFTools::detail::sliceLines;
+using CLF::CLFTools::todoWriteHandlerImpl;
 
 const boost::ut::suite<"CLFBuiltinTools"> tests = [] {
     // ========== B1: 工作区边界 ==========
@@ -122,6 +124,46 @@ const boost::ut::suite<"CLFBuiltinTools"> tests = [] {
     "B3e offset 超出总行数返回空"_test = [] {
         const std::string src = "l0\nl1\n";
         expect(sliceLines(src, 10, 5).empty());
+    };
+
+    // ========== B4: todo_write 面板状态接线（2026-09-02 实机验收修复） ==========
+
+    // 实机验收抓出的 bug：跨轮场景"新回合清空"置 done 后，模型 update 不恢复面板——
+    // 面板在第三步操作时消失。修复：update 与 create 一致清 done（dsh projection 语义）
+    "B4 update 清面板隐藏标志（跨轮重现）"_test = [] {
+        using CLF::CLFCore::CLFAgentLoop;
+        using CLF::CLFCore::CLFAgentConfig;
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        CLFAgentLoop agent(config);   // 默认 http 客户端，构造不发起请求
+
+        // 第一轮：create 建清单 → 面板显示（done 清）
+        const auto r1 = todoWriteHandlerImpl(
+            R"({"action":"create","todos":[{"content":"任务1"},{"content":"任务2"}]})",
+            agent);
+        expect(r1.find("\"success\":true") != std::string::npos);
+        expect(!agent.isTodoPanelDone());   // create 清 done
+
+        // 新回合开始：submit 清面板（§3.3）
+        agent.setTodoPanelDone(true);
+        expect(agent.isTodoPanelDone());
+
+        // 本轮模型 update 第一项 → 面板必须重现（修复点）
+        const auto r2 = todoWriteHandlerImpl(
+            R"({"action":"update","id":"1","status":"in_progress"})", agent);
+        expect(r2.find("\"success\":true") != std::string::npos);
+        expect(!agent.isTodoPanelDone());   // update 也清 done
+
+        const auto todos = agent.getTodos();
+        expect(todos.size() == 2_ul);
+        expect(todos[0].m_status == std::string("in_progress"));
+        expect(todos[1].m_status == std::string("pending"));
+
+        // clear 后清单空 → 面板不显示（empty 条件），done 状态无关紧要
+        agent.setTodoPanelDone(false);
+        const auto r3 = todoWriteHandlerImpl(R"({"action":"clear"})", agent);
+        expect(r3.find("\"success\":true") != std::string::npos);
+        expect(agent.getTodos().empty());
     };
 };
 

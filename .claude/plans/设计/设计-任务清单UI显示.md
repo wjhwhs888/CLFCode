@@ -167,7 +167,7 @@ statusLine           ← 状态点
 | 场景 | 行为 | 逻辑来源 |
 |---|---|---|
 | agent 首次 `todo_write create` | 面板出现，显示新清单（大纲式：所有步骤平铺）；**清除 `m_todoPanelDone`** | Claude Code：TodoWrite 创建清单即显示 |
-| turn 进行中，agent `update` 状态 | 面板**原地更新**对应行（✓/⏳/○），**不追加** | Claude Code：每次 TodoWrite 后重新渲染 |
+| turn 进行中，agent `update` 状态 | 面板**原地更新**对应行（✓/⏳/○），**不追加**。**跨轮场景**：新回合清空后，模型本轮 update → 清 `m_todoPanelDone` → **面板重现**（含更新后状态）——dsh projection 语义：任何 todo/write 事件重建投影（2026-09-02 实机验收修复，与 create 一致） | Claude Code：每次 TodoWrite 后重新渲染 |
 | turn 结束（未全完成） | 面板**保留显示**（本回合内可见"做到哪了"） | Claude Code：清单不随回合结束消失 |
 | **普通新回合开始（非 resume 的新输入）** | **面板清空（UI 不显示）**；数据留在 jsonl 历史（模型从会话历史知道未完成项，可重写/继续）。实现：`CLFRepl::submit` 在 runTurn 前判定——`m_agent.getResumedFrom()` 为空 → `m_agent.setTodoPanelDone(true)` | 对齐 dsh：`turn/start` → projection 清空（`tool-todo/src/index.ts:140`） |
 | **resume 续写（第一条续写输入）** | **面板保留显示**（= 最后快照），**不清空**——resume 是"继续做"语义，模型在续写期间仍基于旧清单工作（用户问"2 3 怎么回事"时面板可见）；直到模型 create 新清单 / 全完成 / clear 才变化。实现：submit 判定 `m_agent.getResumedFrom()` 非空 → 跳过清空；续写文件创建后 `beginSessionFile` 清 `m_resumedFrom`，此后轮次恢复普通语义（§6.4 生命周期定案） | 用户定案（resume 续写 ≠ 普通新回合，§6.4） |
