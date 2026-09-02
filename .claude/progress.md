@@ -8,7 +8,7 @@
 ### 【A 阶段】本体自研 — ✅ 全部完成（v0.5.0，2026-09-02 tag 已打，发布由用户执行）
 - ~~S1 小修~~ ✅（v0.3.5）｜~~S2 安全+工具~~ ✅（v0.4.0）｜~~【插入批】todo 面板 + jsonl 追加式保存~~ ✅｜~~S3 净增点自研~~ ✅——详见下方已完成区
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
-- **A5 工具调用循环上限机制改造 — ✅ 两阶段全部实施完毕（2026-09-02，待人工验收 Tips 行）**：设计文档 `设计/设计-工具调用循环上限机制改造.md`。阶段一（69ea8c7）：concludesTurn 机制（T1 字段/T2 成功路径传递/T3 concluded-break + finishTurn 汇聚 + appendWorked helper）+ 触顶收尾请求（同步 + 独立 try/catch + 中性文案）+ max-tokens Warn + 默认 48。阶段二（b3d8e6a）：CLFTipsBar（5s 轮播/300s 静默/活动计数）+ ICLFOutput ⑨ notifyActivity + config/tips.txt + release.ps1 打包。验证：MSVC 构建 83+ 目标 / **ctest 21/21 全绿**（A5 系列 14 新用例）/ 主程序 --version 冒烟 exit=0。**待办：Tips 行人工验收（渲染位置/轮播/静默变红/空闲隐藏）+ OpenSSL 4.0 环境问题收尾**（见下）
+- **A5 工具调用循环上限机制改造 — ✅ 全流程闭环（实机验收通过，2026-09-02 v0.6.0 发布中）**：设计文档 `设计/设计-工具调用循环上限机制改造.md`。阶段一（69ea8c7）：concludesTurn 机制 + 触顶收尾请求 + max-tokens Warn + 默认 48。阶段二（b3d8e6a）：CLFTipsBar + 活动计数 + config/tips.txt + 打包。实机验收（用户，12:50-13:13 大任务实测）：Tips 显示（反馈加 "Tips: " 前缀，ab70dc5）+ **触顶真实链路实证**（48 轮触顶 → 「继续」衔接无损 → 未完成清单 #7 原样复现续做完成 → 失败降级不逸出）+ parse_error.101 根因修复（同步传输 vs 流式请求体协议不匹配）+ A5-9 回归用例。ctest 21/21。**发布：CHANGELOG v0.6.0 已写，tag 由 pro 打，发布由用户执行。遗留：OpenSSL 4.0 环境收尾（见 A5 记录）**
 
 ### 【B 阶段】dsh 对接 — ⏸ 决策门暂缓（2026-09-02 用户定：慎重、不着急）
 - **用户态度（2026-09-02）**：进入 dsh 前先慎重考虑；dsh 当前为 **alpha 版本、不稳定，不着急**——决策门保持挂起，暂不投入 B 阶段
@@ -30,6 +30,7 @@
 - **验证**：MSVC（cmake-build-debug 日常目录）构建全过 + ctest 21/21 + 主程序 --version 冒烟 exit=0（A2 教训遵守）
 - **踩坑**：① ftxui::Element 是 shared_ptr<Node> 的 using 别名——前向声明 class Element 与已有定义冲突（C2371），须 include dom/node.hpp ② CLFTipsBar.cpp 漏加 clf_ui 源列表 → LNK2019 ③ 命名空间（CLFUI 内调 CLFCore 类需 using，CLFRepl.cpp 同模式）
 - **实机验收反馈修复（ab70dc5，2026-09-02 下午）**：① Tips 加 "Tips: " 前缀标识（异常态 ⚠ 自带标识不加）② **触顶收尾请求 parse_error.101 根因修复**——用户实测大任务触顶时报 `[Error] JSON parse failed ... last read: 'd'`。根因链：收尾请求复用 `buildChatRequest(m_config)`，用户 `m_stream=true` → 请求体带 `"stream":true` → DeepSeek 返回 SSE 文本（首字符 'd'）→ postJson 同步读回整串解析失败。**修根**：收尾请求用 `m_stream=false` 副本配置（同步传输须配非流式请求体）。补 A5-9 回归用例（流式配置下触顶，ctest 21/21）。教训：测试盲区——原触顶用例全在 stream=false 下跑；凡涉及请求体的路径测试必须覆盖流式/同步双配置
+- **实机验收全链路实证（用户 12:50-13:13 大任务实测，日志 doc/log/clf_agent.log）**：触顶（48 轮，13:07:12）→ 收尾降级正常（回合不崩溃正常结束）→ 用户"继续"（13:08:02）→ 模型从上下文直接续做 **todo #7 in_progress → completed（13:08:20）**——"触顶 = 阶段完成点"、清单未完成态复现续做、"继续"衔接无损 三项设计目标实证通过。用户定调：API 昂贵，不再安排大任务验证，本批闭环
 - **⚠ OpenSSL 4.0 环境问题（顺手修复 + 收尾待办）**：系统 OpenSSL 升至 4.0.1（`C:/Program Files/OpenSSL-Win64`），旧 httplib 弃用 API + 全局 -Werror 阻断 MinGW build/ 构建 → CMakeLists 3rdparty/OpenSSL 头改 SYSTEM 语义隔离（自身 -Werror 不动，第三方警告不归我们管辖）。**发现**：build/（MinGW）从未成功构建过（无产物），日常构建 = cmake-build-debug（MSVC）。**待办**：3rdparty/openssl/lib 的 libssl.a 版本未确认（头 4.0.1 + 旧导入库 ABI 风险）；长期应升级 3rdparty/httplib + 统一 OpenSSL 版本
 
 ### 2026-09-02 S3 净增点自研 ✅（未发布——攒入下一版本）
