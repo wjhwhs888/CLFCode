@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <ctime>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -93,6 +94,11 @@ struct CLFAgentConfig {
     int         m_maxContextWindow      = 1048576;
     int         m_maxToolCallIterations = 16;
     bool        m_contextCompression    = false;
+    // S3-1: 自动摘要触发阈值（剩余窗口 < 阈值时触发，受 m_contextCompression 开关控制）
+    int         m_autoSummaryThreshold  = 4000;
+    // S3-2: 按模型名的 max_tokens 覆盖表（模型名 → 上限；未命中用全局 m_maxTokens。
+    // 不内置猜值——由用户配置文件显式声明，程序零瞎猜）
+    std::map<std::string, int> m_modelMaxTokens;
     int         m_maxResponseDelaySec   = 300;
     std::string m_interactionLanguage   = "zh-CN";
     std::string m_securityMode          = "edit";

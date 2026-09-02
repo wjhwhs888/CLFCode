@@ -18,6 +18,9 @@ public:
         std::string modelName;
         std::vector<std::pair<std::string, std::string>> skills; // name → content
         int maxContextWindow = 1048576;
+        // S3-1: 会话摘要（空 = 无摘要）——拼入 {{project_context}} 占位符
+        // （复用现成占位符，对用户自定义旧模板天然兼容，设计 §S3-1 避坑）
+        std::string sessionSummary;
     };
 
     // 构建完整 system prompt（单条消息内容）

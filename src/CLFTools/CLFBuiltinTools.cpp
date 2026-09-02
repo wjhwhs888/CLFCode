@@ -568,6 +568,21 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     };
     agent.registerTool(todoTool);
 
+    // —— 上下文压缩（S3-1，2026-09-02）——
+    // 模型可主动调用：生成摘要 → 落盘 summary 行 → 注入系统提示（与自动触发同路径）
+    // 第二个捕获 agent 引用的 handler（自引用约束同 todo_write）
+    CLFTool compressTool;
+    compressTool.m_name        = "compress_context";
+    compressTool.m_description =
+        "将当前会话压缩为结构化摘要并注入系统提示（释放上下文窗口）。"
+        "自动触发受配置 agent.context_compression 开关控制";
+    compressTool.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+    compressTool.m_parametersSchema = R"({"type":"object","properties":{}})";
+    compressTool.m_handler = [&agent](const std::string&) {
+        return agent.compressContextNow();
+    };
+    agent.registerTool(compressTool);
+
     // —— 网络 ——
     // 风险级取 Read：GET/HEAD 本质是读取，与 read_file 同级。
     // POST 有远端副作用，由 CLFToolExecutor 动态升级为强制确认（同 S2-2 模式）。

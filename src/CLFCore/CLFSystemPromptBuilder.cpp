@@ -107,6 +107,11 @@ std::string CLFSystemPromptBuilder::build(const Context& ctx) {
         if (!projectCtx.empty()) projectCtx += "\n";
         projectCtx += rules;
     }
+    // S3-1: 会话摘要拼入 {{project_context}}（system 永不截断 + 老模板兼容）
+    if (!ctx.sessionSummary.empty()) {
+        if (!projectCtx.empty()) projectCtx += "\n\n";
+        projectCtx += "## 会话摘要\n" + ctx.sessionSummary;
+    }
 
     // ④ L1 宪法
     std::string constitution = loadConstitution();

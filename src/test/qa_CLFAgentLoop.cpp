@@ -769,6 +769,67 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
     };
+
+    // ========== W 系列：S3 摘要与模型切换（2026-09-02） ==========
+
+    "W1 shouldSummarize 阈值判定与开关控制"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+
+        // 开关开 + 极小窗口 → remaining < 阈值 → true
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_contextCompression = true;
+        config.m_maxContextWindow   = 100;
+        config.m_autoSummaryThreshold = 4000;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        expect(agent->shouldSummarize());
+
+        // 开关关 → 恒 false（阈值不生效）
+        CLFAgentConfig config2;
+        config2.m_apiKey = "k";
+        config2.m_contextCompression = false;
+        config2.m_maxContextWindow   = 100;
+        auto agent2 = std::make_unique<CLFAgentLoop>(config2, mock);
+        expect(!agent2->shouldSummarize());
+
+        // 开关开 + 超大窗口 → false
+        CLFAgentConfig config3;
+        config3.m_apiKey = "k";
+        config3.m_contextCompression = true;
+        config3.m_maxContextWindow   = 1048576;
+        auto agent3 = std::make_unique<CLFAgentLoop>(config3, mock);
+        expect(!agent3->shouldSummarize());
+    };
+
+    "W2 setModelName 查表覆盖 max_tokens"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_modelMaxTokens = {{"deepseek-v4-pro", 65536}, {"other-model", 4096}};
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+
+        agent->setModelName("deepseek-v4-pro");
+        expect(agent->getConfig().m_modelName == std::string("deepseek-v4-pro"));
+        expect(agent->getConfig().m_maxTokens == 65536);   // 查表覆盖
+
+        agent->setModelName("other-model");
+        expect(agent->getConfig().m_maxTokens == 4096);
+
+        agent->setModelName("unknown-model");
+        expect(agent->getConfig().m_modelName == std::string("unknown-model"));
+        expect(agent->getConfig().m_maxTokens == 4096);    // 未命中保持当前值
+    };
+
+    "W3 compressContextNow 开关关返回提示"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_contextCompression = false;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+
+        const std::string r = agent->compressContextNow();
+        expect(r.find("已关闭") != std::string::npos);
+    };
 };
 
 // Boost.UT：测试在静态初始化时注册，cfg 析构时自动运行并输出报告

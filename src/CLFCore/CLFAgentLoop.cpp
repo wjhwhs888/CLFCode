@@ -77,6 +77,22 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     m_interrupted = false;  // 新 turn 开始时重置中断标志
     if (m_output) m_output->clearThinking();  // 清空上一轮推理内容
     m_lastReasoningSize = 0;  // 重置推理增量追踪
+    // S3-1: 自动摘要（先于 addMessage 与任何 API 调用；频控 + 阈值双条件，
+    // 设计 §S3-1）——生成（同步 LLM，失败自动规则降级）→ 落盘 summary 行
+    // → 重建系统提示（摘要经 Builder 段落注入，system 永不截断）
+    static constexpr int kSummaryCooldownTurns = 10;
+    if (m_config.m_contextCompression
+        && m_turnsSinceSummary >= kSummaryCooldownTurns
+        && shouldSummarize()) {
+        CLFLogger::instance().info("[Summary] auto trigger (remaining window below "
+            + std::to_string(m_config.m_autoSummaryThreshold) + ")");
+        generateAndCacheSummary();
+        appendSummaryLineNow();
+        rebuildSystemMessage();
+        m_turnsSinceSummary = 0;
+    } else {
+        ++m_turnsSinceSummary;
+    }
     // J3: 轮初消息数（appendTurnLine 的差集基准；user 消息计入本轮新增）
     m_turnStartMsgCount = m_context.getMessages().size();
     m_context.addMessage("user", userInput);
@@ -596,16 +612,58 @@ std::string CLFAgentLoop::appendTurnLine() {
 void CLFAgentLoop::closeSessionFileWithSummary() {
     // J5: 生成摘要（开关关时 m_valid=false，跳过行写入）→ 追加 summary 行 → 关闭
     generateAndCacheSummary();
-    const std::string path = getActiveSessionFile();
-    if (path.empty()) return;
-    if (m_cachedSummary.m_valid) {
-        const std::string line = CLFMessageCodec::serializeSummaryLine(
-            m_cachedSummary, CLFSessionManager::timestampNow());
-        if (!CLFSessionManager::appendSummary(path, line)) {
-            CLFLogger::instance().warn("[Summary] append failed: " + path);
-        }
-    }
+    if (getActiveSessionFile().empty()) return;
+    appendSummaryLineNow();
     setActiveSessionFile("");   // 文件保留为独立会话（不删不改名）
+}
+
+// ============================================================================
+// S3-1 摘要：自动触发 + 工具触发（2026-09-02）
+// ============================================================================
+
+void CLFAgentLoop::appendSummaryLineNow() {
+    const std::string path = getActiveSessionFile();
+    if (path.empty() || !m_cachedSummary.m_valid) return;
+    const std::string line = CLFMessageCodec::serializeSummaryLine(
+        m_cachedSummary, CLFSessionManager::timestampNow());
+    if (!CLFSessionManager::appendSummary(path, line)) {
+        CLFLogger::instance().warn("[Summary] append failed: " + path);
+    }
+}
+
+bool CLFAgentLoop::shouldSummarize() const {
+    if (!m_config.m_contextCompression) return false;
+    const int remaining = m_config.m_maxContextWindow - m_context.estimateTokens();
+    return remaining < m_config.m_autoSummaryThreshold;
+}
+
+std::string CLFAgentLoop::compressContextNow() {
+    if (!m_config.m_contextCompression) {
+        return "上下文压缩已关闭（配置 agent.context_compression = true 开启）";
+    }
+    generateAndCacheSummary();
+    appendSummaryLineNow();
+    rebuildSystemMessage();
+    if (m_cachedSummary.m_valid) {
+        CLFLogger::instance().info("[Compress] summary generated, method="
+            + m_cachedSummary.m_method);
+        return "上下文已压缩为摘要并注入系统提示（" + m_cachedSummary.m_method + "）:\n"
+            + m_cachedSummary.m_summary;
+    }
+    return "摘要生成失败（API 与规则降级均不可用）";
+}
+
+void CLFAgentLoop::setModelName(const std::string& name) {
+    // S3-2: 运行时切换主模型（不落盘；header 的 model 字段新会话自动准确）
+    m_config.m_modelName = name;
+    // 按模型名查表覆盖 max_tokens（用户显式声明于配置文件，未命中保持全局值）
+    const auto it = m_config.m_modelMaxTokens.find(name);
+    if (it != m_config.m_modelMaxTokens.end()) {
+        m_config.m_maxTokens = it->second;
+        CLFLogger::instance().info("[Model] max_tokens overridden by table: "
+            + std::to_string(it->second));
+    }
+    CLFLogger::instance().info("[Model] switched to: " + name);
 }
 
 void CLFAgentLoop::generateAndCacheSummary() {
@@ -785,6 +843,9 @@ CLFSystemPromptBuilder::Context CLFAgentLoop::buildSystemPromptContext() const {
     ctx.interactionLanguage = m_config.m_interactionLanguage;
     ctx.modelName           = m_config.m_modelName;
     ctx.maxContextWindow    = m_config.m_maxContextWindow;
+    // S3-1: 会话摘要经 Builder 段落注入（system 永不截断；压缩触发后 rebuild 生效）
+    ctx.sessionSummary      = m_cachedSummary.m_valid ? m_cachedSummary.m_summary
+                                                       : std::string();
     for (const auto& name : m_loadedSkills) {
         std::string content = CLFSkillLoader::getContent(name);
         if (!content.empty()) ctx.skills.emplace_back(name, content);

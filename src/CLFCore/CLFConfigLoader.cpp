@@ -152,6 +152,19 @@ bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig
             if (agent.contains("context_compression") && agent["context_compression"].is_boolean()) {
                 outConfig.m_contextCompression = agent["context_compression"].get<bool>();
             }
+            // S3-1: 自动摘要触发阈值（剩余窗口 < 阈值时触发）
+            if (agent.contains("auto_summary_threshold") && agent["auto_summary_threshold"].is_number()) {
+                outConfig.m_autoSummaryThreshold = agent["auto_summary_threshold"].get<int>();
+            }
+            // S3-2: 按模型名的 max_tokens 覆盖表（模型名 → 上限；用户显式声明，程序不猜）
+            if (agent.contains("model_max_tokens") && agent["model_max_tokens"].is_object()) {
+                for (auto it = agent["model_max_tokens"].begin();
+                     it != agent["model_max_tokens"].end(); ++it) {
+                    if (it.value().is_number()) {
+                        outConfig.m_modelMaxTokens[it.key()] = it.value().get<int>();
+                    }
+                }
+            }
             if (agent.contains("max_response_delay_sec") && agent["max_response_delay_sec"].is_number()) {
                 outConfig.m_maxResponseDelaySec = agent["max_response_delay_sec"].get<int>();
             }

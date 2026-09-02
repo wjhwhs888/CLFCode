@@ -93,14 +93,25 @@ bool cmdHelp(const std::string&, const std::string&,
     return true;
 }
 
-bool cmdModel(const std::string&, const std::string&,
+bool cmdModel(const std::string&, const std::string& args,
               CLFAgentLoop& agent, const std::string&,
               ICLFOutput* output) {
+    // S3-2: /model <name> 运行时切换（不落盘，需持久化提示改配置文件）
+    if (!args.empty()) {
+        agent.setModelName(args);
+        if (output) output->emitContent(
+            "✓ 已切换主模型: " + args + "\n"
+            "  ⎿ 新会话生效（会话文件 header 的 model 为新会话创建时快照）\n"
+            "  ⎿ 持久化请编辑配置文件 chat_completions.model\n");
+        return true;
+    }
     const auto& cfg = agent.getConfig();
     if (output) output->emitContent(
         "\n● 当前模型\n"
         "  ⎿ 主模型: " + cfg.m_modelName + "\n"
-        "  ⎿ 副模型: " + cfg.m_subModel + "\n");
+        "  ⎿ 副模型: " + cfg.m_subModel + "\n"
+        "  ⎿ max_tokens: " + std::to_string(cfg.m_maxTokens) + "\n"
+        "  ⎿ 切换: /model <模型名>\n");
     return true;
 }
 
@@ -358,7 +369,7 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
     reg("/exit",    "退出并保存会话",                       cmdExit);
     reg("/help",    "显示帮助信息",                         cmdHelp);
     reg("/clear",   "保存会话并开始新对话",                 cmdClear);
-    reg("/model",   "显示当前模型信息",                     cmdModel);
+    reg("/model",   "显示或切换当前模型 /model <模型名>",   cmdModel);
     reg("/mode",    "切换安全模式 /mode <auto|analyze|edit|manual>", cmdMode);
     reg("/config",  "显示当前配置信息",                     cmdConfig);
     reg("/context", "显示上下文用量",                       cmdContext);

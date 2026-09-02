@@ -192,6 +192,32 @@ const boost::ut::suite<"CLFProtocolAdapter"> tests = [] {
         auto body = json::parse(adapter.buildChatRequest(msgs, {tool}, config));
         expect(body["tools"][0]["function"]["parameters"].is_object());
     };
+
+    "S3-2 include_usage 仅 deepseek provider 发送（2026-09-02）"_test = [] {
+        CLFProtocolAdapter adapter;
+
+        // deepseek host（含子域与端口）→ 发送 include_usage
+        CLFAgentConfig deepseekConfig;
+        deepseekConfig.m_apiBaseUrl = "https://api.deepseek.com/v1";
+        deepseekConfig.m_stream     = true;
+        auto body1 = json::parse(adapter.buildChatRequest({}, {}, deepseekConfig));
+        expect(body1.contains("stream_options"));
+        expect(body1["stream_options"]["include_usage"] == true);
+
+        // 其他 provider → 不发送（防误发；usage 缺失由 R3 保持 0 预期降级）
+        CLFAgentConfig otherConfig;
+        otherConfig.m_apiBaseUrl = "https://api.example.com/v1";
+        otherConfig.m_stream     = true;
+        auto body2 = json::parse(adapter.buildChatRequest({}, {}, otherConfig));
+        expect(!body2.contains("stream_options"));
+
+        // 非流式 → 从不发送
+        CLFAgentConfig nonStreamConfig;
+        nonStreamConfig.m_apiBaseUrl = "https://api.deepseek.com";
+        nonStreamConfig.m_stream     = false;
+        auto body3 = json::parse(adapter.buildChatRequest({}, {}, nonStreamConfig));
+        expect(!body3.contains("stream_options"));
+    };
 };
 
 // Boost.UT：测试在静态初始化时注册，cfg 析构时自动运行并输出报告

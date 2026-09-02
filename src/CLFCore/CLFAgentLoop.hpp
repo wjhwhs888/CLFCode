@@ -150,6 +150,18 @@ public:
     // 生成并缓存会话摘要（/exit 前由 REPL 调用）
     void generateAndCacheSummary();
 
+    // S3-1: 自动摘要触发判定（token 预算：剩余窗口 < m_autoSummaryThreshold）
+    // 先于任何 API 调用完成；受 m_contextCompression 开关控制
+    bool shouldSummarize() const;
+
+    // S3-1: compress_context 工具路径——与自动触发共用摘要生成+落盘+注入，
+    // 返回摘要文本（工具结果回传模型）；开关关时返回提示文本
+    std::string compressContextNow();
+
+    // S3-2: 运行时切换主模型（不落盘，需持久化则提示用户改配置文件）
+    // 按 m_modelMaxTokens 查表覆盖 m_maxTokens（未命中保持全局值）
+    void setModelName(const std::string& name);
+
 private:
     // P0-5: turn 级中断消息单点收敛——统一文案 + clearThinking + Warn 状态点
     // （9 处内联收敛至此；工具层 "⎿ ⏹ 已中断" 保持层级区分不走此路径）
@@ -185,6 +197,10 @@ private:
     std::string                       m_resumedFrom;           // 非空 = resume 续写态（工作线程串行，无锁）
     std::string                       m_historyDir;            // 会话历史目录（CLFRepl 构造时注入）
     size_t                            m_turnStartMsgCount = 0; // runTurn 入口轮初消息数（appendTurnLine 差集）
+    int                               m_turnsSinceSummary = 0; // S3-1 摘要频控轮计数
+
+    // S3-1: 追加 summary 行落盘（摘要有效且有活动文件时；自动触发/工具/关闭共用）
+    void appendSummaryLineNow();
     ToolStats                         m_lastToolStats;
     long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;

@@ -9,6 +9,27 @@ using json = nlohmann::json;
 
 namespace CLF::CLFCore {
 
+namespace {
+
+// S3-2: usage stream_options 的 provider 判定（按 base_url host 后缀，防误发——
+// 不支持的 provider 收到未知 stream_options 可能报错；usage 缺失由 R3"保持 0"
+// 预期降级兜底。将来如需其他 provider 可配置显式声明或扩表）
+bool isUsageStreamSupported(const std::string& baseUrl) {
+    std::string host = baseUrl;
+    const auto scheme = host.find("://");
+    if (scheme != std::string::npos) host = host.substr(scheme + 3);
+    const auto slash = host.find('/');
+    if (slash != std::string::npos) host = host.substr(0, slash);
+    const auto port = host.rfind(':');
+    if (port != std::string::npos) host = host.substr(0, port);
+    constexpr const char* kSuffix = "deepseek.com";
+    const size_t suffixLen = 12;   // strlen("deepseek.com")
+    return host.size() >= suffixLen
+        && host.compare(host.size() - suffixLen, suffixLen, kSuffix) == 0;
+}
+
+} // anonymous namespace
+
 // ============================================================================
 // 公开方法
 // ============================================================================
@@ -26,7 +47,8 @@ std::string CLFProtocolAdapter::buildChatRequest(
     body["stream"]      = config.m_stream;
 
     // P2-4: 流式请求显式请求 usage（DeepSeek 默认流式不返回 usage）
-    if (config.m_stream) {
+    // S3-2: 仅对确认支持的 provider 发送（host 判定），避免多模型切换后误发
+    if (config.m_stream && isUsageStreamSupported(config.m_apiBaseUrl)) {
         body["stream_options"]["include_usage"] = true;
     }
 
