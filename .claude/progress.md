@@ -29,7 +29,7 @@
 - **测试**：qa_CLFAgentLoop A5-1~8（concludesTurn 最终响应/丢弃收尾/触顶收尾请求 syncCallCount+1/收尾失败降级/max-tokens Warn/空文本仅 worked/length+tool_calls 继续/并行任一）+ qa_CLFToolExecutor A5-1~3（成功复制/未声明 false/失败不复制）+ qa_CLFTipsBar P1-P6 新套件——**ctest 21/21 全绿**
 - **验证**：MSVC（cmake-build-debug 日常目录）构建全过 + ctest 21/21 + 主程序 --version 冒烟 exit=0（A2 教训遵守）
 - **踩坑**：① ftxui::Element 是 shared_ptr<Node> 的 using 别名——前向声明 class Element 与已有定义冲突（C2371），须 include dom/node.hpp ② CLFTipsBar.cpp 漏加 clf_ui 源列表 → LNK2019 ③ 命名空间（CLFUI 内调 CLFCore 类需 using，CLFRepl.cpp 同模式）
-- **⏳ 待人工验收**：Tips 行实机表现（渲染位置/5s 轮播/静默 300s 变红/恢复回灰/空闲隐藏）；触顶收尾请求实机（真实大任务触顶 → 模型总结 + 「继续」衔接）；concludesTurn 本期无声明工具（机制预留）
+- **实机验收反馈修复（ab70dc5，2026-09-02 下午）**：① Tips 加 "Tips: " 前缀标识（异常态 ⚠ 自带标识不加）② **触顶收尾请求 parse_error.101 根因修复**——用户实测大任务触顶时报 `[Error] JSON parse failed ... last read: 'd'`。根因链：收尾请求复用 `buildChatRequest(m_config)`，用户 `m_stream=true` → 请求体带 `"stream":true` → DeepSeek 返回 SSE 文本（首字符 'd'）→ postJson 同步读回整串解析失败。**修根**：收尾请求用 `m_stream=false` 副本配置（同步传输须配非流式请求体）。补 A5-9 回归用例（流式配置下触顶，ctest 21/21）。教训：测试盲区——原触顶用例全在 stream=false 下跑；凡涉及请求体的路径测试必须覆盖流式/同步双配置
 - **⚠ OpenSSL 4.0 环境问题（顺手修复 + 收尾待办）**：系统 OpenSSL 升至 4.0.1（`C:/Program Files/OpenSSL-Win64`），旧 httplib 弃用 API + 全局 -Werror 阻断 MinGW build/ 构建 → CMakeLists 3rdparty/OpenSSL 头改 SYSTEM 语义隔离（自身 -Werror 不动，第三方警告不归我们管辖）。**发现**：build/（MinGW）从未成功构建过（无产物），日常构建 = cmake-build-debug（MSVC）。**待办**：3rdparty/openssl/lib 的 libssl.a 版本未确认（头 4.0.1 + 旧导入库 ABI 风险）；长期应升级 3rdparty/httplib + 统一 OpenSSL 版本
 
 ### 2026-09-02 S3 净增点自研 ✅（未发布——攒入下一版本）
