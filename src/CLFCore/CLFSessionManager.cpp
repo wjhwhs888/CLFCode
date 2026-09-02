@@ -476,6 +476,9 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
     std::vector<CLFTodoItem> lastComplete;     // 最后一条 complete 行（回显用，J6）
     CLFSessionInfo           headerInfo;
     headerInfo.m_path = filePath;
+    // 判损放宽（2026-09-02 实机验收）："无 turn 行但有快照/complete 行"是合法状态
+    // （首轮崩溃：turn 未写、snapshot 已 flush）——不得误判损坏备份改名
+    bool anyValidLine = false;
 
     std::string line;
     while (std::getline(file, line)) {
@@ -499,12 +502,14 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
                     nullptr, nullptr, outSkills ? &skills : nullptr);
                 if (outSkills) *outSkills = std::move(skills);
             }
+            anyValidLine = true;
         } else if (type == "turn") {
             std::vector<CLFMessage>  turnMsgs;
             std::vector<CLFTodoItem> turnTodos;
             if (CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) {
                 for (auto& m : turnMsgs) messages.push_back(std::move(m));
                 if (!turnTodos.empty()) lastTurnTodos = std::move(turnTodos);
+                anyValidLine = true;
             } else {
                 CLFLogger::instance().warn("[LoadJsonl] skip invalid turn line: " + filePath);
             }
@@ -515,6 +520,7 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
                 // hasSnapshot 置 true 而非看空非空，保证"清单被清空"状态正确恢复）
                 latestSnapshot = std::move(todos);
                 hasSnapshot    = true;
+                anyValidLine   = true;
             } else {
                 CLFLogger::instance().warn("[LoadJsonl] skip invalid todo_snapshot line: " + filePath);
             }
@@ -522,18 +528,22 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
             std::vector<CLFTodoItem> todos;
             if (CLFMessageCodec::parseCompleteLine(obj, todos)) {
                 if (!todos.empty()) lastComplete = std::move(todos);
+                anyValidLine = true;
             }
         } else if (type == "summary") {
             CLFSessionSummary s;
             if (CLFMessageCodec::parseSummaryLine(obj, s)) {
                 latestSummary = s;   // 取最后一条可解析摘要
+                anyValidLine  = true;
             }
         }
         // 未知 type：静默跳过（向前兼容未来行类型）
     }
 
-    if (messages.empty()) {
-        // 无任何有效消息行 → 按损坏文件处理：备份 .bak，不崩溃（照 load 的损坏保护）
+    if (!anyValidLine) {
+        // 无任何可解析行 → 按损坏文件处理：备份 .bak，不崩溃（照 load 的损坏保护）
+        // （2026-09-02 放宽：仅快照/complete 无 turn 行是首轮崩溃的合法残留，
+        // 不备份——messages 为空照常返回 true）
         // ⚠️ rename 前必须先关闭文件——MSVC fstream 默认共享模式不含 FILE_SHARE_DELETE，
         // 文件仍打开时 MoveFile 会失败（sharing violation），.bak 备份静默丢失
         file.close();

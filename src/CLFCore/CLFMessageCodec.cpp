@@ -148,12 +148,16 @@ std::string dumpOrReplace(const nlohmann::json& data) {
     }
 }
 
-// jsonl 行：dump 失败返回空串（调用方 warn + 跳过该行，绝不写入坏行）
+// jsonl 行：dump 失败降级 replace（与覆盖式 dumpOrReplace 同策略）。
+// ⚠️ 2026-09-02 实机验收根因：真实 API 响应偶发非法 UTF-8 字节，dump() 抛
+// type_error（316 invalid UTF-8）——首版"失败返回空串"导致整条 turn 行丢失
+// （快照行正常、turn 行消失）。replace 将坏字节替换为 U+FFFD 保全整行，
+// 与覆盖式时代容错语义一致
 std::string dumpLine(const nlohmann::json& line) {
     try {
         return line.dump();
     } catch (const nlohmann::json::exception&) {
-        return std::string();
+        return line.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     }
 }
 

@@ -245,6 +245,25 @@ const boost::ut::suite<"CLFMessageCodec"> tests = [] {
         std::vector<CLFMessage> outMsgs;
         expect(!CLFMessageCodec::parseTurnLine(obj, outMsgs));
     };
+
+    "L9 非法 UTF-8 字节降级 replace 不丢行（2026-09-02 实机验收修复）"_test = [] {
+        // 真实 API 响应偶发非法 UTF-8 字节，nlohmann dump 抛 type_error——
+        // 修复前 dumpLine 返回空串 → 整条 turn 行丢失（快照在、turn 消失）
+        std::vector<CLFMessage> msgs;
+        CLFMessage msg;
+        msg.m_role    = "assistant";
+        msg.m_content = std::string("合法前文") + "\xE4\x28\xA1";   // 非法 UTF-8 序列（E4 后续字节无效）
+        msgs.push_back(msg);
+
+        const auto line = CLFMessageCodec::serializeTurnLine(msgs, "ts", nullptr);
+        expect(!line.empty());   // 修复前返回空串 → 行丢失
+
+        const auto obj = nlohmann::json::parse(line);
+        std::vector<CLFMessage> out;
+        expect(CLFMessageCodec::parseTurnLine(obj, out));
+        expect(out.size() == 1_ul);
+        expect(out[0].m_content.find("合法前文") != std::string::npos);   // 合法部分保全
+    };
 };
 
 int main() {}

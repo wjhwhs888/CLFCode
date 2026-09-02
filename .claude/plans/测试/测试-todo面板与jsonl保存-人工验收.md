@@ -12,6 +12,12 @@
   - 修复：update 分支补 `setTodoPanelDone(false)`（与 create 一致）；设计文档 §3.3 update 行同步；qa_CLFBuiltinTools 新增 B4 回归用例（todoWriteHandlerImpl 暴露为单测入口）；ctest 20/20
   - 请从场景 A 重新执行 A1-A8
 
+- **BUG-2（已修复，2026-09-02，日志检查发现）**：场景 A 会话文件**无 turn 行**（仅 header + 8 条 snapshot + complete）——`[AppendTurn] serialize failed`。
+  - 根因：模型 3553 字符回复含非法 UTF-8 字节，nlohmann `dump()` 抛 type_error；jsonl 行函数的 `dumpLine` 是"失败返回空串"（零容错）→ 整条 turn 行丢失。覆盖式时代用 replace 降级恰好容错，jsonl 路径漏了这层
+  - 连锁修复：`dumpLine` 降级 `error_handler_t::replace`（坏字节替换 U+FFFD 保全整行）；`loadJsonl` 判损放宽——"无 turn 行但有快照/complete"是首轮崩溃的合法残留，不再备份改名（原来会被误判损坏 rename .bak）
+  - 回归：qa_CLFMessageCodec L9（非法 UTF-8 不丢行）+ qa_CLFSessionManager J11（崩溃残留文件正常加载）；ctest 20/20
+  - 影响：已测的该会话文件 turn 行无法恢复（消息文本已丢失），但快照/complete 行完好，可 resume 看到清单演进
+
 ---
 
 ## 场景 A：面板完整生命周期（约 10 分钟）

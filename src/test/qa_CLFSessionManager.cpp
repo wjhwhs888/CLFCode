@@ -387,6 +387,36 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         std::vector<CLFMessage> msgs;
         expect(!CLFSessionManager::loadJsonl("no_such_file.jsonl", msgs));
     };
+
+    "J11 无 turn 行但快照齐全（首轮崩溃残留）→ 返回 true 不备份（2026-09-02 实机验收修复）"_test = [] {
+        auto dir = makeTempDir();
+        std::string path = u8ToString(up(dir) / up("2026-08-25_崩溃残留.jsonl"));
+        writeMinimalJsonl(path, "崩溃残留");
+        // 只追加 todo_snapshot（模拟：turn 未写、snapshot 已 flush）
+        std::vector<CLFTodoItem> todos{{"1", "任务1", "completed"},
+                                       {"2", "任务2", "in_progress"}};
+        CLFSessionManager::appendTodoSnapshot(path,
+            CLFMessageCodec::serializeTodoSnapshot(todos, "ts-2"));
+
+        std::vector<CLFMessage> msgs;
+        std::vector<CLFTodoItem> outTodos;
+        expect(CLFSessionManager::loadJsonl(path, msgs, nullptr, nullptr, &outTodos));
+        expect(msgs.size() == 1_ul);          // turn 行消息仍在（writeMinimalJsonl 写了一条）
+        expect(outTodos.size() == 2_ul);      // 快照恢复
+        expect(fs::exists(up(path)));         // 未备份改名
+
+        // 对照：纯坏行文件仍判损坏备份（J9 语义不变）
+        std::string badPath = u8ToString(up(dir) / up("纯损坏.jsonl"));
+        {
+            std::ofstream f(up(badPath), std::ios::binary);
+            f << "not json at all\n";
+        }
+        std::vector<CLFMessage> msgs2;
+        expect(!CLFSessionManager::loadJsonl(badPath, msgs2));
+        expect(fs::exists(up(badPath + ".bak")));
+
+        fs::remove_all(up(dir));
+    };
 };
 
 // Boost.UT：测试在静态初始化时注册，cfg 析构时自动运行并输出报告
