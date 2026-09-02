@@ -11,20 +11,29 @@
 - ~~**S1 小修**~~ ✅ **已完成（v0.3.5，见下方已完成区）**
 - ~~**S2 安全+工具**~~ ✅ **已完成（v0.4.0，见下方已完成区）**｜原计划：：read_file 边界+50MB上限+行范围 / 命令危险模式检测 / 退出码白名单+cwd+env / search_content 增强 / web_fetch（**须新建 HTTP 封装，不可复用 CLFHttpClient——它恒带 Authorization 会泄漏 key**）/ todo_write（**定案：并入会话状态、不独立落盘** — 对标实证 dsh 的 todo 是 `todo/write` 会话事件、Claude Code 按 `projects/<项目分片>/<sessionId>.jsonl` 存，两者均不往用户工作目录写元数据；`.clf/` 约定作废）
 - ~~**【插入批】todo 面板 + jsonl 追加式保存**~~ ✅ **已完成（2026-09-02，全流程闭环，见下方已完成区）**
-- **S3 净增点自研**（1 天，**2026-09-02 已做 jsonl 衔接修订，可直接开工**）：摘要自动触发+compress_context 工具（`shouldSummarize` 阈值判定需新写；**摘要落盘走 jsonl summary 行**——closeSessionFileWithSummary 已有写入段可提取复用；resume 注入已实现）+ `/model` 切换 + 多模型自适应（**用户定为必做**；header model 字段新会话自动准确，中途切换建议提示"新会话生效"）
+- ~~**S3 净增点自研**~~ ✅ **已完成（2026-09-02，见下方已完成区）**——摘要自动触发+compress_context 工具+`/model` 切换+多模型自适应
 - **A4**（=S4，按需穿插）：配置校验 / session 版本分流 / 宽字符 / 多会话 / `/reload` / 信号 / 并发锁 / git 工具 / list_directory 增强 / **ask_user（N 选项确认栏 — 若确定走 B 阶段，建议提前到此做，B 阶段的 dsh 确认链可复用同一套 UI）**
 - 完成后 dsh 净增点收敛为**仅剩 subagent** → 进入决策门
 
-### 【B 阶段】dsh 对接 — 挂决策门（原「M1 传输层待启动」暂缓）
+### 【B 阶段】dsh 对接 — 🚦 决策门已就绪（2026-09-02，A 阶段全部完成）
+- **A 阶段产出完毕**：S1/S2/S3 + 插入批（todo 面板 + jsonl）全部落地——dsh 的净增点已收敛为**仅剩 subagent**
 - **B0 环境重建 0.5 天** → **B1(=M1) 传输层 3-4 天** → **B2(=M2) 会话层 2-3 天** → **B3(=M3) 收尾 3-5 天**
 - 决策门不走的话：自研轻量 subagent（进程内嵌套 CLFAgentLoop）2-3 天，B 阶段整体作废
 - Spike S0-S5 全过（go 决策），素材齐备：`tools/spike/`（报告 + spike_driver.mjs 五模块 + frames/norm 12 组 fixture）
 - **2026-08-25 上游核实**：仓库已搬到 `E:\deepseek-harness`（Spike 报告的 F: 路径失效）；上游前进 854 提交至 `b150a55`(0.1.1-rc.2)；✅ 协议面几乎未动（`protocol/src/` 零变动，transport.ts 未变）→ fixture 仍有效；❌ platforms.json 仍无 Windows → Node 闭包仍是唯一路径
 - **工时修正**：M1 3-4 天（长驻子进程管理必须新写，CLFCommandExec 无 stdin 管道仅可借鉴 ~20 行）/ M2 2-3 天（UI 侧零改动属实）/ M3 3-5 天高方差（打包未实测 + 确认链未定）/ +0.5 天环境重建 = **全程 8.5-12.5 天**（非原估 6-9 天）
-- 决策门：S3 完成后回答"subagent 值不值 8.5-12.5 天 + 包体量级增长 + rc 阶段外部依赖 + 会话双轨"
+- 🚦 **决策门问题（待用户回答）**："subagent 值不值 8.5-12.5 天 + 包体量级增长 + rc 阶段外部依赖 + 会话双轨？"
 - 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于 dsh 决策）；若不走 → 自研轻量 subagent（进程内嵌套 CLFAgentLoop，2-3 天）
 
 ## 已完成
+
+### 2026-09-02 S3 净增点自研 ✅（未发布——攒入下一版本）
+
+- **S3-1 上下文摘要**：`shouldSummarize` 阈值判定（剩余窗口 < `m_autoSummaryThreshold` 默认 4000）+ 频控（每 10 轮最多一次）+ runTurn 起始自动触发（先于任何 API 调用）：生成（同步 LLM，失败规则降级）→ **追加 jsonl summary 行落盘** → rebuildSystemMessage（摘要经 Builder 段落拼入 `{{project_context}}`——system 永不截断 + 老模板天然兼容）；`compress_context` 工具（Read，模型主动调用同路径 `compressContextNow`）；注入去重 = m_cachedSummary 单值覆盖语义
+- **S3-2 /model 切换 + 多模型自适应**：`/model <name>` 运行时切换（不落盘，提示"新会话生效"）；max_tokens **按模型名查表覆盖**（配置 `agent.model_max_tokens` 对象，用户显式声明、程序零猜值，未命中保持全局值）；`include_usage` 按 base_url host 判定（deepseek.com 后缀才发送，其他 provider 防误发——usage 缺失由 R3 保持 0 预期降级）
+- 测试：qa_CLFAgentLoop W1-W3 + qa_CLFProtocolAdapter S3-2（include_usage 三态）；ctest 20/20
+- 验证：干净重建 161/161 + 双重冒烟（--version + dummy 端点 --prompt 标准输出吻合）
+- **A 阶段全部完成** → 🚦 **进入 dsh 决策门**（见下）
 
 ### 2026-09-02 todo 面板 + jsonl 追加式保存 ✅（全流程闭环，未发布——攒入下一版本）
 
