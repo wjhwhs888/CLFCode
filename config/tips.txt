@@ -2,16 +2,45 @@
 # 每行一条；# 开头为注释；输入框上方请求处理中轮播显示
 # 用户可自行增删条目，重启生效
 # 【快捷键】
-/help 查看帮助 · /context 查看上下文 · Shift+Tab 切换安全模式
-Ctrl+T 展开思考过程 · Ctrl+N 换行 · Ctrl+R 折叠回显 · Esc 中断
-左键拖选自动复制 · 右键或 Ctrl+V 粘贴
+输入框输入 /help，可用于查看帮助信息
+输入框输入 /context 可用于查看上下文使用情况，适用于本次会话
+键盘使用快捷键 Shift+Tab 用于切换安全模式
+键盘使用快捷键按 Ctrl+T 可展开或收起 AI 的思考过程，按 Ctrl+N 可输入换行
+键盘使用快捷键按 ↑↓ 方向键可浏览之前输入过的历史命令
+键盘使用快捷键按 Ctrl+R 可展开或收起恢复会话时的历史记录
+鼠标左键拖选文字会自动复制，右键或按 Ctrl+V 可粘贴内容
+请求处理中按 Esc 可中断当前任务，用于紧急停止当前工作
 # 【命令】
-/clear 摘要并开新会话 · /resume 恢复历史会话 · /model 切换模型
-/mode 切换安全模式 · /version 查看版本 · /config 查看配置
+输入 /clear 可保存当前会话并开始新的对话
+输入 /resume 可恢复之前的历史会话
+输入 /model 可切换当前使用的大模型
+输入 /mode 可切换安全模式
+输入 /version 可查看当前版本号
+输入 /config 可查看当前配置信息
+输入 /skill 可查看或加载知识库技能，比如输入：/skill list
+输入 /history 可查看最近保存的会话
+输入 /exit 可退出程序并保存会话
 # 【使用技巧】
-复杂任务可分阶段完成，触顶后输入「继续」接着做
-需要跟踪任务进度，让 agent 用 todo_write 建清单
-中断后继续输入，可接着上次的工作
+对于复杂的任务，AI 会分阶段完成，每阶段结束后输入「继续」即可接着往下做
+如果需要跟踪任务进度，可以告诉 AI 使用待办清单工具来管理
+对话中断后，直接输入新的内容即可接着上次的工作继续
+可以请 AI 帮忙执行安装命令（比如安装 python），涉及修改系统的操作会先经过确认
+# 【静态提示词 / 项目规则】
+输入 /init 可生成项目规则文件（PROJECTRULES.md），告诉 AI 每次遵循你项目的约定与规范
+修改用户安装目录下 CLFCode\config\system_prompt_template.md，可调整 AI 的默认行为与角色设定
+# 【非交互模式】
+非交互模式下支持不进入程序界面直接提问，比如输入：CLFCode --prompt "帮我分析项目情况"
+非交互模式下如果问题内容中包含空格，需要用引号把内容括起来，比如输入：CLFCode --prompt "帮我 分析 项目"
+非交互模式下如果问题内容中本身包含引号，建议把问题写入文件后用 --prompt-file 读取，避免命令行引号转义问题
+非交互模式下支持从文件读取问题并执行，比如输入：CLFCode --prompt-file 问题文件.txt
+非交互模式默认只读，命令行加 --allow-write 可允许 AI 修改文件，比如输入：CLFCode --prompt "请帮我修改配置" --allow-write
+非交互模式下支持命令行加 --config 指定配置文件，比如输入：CLFCode --prompt "你好" --config D:\我的配置.json
+非交互模式下支持命令行加 --project-root 指定工作目录，比如输入：CLFCode --prompt "查看项目" --project-root D:\myproject
+非交互模式下支持命令行加 --help 查看全部参数说明，比如输入：CLFCode --help
 # 【异常处理】
-长时间无响应可 Esc 中断，或输入「停止过度思考」
-高危操作会弹出确认，仔细核对后选择
+如果 AI 长时间没有响应，先按 Esc 中断，再输入「停止过度思考」让它调整思路
+涉及高风险的操作，AI 会弹出确认提示，请仔细核对后再做选择
+# 【安装/升级/卸载】
+需要升级时，在 PowerShell 中执行: irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex
+需要安装时，在 PowerShell 中执行: irm https://gitee.com/sherlock0923/CLFCode/raw/master/install.ps1 | iex
+需要卸载时，在 PowerShell 中执行: & $env:USERPROFILE\CLFCode\uninstall.ps1
