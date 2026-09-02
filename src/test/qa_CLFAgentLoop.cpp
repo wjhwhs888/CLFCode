@@ -96,11 +96,12 @@ private:
 // 构造带 Mock 的 Agent + 注册 echo 工具
 std::unique_ptr<CLFAgentLoop> makeAgent(std::shared_ptr<MockHttpClient> mock,
                                         const std::string& mode = "edit",
-                                        int maxIters = 8) {
+                                        int maxIters = 8,
+                                        bool stream = false) {
     CLFAgentConfig config;
     config.m_apiKey    = "test-key";
     config.m_modelName = "test-model";
-    config.m_stream    = false;
+    config.m_stream    = stream;
     config.m_securityMode = mode;
     config.m_maxToolCallIterations = maxIters;
 
@@ -990,6 +991,47 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(mock->syncCallCount() == 2);
         expect(result.find("两工具都执行") != std::string::npos);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+    };
+
+    "A5-9 流式配置下触顶：收尾请求体非流式（防 parse_error.101 回归）"_test = [] {
+        // 2026-09-02 实机 bug：m_stream=true 时收尾请求复用带 "stream":true 的
+        // 请求体 → DeepSeek 返回 SSE 文本 → postJson 同步读回整串 "data: ..."
+        // 解析失败。修复：收尾请求用 m_stream=false 的副本配置（协议匹配）
+        auto mock = std::make_shared<MockHttpClient>();
+        // 主循环两轮流式（SSE 行序列）
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"echo\",\"arguments\":\"\"}}]}}]}",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]}}]}",
+            "data: {\"choices\":[{\"finish_reason\":\"tool_calls\"}]}",
+            "data: [DONE]"
+        });
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c2\",\"function\":{\"name\":\"echo\",\"arguments\":\"\"}}]}}]}",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]}}]}",
+            "data: {\"choices\":[{\"finish_reason\":\"tool_calls\"}]}",
+            "data: [DONE]"
+        });
+        // 收尾请求走同步队列（非流式响应）
+        mock->pushResponse(stopBody("已完成 A-F，剩余 G-Z"));
+
+        auto agent = makeAgent(mock, "edit", 2, /*stream=*/true);
+        MockOutput out;
+        agent->setOutput(&out);
+        std::string result = agent->runTurn("大任务");
+
+        expect(mock->streamCallCount() == 2);   // 主循环流式
+        expect(mock->syncCallCount() == 1);     // 仅收尾请求同步
+        expect(result.empty());                 // 流式模式返回空串（已实时 emit）
+        bool hasSummary = false, hasNotice = false, hasParseError = false;
+        for (const auto& c : out.contents) {
+            if (c.find("已完成 A-F") != std::string::npos) hasSummary = true;
+            if (c.find("已达工具调用上限") != std::string::npos) hasNotice = true;
+            if (c.find("JSON parse failed") != std::string::npos) hasParseError = true;
+        }
+        expect(hasSummary);
+        expect(hasNotice);
+        expect(!hasParseError);
+        expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     };
 };
 

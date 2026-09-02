@@ -414,8 +414,14 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         + std::to_string(m_config.m_maxToolCallIterations) + "), wrap-up request");
     try {
         CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
+        // 收尾请求走同步传输 → 请求体必须非流式：m_stream=true 时 buildChatRequest
+        // 会带 "stream":true，DeepSeek 返回 SSE 文本，postJson 同步读回整串
+        // "data: ..." 无法 JSON 解析（2026-09-02 实机 parse_error.101 根因——
+        // 同步传输与流式请求体的协议不匹配）
+        CLFAgentConfig wrapUpConfig = m_config;
+        wrapUpConfig.m_stream = false;
         std::string body = m_protocolAdapter.buildChatRequest(
-            m_context.getMessages(), m_tools, m_config);
+            m_context.getMessages(), m_tools, wrapUpConfig);
         CLF::CLFNetwork::CLFHttpResponse response =
             m_httpClient->postJson("/v1/chat/completions", body);
         thinking.stop();

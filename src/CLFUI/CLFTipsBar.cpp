@@ -88,7 +88,8 @@ std::string CLFTipsBar::currentLine(bool busy) const {
     if (silence >= static_cast<uint64_t>(m_silenceThresholdSec)) {
         return "⚠ 已 " + std::to_string(silence) + "s 无响应，可 Esc 中断后输入「停止过度思考」继续";
     }
-    return m_entries[m_rotateIndex.load() % m_entries.size()];
+    // "Tips: " 前缀标识（2026-09-02 实机验收反馈）；异常态 ⚠ 已自带标识不加
+    return "Tips: " + m_entries[m_rotateIndex.load() % m_entries.size()];
 }
 
 ftxui::Element CLFTipsBar::render(bool busy) const {

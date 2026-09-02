@@ -60,7 +60,7 @@ const boost::ut::suite<"CLFTipsBar"> tests = [] {
 
         expect(bar.entryCount() == 2_ul);
         const std::string line = bar.currentLine(true);
-        expect(line == std::string("条目一"));   // 轮播从首条开始
+        expect(line == std::string("Tips: 条目一"));   // 轮播从首条开始 + 前缀
 
         std::filesystem::remove(path);
     };
@@ -82,8 +82,8 @@ const boost::ut::suite<"CLFTipsBar"> tests = [] {
         const std::string first = bar.currentLine(true);
         bar.tick();
         const std::string second = bar.currentLine(true);
-        expect(first == std::string("条目一"));
-        expect(second == std::string("条目二"));   // 索引 +1 → 第二条
+        expect(first == std::string("Tips: 条目一"));
+        expect(second == std::string("Tips: 条目二"));   // 索引 +1 → 第二条
 
         std::filesystem::remove(path);
     };
