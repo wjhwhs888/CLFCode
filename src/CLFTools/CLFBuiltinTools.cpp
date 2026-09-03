@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
+#include <functional>   // A4a：withHandlerScaffold 的 std::function
 #include <sstream>
 #include <nlohmann/json.hpp>
 
@@ -108,6 +109,28 @@ std::string sliceLines(const std::string& content, int offset, int limit) {
     return out;
 }
 
+// A4a：handler 脚手架收敛（设计-阶段1 §五 A4，2026-09-03）——
+// 统一 parse / try-catch / dump 骨架（原 8 处同构样板）；body 内写业务与容错，
+// 错误文案统一 "Handler error: "（qa 无文案断言，A4-1 取证）；
+// todo_write 状态机不属本批（A4-2），保持原样不经此包装。
+// example:
+//   return withHandlerScaffold(args, [](const json& params, json& result) {
+//       result["success"] = true;
+//   });
+std::string withHandlerScaffold(
+    const std::string& args,
+    const std::function<void(const nlohmann::json& params, nlohmann::json& result)>& body) {
+    nlohmann::json result;
+    try {
+        nlohmann::json params = nlohmann::json::parse(args);
+        body(params, result);
+    } catch (const std::exception& e) {
+        result["success"] = false;
+        result["error"]   = std::string("Handler error: ") + e.what();
+    }
+    return result.dump();
+}
+
 } // namespace detail
 
 namespace {
@@ -125,13 +148,11 @@ std::string echoHandler(const std::string& args) {
 }
 
 // S2-1: 边界/大小/行范围三项均在 handler 层实施——CLFFileOps::readFile 还被
-// previewEdit、SystemPromptBuilder 等内部路径调用，在底层加限制会误伤配置读取。
+// previewEdit 等内部路径调用，在底层加限制会误伤配置读取。
+// A4a：脚手架收敛至 detail::withHandlerScaffold（parse/try-catch/dump 统一）
 std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
-    using json = nlohmann::json;
-    namespace fs = std::filesystem;
-    json result;
-    try {
-        json params      = json::parse(args);
+    return detail::withHandlerScaffold(args, [allowAbsolute](const nlohmann::json& params, nlohmann::json& result) {
+        namespace fs = std::filesystem;
         std::string path = params.value("path", "");
         const int offset = params.value("offset", 0);
         const int limit  = params.value("limit", 0);
@@ -143,7 +164,7 @@ std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
                 result["success"] = false;
                 result["error"]   = boundErr
                     + "（如确需读取工作区外文件，请在配置中开启 agent.allow_absolute_read）";
-                return result.dump();
+                return;
             }
         }
 
@@ -154,23 +175,19 @@ std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
             result["success"] = false;
             result["error"]   = "文件过大（" + std::to_string(size / (1024 * 1024))
                               + "MB，上限 50MB）: " + path;
-            return result.dump();
+            return;
         }
 
         auto fileResult = CLF::CLFTools::readFile(path);
         result["success"] = fileResult.m_success;
         if (!fileResult.m_success) {
             result["error"] = fileResult.m_error;
-            return result.dump();
+            return;
         }
 
         // ③ 行范围切片
         result["content"] = detail::sliceLines(fileResult.m_content, offset, limit);
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
+    });
 }
 
 bool isValidTodoStatus(const std::string& s) {
@@ -279,12 +296,9 @@ std::string todoWriteHandlerImplInternal(const std::string& args,
 }
 
 // S2-5: 网络抓取。注意 CLFWebFetch 内部不携带任何凭据（详见其头文件说明）
+// A4a：脚手架收敛（容错语义保留：url 必填 → 报错）
 std::string webFetchHandler(const std::string& args) {
-    using json = nlohmann::json;
-    json result;
-    try {
-        json params = json::parse(args);
-
+    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
         CLFWebRequest req;
         req.m_url        = params.value("url", "");
         req.m_method     = params.value("method", "GET");
@@ -300,32 +314,26 @@ std::string webFetchHandler(const std::string& args) {
         if (req.m_url.empty()) {
             result["success"] = false;
             result["error"]   = "url is required";
-            return result.dump();
+            return;
         }
 
         const auto resp = CLF::CLFTools::webFetch(req);
         result["success"] = resp.m_success;
         if (!resp.m_success) {
             result["error"] = resp.m_error;
-            return result.dump();
+            return;
         }
         result["status"]  = resp.m_status;
         result["headers"] = resp.m_headers;
         result["body"]    = resp.m_body;
         if (resp.m_truncated) result["truncated"] = true;
         if (resp.m_binary)    result["binary"]    = true;
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
+    });
 }
 
+// A4a：脚手架收敛（三文件工具同款）
 std::string writeFileHandler(const std::string& args) {
-    using json = nlohmann::json;
-    json result;
-    try {
-        json params = json::parse(args);
+    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
         std::string path    = params.value("path", "");
         std::string content = params.value("content", "");
         auto fileResult = CLF::CLFTools::writeFile(path, content);
@@ -336,18 +344,11 @@ std::string writeFileHandler(const std::string& args) {
         } else {
             result["error"] = fileResult.m_error;
         }
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
+    });
 }
 
 std::string editFileHandler(const std::string& args) {
-    using json = nlohmann::json;
-    json result;
-    try {
-        json params   = json::parse(args);
+    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
         std::string path    = params.value("path", "");
         std::string oldStr  = params.value("old_string", "");
         std::string newStr  = params.value("new_string", "");
@@ -359,18 +360,11 @@ std::string editFileHandler(const std::string& args) {
         } else {
             result["error"] = fileResult.m_error;
         }
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
+    });
 }
 
 std::string listDirectoryHandler(const std::string& args) {
-    using json = nlohmann::json;
-    json result;
-    try {
-        json params = json::parse(args);
+    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
         std::string path = params.value("path", ".");
         auto fileResult = CLF::CLFTools::listDirectory(path);
         result["success"] = fileResult.m_success;
@@ -379,18 +373,12 @@ std::string listDirectoryHandler(const std::string& args) {
         } else {
             result["error"] = fileResult.m_error;
         }
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
+    });
 }
 
+// A4a：脚手架收敛（cwd 边界容错语义保留）
 std::string executeCommandHandler(const std::string& args) {
-    using json = nlohmann::json;
-    json result;
-    try {
-        json params = json::parse(args);
+    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
         std::string command = params.value("command", "");
         int timeout = params.value("timeout", 30);
         std::string cwd = params.value("cwd", "");
@@ -402,7 +390,7 @@ std::string executeCommandHandler(const std::string& args) {
             if (!detail::isWithinWorkspace(cwd, boundErr)) {
                 result["success"] = false;
                 result["error"]   = "cwd 无效：" + boundErr;
-                return result.dump();
+                return;
             }
         }
 
@@ -414,11 +402,7 @@ std::string executeCommandHandler(const std::string& args) {
         if (cmdResult.m_timedOut) {
             result["timedOut"] = true;
         }
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
+    });
 }
 
 } // anonymous namespace
@@ -647,21 +631,15 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         },
         "required": ["pattern", "directory"]
     })";
+    // A4a：脚手架收敛（错误文案统一 "Handler error: "——qa 无文案断言）
     searchTool.m_handler = [](const std::string& args) -> std::string {
-        using json = nlohmann::json;
-        json result;
-        try {
-            json params     = json::parse(args);
+        return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
             std::string pattern   = params.value("pattern", "");
             std::string directory = params.value("directory", ".");
             std::string fileTypes = params.value("fileTypes", "");
             result["success"] = true;
             result["content"] = searchContent(pattern, directory, fileTypes);
-        } catch (const std::exception& e) {
-            result["success"] = false;
-            result["error"]   = std::string("search_content failed: ") + e.what();
-        }
-        return result.dump();
+        });
     };
     agent.registerTool(searchTool);
 }
