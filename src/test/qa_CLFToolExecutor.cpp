@@ -68,12 +68,14 @@ const boost::ut::suite<"CLFToolExecutor"> tests = [] {
         CLFTool readTool;
         readTool.m_name = "read_file";
         readTool.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        readTool.m_isRead = true;   // B1：能力标签（统计桶随标签，测试打标）
         readTool.m_handler = [](const std::string&) { return "{\"success\":true,\"content\":\"data\"}"; };
         tools.push_back(readTool);
 
         CLFTool searchTool;
         searchTool.m_name = "search_content";
         searchTool.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        searchTool.m_isSearch = true;   // B1：能力标签
         searchTool.m_handler = [](const std::string&) { return "{\"success\":true,\"content\":\"found\"}"; };
         tools.push_back(searchTool);
 

@@ -137,6 +137,8 @@ WritePreview prepareWritePreview(const CLFToolCall& call) {
         std::string oldContent = snap.content;
         std::string newContent;
 
+        // B1-7 复查：此处为 write_file/edit_file 的**行为分支**（覆盖 vs 替换，
+        // 非分类语义，m_risk 同为 Write 无法区分）——保留名字匹配
         if (call.m_name == "write_file") {
             newContent = args.value("content", "");
             preview.newContent = newContent;
@@ -366,16 +368,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         if (!keyParam.empty()) {
             header += "(" + keyParam + ")";
         }
-        bool useProgressive = (m_labels && m_thinkingSec);
-        // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
-        if (m_output && (!useProgressive || call.m_name == "write_file" || call.m_name == "edit_file"))
-            m_output->emitContent("\n" + header + "\n");
-
-        // 统计
-        if (call.m_name.find("search") != std::string::npos) ++searchCount;
-        if (call.m_name.find("read") != std::string::npos) ++readCount;
-
-        // 工具查找
+        // B1：工具查找前置（能力标签判定需 it；语义微调——不存在的工具不再计入统计，
+        // 原名字匹配在查找前会误计幻觉工具名，B1 定案记录）
         auto it = std::find_if(m_tools.begin(), m_tools.end(),
             [&](const CLFTool& t) { return t.m_name == call.m_name; });
 
@@ -385,6 +379,16 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             results.push_back(std::move(result));
             continue;
         }
+
+        bool useProgressive = (m_labels && m_thinkingSec);
+        // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
+        // B1：名字匹配 → m_risk == Write（风险级即能力声明）
+        if (m_output && (!useProgressive || it->m_risk == CLFToolRisk::Write))
+            m_output->emitContent("\n" + header + "\n");
+
+        // 统计（B1：名字匹配 → 能力标签；口径 B1-4：read 桶含 list_directory）
+        if (it->m_isSearch) ++searchCount;
+        if (it->m_isRead)   ++readCount;
 
         // 安全策略检查
         bool needConfirm = false;
@@ -399,7 +403,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
         // S2-2: 危险命令强制确认——**不受安全模式影响**，Auto 模式同样拦截。
         // 定位为提示层（模型可绕过），仅降低误操作概率，不替代上面的模式管控。
-        if (it->m_name == "execute_command") {
+        // B1：名字匹配 → m_risk == Command（确认触发仍由 policy 按内容判定，B1-1 定案）
+        if (it->m_risk == CLFToolRisk::Command) {
             std::string cmdText;
             try {
                 auto argJson = nlohmann::json::parse(call.m_arguments);
@@ -415,6 +420,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
         // S2-5: web_fetch 工具本身按 Read 级注册（GET/HEAD 本质是读取），
         // 但 POST 有远端副作用——此处动态升级为强制确认，即使 Auto 模式。
+        // B1-2 定案：入口识别保留名字匹配（识别"这个特定工具"的运行时参数
+        // 升级逻辑，非分类语义；升级判定本身是参数驱动，不静态打标）
         if (it->m_name == "web_fetch") {
             try {
                 auto argJson = nlohmann::json::parse(call.m_arguments);
@@ -433,7 +440,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         // ================================================================
         // Write 工具的 diff 预览 + 确认流程（设计 §2.1 Step 1–7）
         // ================================================================
-        bool isWriteTool = (call.m_name == "write_file" || call.m_name == "edit_file");
+        // B1：名字匹配 → m_risk == Write（diff 预览触发）
+        bool isWriteTool = (it->m_risk == CLFToolRisk::Write);
         WritePreview preview;
 
         if (isWriteTool) {
@@ -593,8 +601,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         if (m_labels && m_thinkingSec) {
             if (isWriteTool) {
                 ++progressEdits;
-            } else if (call.m_name.find("read") != std::string::npos
-                    || call.m_name.find("list") != std::string::npos) {
+            } else if (it->m_isRead) {   // B1：名字匹配 → 能力标签
                 ++progressReads;
             }
         }

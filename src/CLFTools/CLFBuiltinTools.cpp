@@ -425,6 +425,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     CLFTool readFileTool;
     readFileTool.m_name        = "read_file";
     readFileTool.m_description = "读取文件内容（限工作区内，单文件上限 50MB，支持按行范围读取）";
+    readFileTool.m_isRead      = true;  // B1：统计 read 桶
     readFileTool.m_parametersSchema = R"({
         "type": "object",
         "properties": {
@@ -475,6 +476,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     CLFTool listDirTool;
     listDirTool.m_name        = "list_directory";
     listDirTool.m_description = "列出指定目录下的文件和子目录";
+    listDirTool.m_isRead      = true;  // B1：统计 read 桶（B1-4 口径定案：readCount 与 progressReads 统一含 list）
     listDirTool.m_parametersSchema = R"({
         "type": "object",
         "properties": {
@@ -610,6 +612,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     // —— search_content ——
     CLFTool searchTool;
     searchTool.m_name        = "search_content";
+    searchTool.m_isSearch    = true;  // B1：统计 search 桶
     searchTool.m_description =
         "在目录中搜索文件内容（纯文本匹配）。省略 fileTypes 时只搜常见文本扩展名（不扫二进制）；"
         "跳过 .git/node_modules/build/cmake-build-* 等目录，跳过 >1MB 文件，结果上限 500 行";

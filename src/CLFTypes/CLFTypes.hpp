@@ -128,6 +128,12 @@ struct CLFTool {
     CLFToolRisk m_risk = CLFToolRisk::Read;
     // A5-concludesTurn：注册时静态声明"本工具执行成功后回合应结束"（当前零工具声明，机制先行）
     bool m_concludesTurn = false;
+    // B1 能力标签（2026-09-03，设计-阶段1 §五 B1）：替代 executor 名字匹配的统计分类。
+    // 口径定案（B1-4）：read 桶 = {read_file, list_directory}；search 桶 = {search_content}；
+    // web_fetch 不进统计桶（现状）；忘打标 → 仅统计缺失（低危，B1-5 定案无需注册强校验）。
+    // 写/命令分类不经标签——m_risk（Write/Command）即能力声明（B1 设计简化）
+    bool m_isSearch = false;  // 计入 searchCount 桶
+    bool m_isRead   = false;  // 计入 readCount/progressReads 桶
     std::function<std::string(const std::string&)> m_handler; // 参数为 JSON string
 };
 
