@@ -29,6 +29,7 @@ add_library(clf_core STATIC
     CLFCore/CLFArgParser.cpp
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
+    CLFCore/CLFDangerousCommandDetector.cpp
     CLFCore/CLFLogger.cpp
     CLFCore/CLFMessageCodec.cpp
     CLFCore/CLFPasserby.cpp
