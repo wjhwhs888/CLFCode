@@ -24,7 +24,7 @@ public:
 
     // === FTXUI 入口 ===
     void setScreen(ftxui::ScreenInteractive* screen) { m_screen = screen; }
-    void requestRefresh() override;  // ⑦ ICLFOutput：PostEvent(Custom)，m_screen 为空时安全跳过
+    void requestRefresh() override;  // ⑧ ICLFOutput：PostEvent(Custom)，m_screen 为空时安全跳过
 
     // === 静态工具 (委托 CLFAnsi) ===
     static void enableAnsi();
@@ -48,15 +48,15 @@ public:
     void onInterrupt(std::function<void()> cb) override;
     void emitError(const std::string& m) override;
 
-    // === ICLFOutput ⑦ 状态点 ===
+    // === ICLFOutput ⑧ 状态点 ===
     void setStatusKind(ICLFOutput::StatusKind kind) override;
 
-    // === ICLFOutput ⑧ 恢复回显折叠块（P2-1） ===
+    // === ICLFOutput ⑨ 恢复回显折叠块（P2-1） ===
     void showFoldedBlock(const std::string& summary,
                          const std::vector<std::string>& lines) override;
     void toggleFoldedBlock();  // Ctrl+R 展开/收起
 
-    // === ICLFOutput ⑥ 思考内容 ===
+    // === ICLFOutput ⑦ 思考内容 ===
     void appendThinking(const std::string& text) override;
     void clearThinking() override;
     // （A2：hasThinkingContent/getThinkingLines 死代码已删——零调用，

@@ -20,7 +20,11 @@
 namespace CLF::CLFTypes {
 
 // ============================================================================
-// ICLFOutput — Agent → UI 输出抽象 (6 个方法, 5 组)
+// ICLFOutput — Agent → UI 输出抽象（17 方法 10 通道：12 纯虚 + 3 默认 + 2 非虚）
+//
+// 扩展纪律（B5，2026-09-03 固化）：新增方法一律带默认实现（空操作或基类
+// 安全行为）——保持既有 MockOutput / 测试最小实现零破坏；纯虚仅用于
+// 新实现类必须提供的核心通道。拆窄接口属 C3 批次，不在本接口纪律内。
 // ============================================================================
 class ICLFOutput {
 public:
@@ -74,7 +78,7 @@ public:
     // 错误输出 — UI 标红, 不影响正常输出流, Agent 继续运行
     virtual void emitError(const std::string& message) = 0;
 
-    // ========== ⑥ 思考内容（与 emitContent 分通道，UI 层可折叠） ==========
+    // ========== ⑦ 思考内容（与 emitContent 分通道，UI 层可折叠） ==========
 
     // 追加推理过程文本（不在主内容区显示，由 UI 层 Ctrl+O 展开）
     virtual void appendThinking(const std::string& text) = 0;
@@ -82,7 +86,7 @@ public:
     // 清空当前 turn 的推理内容（ESC 中断 / 新 turn 开始时调用）
     virtual void clearThinking() = 0;
 
-    // ========== ⑦ 状态点 + 刷新（带默认实现，Mock 零破坏） ==========
+    // ========== ⑧ 状态点 + 刷新（带默认实现，Mock 零破坏） ==========
 
     // 状态点种类（渲染层着色显示：None/Running/Done/Warn/Error）
     // 与 setStatus 文本通道独立，互不联动——调用方需显式清各自通道
@@ -93,7 +97,7 @@ public:
     // turnTimer 1Hz 驱动用：修复工具执行期界面冻结 + 动画最低帧率
     virtual void requestRefresh() {}
 
-    // ========== ⑧ 恢复回显折叠块（P2-1，带默认实现，Mock 零破坏） ==========
+    // ========== ⑨ 恢复回显折叠块（P2-1，带默认实现，Mock 零破坏） ==========
 
     // summary 常显折叠行，lines 为展开内容（UI 层快捷键切换展开态）
     virtual void showFoldedBlock(const std::string& summary,
@@ -102,7 +106,7 @@ public:
         (void)lines;
     }
 
-    // ========== ⑨ 输出活动计数（A5 Tips 静默判定数据源，基类实现零破坏） ==========
+    // ========== ⑩ 输出活动计数（A5 Tips 静默判定数据源，基类实现零破坏） ==========
 
     // 由具体实现的内容类输出入口调用（模型活动信号）。
     // 刻意不计状态行/刷新（setStatus/setStatusTextOnly/requestRefresh 等
