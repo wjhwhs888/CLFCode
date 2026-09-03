@@ -54,6 +54,11 @@ public:
     void cycleMode();
 
 private:
+    // 批次 A1：Renderer/CatchEvent 闭包已拆至 CLFReplView / CLFInputHandler——
+    // 二者经 friend 访问本类渲染/事件状态（纯搬移，状态驻留不变；C4 才做封装收敛）
+    friend class CLFReplView;
+    friend class CLFInputHandler;
+
     void printBanner();
 
     CLF::CLFCore::CLFAgentLoop& m_agent;
@@ -65,14 +70,11 @@ private:
     CLF::CLFCore::CLFPasserby m_passerby;   // 会话节奏观察器（构造于 m_output 之后）
 
     // 快捷键状态
-    bool        m_escPending = false;       // Alt+Enter 延迟检测中
-    std::chrono::steady_clock::time_point m_escTime;       // Alt+Enter timer 起始时间
     std::chrono::steady_clock::time_point m_lastEscTime;   // 双击退出计时
     bool        m_justInterrupted = false;  // ESC 中断标记（Renderer 剥离 CPR 残留）
     bool        m_needRestoreInput = false; // 中断后需恢复上次提交的输入
     int         m_escCleanupFrames = 0;     // ESC 后持续剥离 CPR 的帧数
     std::string m_lastSubmittedInput;       // 上一次提交的原始输入
-    std::thread m_escTimer;                 // Alt+Enter 50ms 延迟线程
     bool        m_showThinking = false;  // Ctrl+T 切换思考过程显示（F7 注释修正）
 
     // 输入历史（第 3 批）

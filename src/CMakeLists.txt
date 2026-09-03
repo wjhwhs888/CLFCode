@@ -55,9 +55,11 @@ add_library(clf_ui STATIC
     CLFUI/CLFCommandDispatcher.cpp
     CLFUI/CLFCommands.cpp
     CLFUI/CLFConfirmBar.cpp
+    CLFUI/CLFInputHandler.cpp
     CLFUI/CLFPasteCoalescer.cpp
-    CLFUI/CLFSelectionModel.cpp
     CLFUI/CLFRepl.cpp
+    CLFUI/CLFReplView.cpp
+    CLFUI/CLFSelectionModel.cpp
     CLFUI/CLFScrollView.cpp
     CLFUI/CLFTerminal.cpp
     CLFUI/CLFTipsBar.cpp

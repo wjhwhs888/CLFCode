@@ -18,7 +18,8 @@
   - 留：SessionManager::save 保留为测试设施（hpp/cpp 注释标记"新代码不应使用"，头部"保存模型"注释更新为 jsonl 时代）
   - 改：list 复用 header 解析——新增 readHeaderInfo helper（收敛"读首行+parse"样板，与 loadJsonl 共用 parseHeaderLine 单点）；补 J12 用例（损坏首行 jsonl → 不崩 + stem fallback）
   - 验证：MSVC 增量构建 38/38 + ctest 21/21 + --version exit=0。**环境记录**：Kits 在 D:/Windows Kits/10（非 Program Files (x86)）；ninja 实际路径 bin/ninja/win/x64/ninja.exe
-- **待办**：下一批 A1（CLFRepl 拆分，纯搬移 + stripCprResidual + 删 m_escTimer 死代码）；阶段 3 分册仍标识性
+- **【批次 A1 CLFRepl 拆分 ✅（2026-09-03 晚，ctest 21/21 + 冒烟 exit=0）】**：run() 两巨型闭包拆出——Renderer(178-484)+hitTest → **CLFReplView**（render/hitTest/scrollHandleEvent 转发 + scrollView 值成员）、CatchEvent(516-855) → **CLFInputHandler**（handle 全分支搬移，消费返回值逐一保真）；闭包捕获 → 构造注入引用（friend 访问 Repl 状态，成员不搬家=纯搬移纪律）；抽 **stripCprResidual** 消两处 CPR/ANSI 剥离同构；删 m_escPending/m_escTime/m_escTimer 死代码；CLFRepl.cpp 瘦壳 = run 编排+装配+生命周期收尾（A1-5 划界）。踩坑：ftxui ScreenInteractive 前向声明与 include 定义冲突（C2371）→ hpp 直接 include screen_interactive.hpp；View/Handler 缺 CommandDispatcher 头（C2027）。**遗留**：交互路径（T5 冒烟）待用户实机验收；CLFClipboard/CLFScrollView include 残留清理随顺手批
+- **待办**：下一批 A2（公共字符工具，增项后变重：utf8SafeHead/sanitizeUtf8 归位/CLFTokenEstimator/displayWidth 统一/splitLinesKeepEmpty/localNow/handleHttpError + 删 getThinkingLines 死代码，按替换点分组推进）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
