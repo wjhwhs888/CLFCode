@@ -63,8 +63,11 @@ public:
 
     // —— 会话持久化 ——
 
-    // 从会话文件恢复（跳过 system 消息，回显历史，重新注入 skills）
-    bool restoreSession(const std::string& filePath);
+    // 从会话文件恢复（跳过 system 消息，重新注入 skills）
+    // B4：回显外移——outEcho 非空时输出结构化回显行（UI 层渲染折叠块；
+    // core 不再拼 UI 文案，P0-6 关闭）；nullptr = 仅恢复不回显（测试路径）
+    bool restoreSession(const std::string& filePath,
+                        std::vector<CLFSessionEchoLine>* outEcho = nullptr);
 
     //待办清单读写（S2-6：随会话持久化，不独立落盘）
     // 由 todo_write 工具 handler 通过捕获的 agent 引用调用
@@ -89,6 +92,16 @@ public:
 
     // 注入历史目录（CLFRepl 构造时调用；beginSessionFile 建文件用）
     void setHistoryDir(const std::string& dir) { m_historyDir = dir; }
+
+    // B2（2026-09-03，R1 裁决）：会话生命周期收敛 core——
+    // beginTurnSession：回合开始前的会话准备（轮初两步条件判定收编）：
+    //   非 resume 续写 → 清 todo 面板；无活动文件 → 懒创建。
+    //   返回活动会话文件路径（失败返回空串）
+    std::string beginTurnSession(const std::string& firstInput);
+
+    // closeSessionAndReset：/clear 的会话重置序列（五原语收编）：
+    //   摘要关闭会话文件 → 清续写态 → 清 todos → 清面板 → 清上下文
+    void closeSessionAndReset();
 
     // 当前活动会话文件（空串 = 无活动文件）
     void        setActiveSessionFile(const std::string& jsonlPath);

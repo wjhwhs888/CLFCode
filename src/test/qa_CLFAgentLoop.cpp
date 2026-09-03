@@ -499,7 +499,9 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         agent->setOutput(&out);
 
-        bool ok = agent->restoreSession(path);
+        // B4：结构化行输出（折叠块渲染已移 UI 层 cmdResume——core 不再拼 UI 文案）
+        std::vector<CLF::CLFCore::CLFSessionEchoLine> echoLines;
+        bool ok = agent->restoreSession(path, &echoLines);
         expect(ok);
 
         // 历史内容不进滚动区（emitContent 直灌路径已废除）
@@ -510,12 +512,13 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
                 leaked = true;
         expect(!leaked);
 
-        // 折叠块：摘要含消息计数、展开行含内容
-        expect(out.foldedSummary.find("2 条消息") != std::string::npos);
+        // 结构化行：User "hello" + Assistant "world"
         bool hasUser = false, hasAssistant = false;
-        for (const auto& l : out.foldedLines) {
-            if (l.find("> hello") != std::string::npos) hasUser = true;
-            if (l.find("world") != std::string::npos) hasAssistant = true;
+        for (const auto& l : echoLines) {
+            if (l.m_kind == CLF::CLFCore::CLFSessionEchoLine::Kind::User
+                && l.m_content == "hello") hasUser = true;
+            if (l.m_kind == CLF::CLFCore::CLFSessionEchoLine::Kind::Assistant
+                && l.m_content == "world") hasAssistant = true;
         }
         expect(hasUser);
         expect(hasAssistant);

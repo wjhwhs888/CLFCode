@@ -151,6 +151,15 @@ struct CLFTodoItem {
     std::string m_status = "pending";
 };
 
+// B4（2026-09-03）：会话恢复回显结构化行——restoreSession 解析产出，
+// UI 层（cmdResume）渲染折叠块；core 不再拼 UI 文案（P0-6 关闭）
+struct CLFSessionEchoLine {
+    enum class Kind { User, Assistant, TodoRound, TodoComplete };
+    Kind m_kind;
+    std::string m_content;              // User/Assistant 行文本（其余为空）
+    std::vector<CLFTodoItem> m_todos;   // TodoRound/TodoComplete 清单
+};
+
 struct CLFSessionSummary {
     std::string              m_summary;        // 总体摘要文本
     std::string              m_currentPlan;    // 当前计划/任务描述

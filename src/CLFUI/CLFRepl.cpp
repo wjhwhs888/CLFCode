@@ -283,14 +283,9 @@ void CLFRepl::submit(const std::string& input) {
         if (m_output) m_output->emitContent("\n● " + CLFTerminal::cyan("CLFCode") + ":\n ");
     } catch (...) {}
 
-    // J3/J4: 新回合清面板（resume 续写不清空，§八 补丁 4/5）
-    if (m_agent.getResumedFrom().empty()) {
-        m_agent.setTodoPanelDone(true);
-    }
-    // J4: 懒创建——第一条新对话输入建文件（resume 续写由 beginSessionFile 内部复制）
-    if (m_agent.getActiveSessionFile().empty()) {
-        m_agent.beginSessionFile(input);
-    }
+    // B2：轮初会话准备收编 core（beginTurnSession 含清面板条件判定 + 懒创建，
+    // UI 不再持有会话策略判定——P0-4 完整关闭）
+    m_agent.beginTurnSession(input);
 
     try {
         std::string response = m_agent.runTurn(input);

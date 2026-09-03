@@ -543,6 +543,27 @@ std::string CLFAgentLoop::getActiveSessionFile() const {
     return m_activeSessionFile;
 }
 
+std::string CLFAgentLoop::beginTurnSession(const std::string& firstInput) {
+    // B2（R1 裁决）：原 CLFRepl::submit 轮初两步条件判定收编——
+    // UI 不再持有会话策略判定（P0-4 完整关闭）
+    if (m_resumedFrom.empty()) {
+        setTodoPanelDone(true);   // J3/J4: 新回合清面板（resume 续写不清空）
+    }
+    if (getActiveSessionFile().empty()) {
+        return beginSessionFile(firstInput);  // J4: 懒创建
+    }
+    return getActiveSessionFile();
+}
+
+void CLFAgentLoop::closeSessionAndReset() {
+    // B2：原 cmdClear 五原语序列收编（/clear 语义）
+    closeSessionFileWithSummary();  // 生成摘要 → summary 行 → 关闭（文件保留为独立会话）
+    setResumedFrom("");             // 新会话语义干净（§6.4-C）
+    setTodos({});
+    setTodoPanelDone(true);
+    clearContext();
+}
+
 std::string CLFAgentLoop::beginSessionFile(const std::string& firstInput) {
     const std::string resumedFrom = m_resumedFrom;   // 本地副本（末尾清）
     const bool isContinuation = !resumedFrom.empty();
@@ -709,7 +730,8 @@ void CLFAgentLoop::generateAndCacheSummary() {
     m_cachedSummary = m_summarizer->generate(m_context.getMessages());
 }
 
-bool CLFAgentLoop::restoreSession(const std::string& filePath) {
+bool CLFAgentLoop::restoreSession(const std::string& filePath,
+                                  std::vector<CLFSessionEchoLine>* outEcho) {
     CLFLogger::instance().info("[Restore] loading: " + filePath);
 
     std::vector<CLFMessage> messages;
@@ -752,86 +774,57 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 
     m_context.clear();
 
-    // ① 回显历史到终端（P2-1：折叠块，不再直灌滚动区；内容全量传入，
-    //    messages 已驻留 m_context，回显只是显示投影——R1 裁决不做懒加载）
-    if (m_output) {
-        std::vector<std::string> echoLines;
-        // A2：appendSplitLines → CLFTextUtil::splitLines（追加式；空文本保留空段语义）
-        auto appendEchoLines = [&](const std::string& text) {
-            auto lines = CLFTextUtil::splitLines(text, /*keepEmpty=*/true);
-            echoLines.insert(echoLines.end(), lines.begin(), lines.end());
-        };
-        int userCount = 0, assistantCount = 0;
+    // ① B4：结构化回显行收集（core 不拼 UI 文案；渲染由 UI 层 cmdResume 完成，
+    //    P0-6 关闭）。messages 已驻留 m_context，回显只是显示投影——R1 裁决不做懒加载
+    std::vector<CLFSessionEchoLine> echoLines;
+    if (isJsonl) {
+        // J6: jsonl 行级回显（设计-会话追加式保存.jsonl §3.6）——
+        // turn 行 → User/Assistant 行 + 尾随 TodoRound 行；
+        // complete 行 → TodoComplete 行；todo_snapshot/summary/header 行不回显
+        std::ifstream file(fs::u8path(filePath));
+        std::string line;
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+            nlohmann::json obj;
+            try { obj = nlohmann::json::parse(line); } catch (...) { continue; }
+            const std::string type = obj.value("type", "");
 
-        if (isJsonl) {
-            // J6: jsonl 行级回显（设计-会话追加式保存.jsonl §3.6）——
-            // 每轮 turn 行尾若带 todos 快照 → 追加"📋 本轮清单 n/total"行；
-            // complete 行 → 追加"任务清单（全部完成）"收尾行；
-            // todo_snapshot/summary/header 行不回显（中间状态与元数据）
-            std::ifstream file(fs::u8path(filePath));
-            std::string line;
-            while (std::getline(file, line)) {
-                if (line.empty()) continue;
-                nlohmann::json obj;
-                try { obj = nlohmann::json::parse(line); } catch (...) { continue; }
-                const std::string type = obj.value("type", "");
-
-                if (type == "turn") {
-                    std::vector<CLFMessage>  turnMsgs;
-                    std::vector<CLFTodoItem> turnTodos;
-                    if (!CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) continue;
-                    for (const auto& msg : turnMsgs) {
-                        if (msg.m_role == "user") {
-                            appendEchoLines("> " + msg.m_content);
-                            ++userCount;
-                        } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                            appendEchoLines(msg.m_content);
-                            ++assistantCount;
-                        }
-                        // tool 消息跳过（终端不需要显示）
+            if (type == JsonlType::kTurn) {
+                std::vector<CLFMessage>  turnMsgs;
+                std::vector<CLFTodoItem> turnTodos;
+                if (!CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) continue;
+                for (const auto& msg : turnMsgs) {
+                    if (msg.m_role == "user") {
+                        echoLines.push_back({CLFSessionEchoLine::Kind::User,
+                                             msg.m_content, {}});
+                    } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
+                        echoLines.push_back({CLFSessionEchoLine::Kind::Assistant,
+                                             msg.m_content, {}});
                     }
-                    if (!turnTodos.empty()) {
-                        size_t done = 0;
-                        for (const auto& t : turnTodos)
-                            if (t.m_status == "completed") ++done;
-                        std::string summary = "📋 本轮清单 " + std::to_string(done)
-                            + "/" + std::to_string(turnTodos.size()) + "：";
-                        for (const auto& t : turnTodos) {
-                            const std::string icon = (t.m_status == "completed") ? "✓"
-                                : (t.m_status == "in_progress") ? "⏳" : "○";
-                            summary += " " + icon + " " + t.m_content + " ·";
-                        }
-                        summary.resize(summary.size() - 2);   // 去掉末尾 " ·"
-                        echoLines.push_back(summary);
-                    }
-                } else if (type == "complete") {
-                    std::vector<CLFTodoItem> completeLine;
-                    if (!CLFMessageCodec::parseCompleteLine(obj, completeLine)) continue;
-                    // 多行格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
-                    echoLines.push_back("📋 任务清单（全部完成）:");
-                    for (const auto& t : completeLine)
-                        echoLines.push_back("  ✓ " + t.m_content);
+                    // tool 消息跳过（终端不需要显示）
                 }
-            }
-        } else {
-            for (const auto& msg : messages) {
-                if (msg.m_role == "user") {
-                    appendEchoLines("> " + msg.m_content);
-                    ++userCount;
-                } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                    appendEchoLines(msg.m_content);
-                    ++assistantCount;
-                }
-                // tool / system 消息跳过（终端不需要显示）
+                if (!turnTodos.empty())
+                    echoLines.push_back({CLFSessionEchoLine::Kind::TodoRound,
+                                         "", std::move(turnTodos)});
+            } else if (type == JsonlType::kComplete) {
+                std::vector<CLFTodoItem> completeLine;
+                if (!CLFMessageCodec::parseCompleteLine(obj, completeLine)) continue;
+                echoLines.push_back({CLFSessionEchoLine::Kind::TodoComplete,
+                                     "", std::move(completeLine)});
             }
         }
-
-        m_output->showFoldedBlock(
-            "● 会话已恢复 · " + std::to_string(userCount + assistantCount)
-                + " 条消息（ctrl+r 展开）", echoLines);
-        CLFLogger::instance().debug("[Restore] folded echo "
-                                    + std::to_string(userCount) + " user + "
-                                    + std::to_string(assistantCount) + " assistant messages");
+    } else {
+        for (const auto& msg : messages) {
+            if (msg.m_role == "user") {
+                echoLines.push_back({CLFSessionEchoLine::Kind::User, msg.m_content, {}});
+            } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
+                echoLines.push_back({CLFSessionEchoLine::Kind::Assistant, msg.m_content, {}});
+            }
+            // tool / system 消息跳过（终端不需要显示）
+        }
+    }
+    if (outEcho) {
+        *outEcho = std::move(echoLines);
     }
 
     // ② 恢复非 system 消息（全部跳过 system，由后续步骤重建）

@@ -9,6 +9,7 @@
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // B4：splitLines（回显行拆分）
 
 #include <algorithm>
 #include <filesystem>
@@ -38,13 +39,9 @@ bool cmdExit(const std::string&, const std::string&,
 bool cmdClear(const std::string&, const std::string&,
               CLFAgentLoop& agent, const std::string&,
               ICLFOutput* output) {
-    // J5: 关闭当前会话（生成摘要 → summary 行 → 文件保留为独立会话）
-    agent.closeSessionFileWithSummary();
-    // 新会话语义干净（§6.4-C：清 m_todos + 置面板隐藏 + 清续写态）
-    agent.setResumedFrom("");
-    agent.setTodos({});
-    agent.setTodoPanelDone(true);
-    agent.clearContext();
+    // B2：五原语序列收编 core（closeSessionAndReset：摘要关闭 → 清续写态
+    // → 清清单 → 清面板 → 清上下文）
+    agent.closeSessionAndReset();
     // F18: 新会话语义从干净状态开始
     if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
     if (output) output->emitContent("✓ 会话已保存，新会话开始\n");
@@ -253,8 +250,52 @@ bool cmdResume(const std::string&, const std::string& args,
         int idx = 0;
         try { idx = std::stoi(args); } catch (...) {}
         if (idx >= 1 && idx <= static_cast<int>(sessions.size())) {
-            if (agent.restoreSession(sessions[idx - 1].m_path)) {
-                // restoreSession 已回显历史，不再重复显示
+            // B4：结构化行 → 回显文案 + 折叠块（原 restoreSession 内联渲染搬至 UI，
+            // core 不再拼 UI 文案——P0-6 关闭）
+            std::vector<CLFSessionEchoLine> echoLines;
+            if (agent.restoreSession(sessions[idx - 1].m_path, &echoLines)) {
+                std::vector<std::string> renderLines;
+                int userCount = 0, assistantCount = 0;
+                auto appendLines = [&](const std::string& text) {
+                    auto ls = CLFTextUtil::splitLines(text, /*keepEmpty=*/true);
+                    renderLines.insert(renderLines.end(), ls.begin(), ls.end());
+                };
+                for (const auto& l : echoLines) {
+                    switch (l.m_kind) {
+                    case CLFSessionEchoLine::Kind::User:
+                        appendLines("> " + l.m_content);
+                        ++userCount;
+                        break;
+                    case CLFSessionEchoLine::Kind::Assistant:
+                        appendLines(l.m_content);
+                        ++assistantCount;
+                        break;
+                    case CLFSessionEchoLine::Kind::TodoRound: {
+                        size_t done = 0;
+                        for (const auto& t : l.m_todos)
+                            if (t.m_status == "completed") ++done;
+                        std::string summary = "📋 本轮清单 " + std::to_string(done)
+                            + "/" + std::to_string(l.m_todos.size()) + "：";
+                        for (const auto& t : l.m_todos) {
+                            const std::string icon = (t.m_status == "completed") ? "✓"
+                                : (t.m_status == "in_progress") ? "⏳" : "○";
+                            summary += " " + icon + " " + t.m_content + " ·";
+                        }
+                        summary.resize(summary.size() - 2);   // 去掉末尾 " ·"
+                        renderLines.push_back(summary);
+                        break;
+                    }
+                    case CLFSessionEchoLine::Kind::TodoComplete:
+                        // 多行格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
+                        renderLines.push_back("📋 任务清单（全部完成）:");
+                        for (const auto& t : l.m_todos)
+                            renderLines.push_back("  ✓ " + t.m_content);
+                        break;
+                    }
+                }
+                if (output) output->showFoldedBlock(
+                    "● 会话已恢复 · " + std::to_string(userCount + assistantCount)
+                        + " 条消息（ctrl+r 展开）", renderLines);
                 // F18: 恢复后状态点回到干净状态
                 if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
             } else {

@@ -254,7 +254,7 @@ std::string CLFMessageCodec::serializeHeaderLine(const std::string& title,
                                                  const std::string& model,
                                                  const std::vector<std::string>& skills) {
     nlohmann::json line;
-    line["type"]       = "header";
+    line["type"]       = JsonlType::kHeader;
     line["version"]    = 1;
     line["title"]      = title;
     line["started_at"] = startedAt;
@@ -273,7 +273,7 @@ std::string CLFMessageCodec::serializeTurnLine(const std::vector<CLFMessage>& me
                                                const std::string& ts,
                                                const std::vector<CLFTodoItem>* todos) {
     nlohmann::json line;
-    line["type"]     = "turn";
+    line["type"]     = JsonlType::kTurn;
     line["ts"]       = ts;
     line["messages"] = messagesToJson(messages);
     // 仅当本轮操作过 todo_write（m_todoDirty）才带快照；否则省略字段
@@ -286,7 +286,7 @@ std::string CLFMessageCodec::serializeTurnLine(const std::vector<CLFMessage>& me
 std::string CLFMessageCodec::serializeTodoSnapshot(const std::vector<CLFTodoItem>& todos,
                                                    const std::string& ts) {
     nlohmann::json line;
-    line["type"]  = "todo_snapshot";
+    line["type"]  = JsonlType::kTodoSnapshot;
     line["ts"]    = ts;
     line["todos"] = todosToJson(todos);
     return dumpLine(line);
@@ -295,7 +295,7 @@ std::string CLFMessageCodec::serializeTodoSnapshot(const std::vector<CLFTodoItem
 std::string CLFMessageCodec::serializeCompleteLine(const std::vector<CLFTodoItem>& todos,
                                                    const std::string& ts) {
     nlohmann::json line;
-    line["type"]  = "complete";
+    line["type"]  = JsonlType::kComplete;
     line["ts"]    = ts;
     line["todos"] = todosToJson(todos);
     return dumpLine(line);
@@ -304,7 +304,7 @@ std::string CLFMessageCodec::serializeCompleteLine(const std::vector<CLFTodoItem
 std::string CLFMessageCodec::serializeSummaryLine(const CLFSessionSummary& summary,
                                                   const std::string& ts) {
     nlohmann::json line;
-    line["type"]    = "summary";
+    line["type"]    = JsonlType::kSummary;
     line["ts"]      = ts;
     line["summary"] = summaryToJson(summary);
     return dumpLine(line);
@@ -315,7 +315,7 @@ bool CLFMessageCodec::parseTurnLine(const nlohmann::json& obj,
                                     std::vector<CLFTodoItem>* outTodos,
                                     std::string* outTs) {
     try {
-        if (!obj.is_object() || obj.value("type", "") != "turn") return false;
+        if (!obj.is_object() || obj.value("type", "") != JsonlType::kTurn) return false;
         if (!obj.contains("messages") || !obj["messages"].is_array()) return false;
         outMessages = messagesFromJson(obj["messages"]);
         if (outTodos) *outTodos = todosFromJson(obj.value("todos", nlohmann::json::array()));
@@ -329,7 +329,7 @@ bool CLFMessageCodec::parseTurnLine(const nlohmann::json& obj,
 bool CLFMessageCodec::parseTodoSnapshotLine(const nlohmann::json& obj,
                                             std::vector<CLFTodoItem>& outTodos) {
     try {
-        if (!obj.is_object() || obj.value("type", "") != "todo_snapshot") return false;
+        if (!obj.is_object() || obj.value("type", "") != JsonlType::kTodoSnapshot) return false;
         outTodos = todosFromJson(obj.value("todos", nlohmann::json::array()));
         return true;
     } catch (const nlohmann::json::exception&) {
@@ -340,7 +340,7 @@ bool CLFMessageCodec::parseTodoSnapshotLine(const nlohmann::json& obj,
 bool CLFMessageCodec::parseCompleteLine(const nlohmann::json& obj,
                                         std::vector<CLFTodoItem>& outTodos) {
     try {
-        if (!obj.is_object() || obj.value("type", "") != "complete") return false;
+        if (!obj.is_object() || obj.value("type", "") != JsonlType::kComplete) return false;
         outTodos = todosFromJson(obj.value("todos", nlohmann::json::array()));
         return true;
     } catch (const nlohmann::json::exception&) {
@@ -351,7 +351,7 @@ bool CLFMessageCodec::parseCompleteLine(const nlohmann::json& obj,
 bool CLFMessageCodec::parseSummaryLine(const nlohmann::json& obj,
                                        CLFSessionSummary& outSummary) {
     try {
-        if (!obj.is_object() || obj.value("type", "") != "summary") return false;
+        if (!obj.is_object() || obj.value("type", "") != JsonlType::kSummary) return false;
         summaryFromJson(obj.value("summary", nlohmann::json()), outSummary);
         return true;
     } catch (const nlohmann::json::exception&) {
@@ -366,7 +366,7 @@ bool CLFMessageCodec::parseHeaderLine(const nlohmann::json& obj,
                                       std::string* outModel,
                                       std::vector<std::string>* outSkills) {
     try {
-        if (!obj.is_object() || obj.value("type", "") != "header") return false;
+        if (!obj.is_object() || obj.value("type", "") != JsonlType::kHeader) return false;
         if (outTitle)     *outTitle     = obj.value("title", "");
         if (outStartedAt) *outStartedAt = obj.value("started_at", "");
         if (outSessionId) *outSessionId = obj.value("session_id", "");

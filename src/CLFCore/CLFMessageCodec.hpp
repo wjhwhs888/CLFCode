@@ -17,6 +17,17 @@
 
 namespace CLF::CLFCore {
 
+// B4/P1-7（2026-09-03）：jsonl 行类型常量单点——原字面量分散 3 文件 ≥12 处
+// （MessageCodec 序列化/解析校验、SessionManager loadJsonl 分发、AgentLoop 回显）。
+// 新增行类型 = 此处加常量 + 解析注册（未知类型静默跳过安全网保留）
+namespace JsonlType {
+inline constexpr const char* kHeader       = "header";
+inline constexpr const char* kTurn         = "turn";
+inline constexpr const char* kTodoSnapshot = "todo_snapshot";
+inline constexpr const char* kComplete     = "complete";
+inline constexpr const char* kSummary      = "summary";
+} // namespace JsonlType
+
 class CLFMessageCodec {
 public:
     // 序列化消息数组为 JSON（含 version/messageCount/saved_at/title 元字段）

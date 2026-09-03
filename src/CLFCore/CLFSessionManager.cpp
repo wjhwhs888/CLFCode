@@ -488,7 +488,7 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
         }
 
         const std::string type = obj.value("type", "");
-        if (type == "header") {
+        if (type == JsonlType::kHeader) {
             if (outHeaderInfo || outSkills) {
                 std::vector<std::string> skills;
                 CLFMessageCodec::parseHeaderLine(
@@ -497,7 +497,7 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
                 if (outSkills) *outSkills = std::move(skills);
             }
             anyValidLine = true;
-        } else if (type == "turn") {
+        } else if (type == JsonlType::kTurn) {
             std::vector<CLFMessage>  turnMsgs;
             std::vector<CLFTodoItem> turnTodos;
             if (CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) {
@@ -507,7 +507,7 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
             } else {
                 CLFLogger::instance().warn("[LoadJsonl] skip invalid turn line: " + filePath);
             }
-        } else if (type == "todo_snapshot") {
+        } else if (type == JsonlType::kTodoSnapshot) {
             std::vector<CLFTodoItem> todos;
             if (CLFMessageCodec::parseTodoSnapshotLine(obj, todos)) {
                 // 覆盖语义：每读到一条可解析快照就更新（含 clear 产生的空快照——
@@ -518,13 +518,13 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
             } else {
                 CLFLogger::instance().warn("[LoadJsonl] skip invalid todo_snapshot line: " + filePath);
             }
-        } else if (type == "complete") {
+        } else if (type == JsonlType::kComplete) {
             std::vector<CLFTodoItem> todos;
             if (CLFMessageCodec::parseCompleteLine(obj, todos)) {
                 if (!todos.empty()) lastComplete = std::move(todos);
                 anyValidLine = true;
             }
-        } else if (type == "summary") {
+        } else if (type == JsonlType::kSummary) {
             CLFSessionSummary s;
             if (CLFMessageCodec::parseSummaryLine(obj, s)) {
                 latestSummary = s;   // 取最后一条可解析摘要
