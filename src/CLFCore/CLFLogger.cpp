@@ -1,6 +1,7 @@
 // CLFLogger.cpp — 日志系统实现
 
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：localNow（消平台 ifdef）
 
 #include <chrono>
 #include <cstdio>
@@ -23,18 +24,9 @@ const char* levelName(CLFLogLevel level) {
     return "INFO";
 }
 
-// 获取当前时间字符串 "YYYY-MM-DD HH:MM:SS"
+// 获取当前时间字符串 "YYYY-MM-DD HH:MM:SS"（A2：ifdef → CLFTextUtil::localNow）
 std::string currentTimeStr() {
-    std::time_t now = std::time(nullptr);
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &now);
-#else
-    localtime_r(&now, &tm);
-#endif
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-    return std::string(buf);
+    return CLFTextUtil::localNow("%Y-%m-%d %H:%M:%S");
 }
 
 } // anonymous namespace

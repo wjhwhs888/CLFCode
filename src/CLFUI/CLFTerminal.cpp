@@ -1,6 +1,7 @@
 // CLFTerminal.cpp — ICLFOutput 实现 (FTXUI 驱动)
 #include "CLFUI/CLFTerminal.hpp"
 #include "CLFUI/CLFAnsi.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -9,19 +10,16 @@
 #endif
 
 namespace CLF::CLFUI {
+using CLF::CLFCore::CLFTextUtil;   // A2
 
 using namespace ftxui;
 
 namespace {
 
-// 取首行，超过 maxBytes 截断加 "…"（不劈半 UTF-8 多字节字符）
+// 取首行，超过 maxBytes 截断加 "…"（A2：回退循环 → CLFTextUtil::utf8SafeHead）
 std::string firstLineCapped(const std::string& text, size_t maxBytes) {
     std::string first = text.substr(0, text.find('\n'));
-    if (first.size() <= maxBytes) return first;
-    size_t cut = maxBytes;
-    // 回退到 UTF-8 字符边界（跳过续字节 0x80-0xBF）
-    while (cut > 0 && (static_cast<unsigned char>(first[cut]) & 0xC0) == 0x80) --cut;
-    return first.substr(0, cut) + "…";
+    return CLFTextUtil::utf8SafeHead(first, maxBytes);
 }
 
 } // anonymous namespace
@@ -85,20 +83,9 @@ void CLFTerminal::toggleFoldedBlock() {
 
 CLFTerminal::ContentSnapshot CLFTerminal::contentSnapshot() const {
     std::lock_guard lock(m_mutex);
-    // 思考缓冲按换行切割（快照中提供行列表）
-    std::vector<std::string> thinkLines;
-    if (!m_thinkingBuffer.empty()) {
-        size_t pos = 0;
-        while (pos < m_thinkingBuffer.size()) {
-            size_t nl = m_thinkingBuffer.find('\n', pos);
-            if (nl == std::string::npos) {
-                thinkLines.push_back(m_thinkingBuffer.substr(pos));
-                break;
-            }
-            thinkLines.push_back(m_thinkingBuffer.substr(pos, nl - pos));
-            pos = nl + 1;
-        }
-    }
+    // 思考缓冲按换行切割（A2：切分循环 → CLFTextUtil::splitLines，语义一致）
+    std::vector<std::string> thinkLines =
+        CLFTextUtil::splitLines(m_thinkingBuffer, /*keepEmpty=*/false);
     int elapsed = m_thinkingElapsed;
     if (m_thinkingActive) {
         elapsed = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(
@@ -194,21 +181,12 @@ void CLFTerminal::flushTable() {
         if (nCols > maxCols) maxCols = nCols;
     }
 
-    // ② 计算每列最大显示宽度
-    auto cjkWidth = [](const std::string& s) -> int {
-        int w = 0;
-        for (size_t i = 0; i < s.size(); ++i) {
-            unsigned char c = static_cast<unsigned char>(s[i]);
-            if (c < 0x80) { w += 1; }           // ASCII
-            else if (c >= 0xC0) { w += 2; }      // CJK/全角首字节
-            // 0x80~0xBF: UTF-8 续字节，跳过（已在首字节中计入）
-        }
-        return w;
-    };
+    // ② 计算每列最大显示宽度（A2：cjkWidth lambda → CLFTextUtil::displayWidth，
+    // 与 SelectionModel 两套等价实现合并）
     std::vector<int> colWidths(maxCols, 0);
     for (const auto& row : rows) {
         for (size_t j = 0; j < row.size(); ++j) {
-            int w = cjkWidth(row[j]);
+            int w = CLFTextUtil::displayWidth(row[j]);
             if (w > colWidths[j]) colWidths[j] = w;
         }
     }
@@ -218,7 +196,7 @@ void CLFTerminal::flushTable() {
         std::string aligned = "|";
         for (size_t j = 0; j < maxCols; ++j) {
             std::string cell = (j < row.size()) ? row[j] : "";
-            int cellW = cjkWidth(cell);
+            int cellW = CLFTextUtil::displayWidth(cell);
             int pad = (j < colWidths.size()) ? colWidths[j] - cellW : 0;
             if (pad < 0) pad = 0;  // 防御：UTF-8 宽度估算不应为负
             if (pad > 0) cell.append(pad, ' ');
@@ -368,29 +346,6 @@ void CLFTerminal::clearThinking() {
         m_thinkingBytes = 0;
         m_thinkingActive = false;
     }
-}
-
-bool CLFTerminal::hasThinkingContent() const {
-    std::lock_guard lock(m_mutex);
-    return !m_thinkingBuffer.empty();
-}
-
-std::vector<std::string> CLFTerminal::getThinkingLines() const {
-    std::lock_guard lock(m_mutex);
-    std::vector<std::string> result;
-    if (m_thinkingBuffer.empty()) return result;
-    // 简单按换行分割（推理内容通常是一段连续文字）
-    size_t pos = 0;
-    while (pos < m_thinkingBuffer.size()) {
-        size_t nl = m_thinkingBuffer.find('\n', pos);
-        if (nl == std::string::npos) {
-            result.push_back(m_thinkingBuffer.substr(pos));
-            break;
-        }
-        result.push_back(m_thinkingBuffer.substr(pos, nl - pos));
-        pos = nl + 1;
-    }
-    return result;
 }
 
 } // namespace CLF::CLFUI

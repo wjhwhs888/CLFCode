@@ -25,6 +25,12 @@ public:
     // example:
     //   if (!CLFEncoding::isValidUtf8(raw)) skipFile();
     static bool isValidUtf8(const std::string& s);
+
+    // UTF-8 净化：将非法字节序列替换为 U+FFFD (�)（批次 A2 自 CLFContext
+    // 归位——剪贴板/输入边界防护等共享场景；与 isValidUtf8 配对：验证 vs 净化）
+    // example:
+    //   std::string clean = CLFEncoding::sanitizeUtf8(raw);
+    static std::string sanitizeUtf8(const std::string& input);
 };
 
 } // namespace CLF::CLFCore

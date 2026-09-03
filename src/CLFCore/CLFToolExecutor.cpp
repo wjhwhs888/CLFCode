@@ -3,6 +3,7 @@
 
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -17,33 +18,34 @@ namespace CLF::CLFCore {
 namespace {
 
 // 从工具参数 JSON 中提取关键参数用于显示
+// A2：字节级 substr 截断 → utf8SafeHead/Tail（显示场景，不劈半多字节；阈值语义保留）
 std::string extractKeyParam(const std::string& argsJson) {
     try {
         auto args = nlohmann::json::parse(argsJson);
         if (args.contains("path") && args["path"].is_string()) {
             std::string p = args["path"].get<std::string>();
-            if (p.size() > 55) p = "..." + p.substr(p.size() - 52);
+            if (p.size() > 55) p = CLFTextUtil::utf8SafeTail(p, 52, "...");
             return p;
         }
         if (args.contains("command") && args["command"].is_string()) {
             std::string cmd = args["command"].get<std::string>();
             while (!cmd.empty() && cmd.front() == ' ') cmd.erase(0, 1);
-            if (cmd.size() > 55) cmd = cmd.substr(0, 52) + "...";
+            if (cmd.size() > 55) cmd = CLFTextUtil::utf8SafeHead(cmd, 52, "...");
             return cmd;
         }
         if (args.contains("pattern") && args["pattern"].is_string()) {
             std::string p = args["pattern"].get<std::string>();
-            if (p.size() > 55) p = p.substr(0, 52) + "...";
+            if (p.size() > 55) p = CLFTextUtil::utf8SafeHead(p, 52, "...");
             return p;
         }
         if (args.contains("message") && args["message"].is_string()) {
             std::string m = args["message"].get<std::string>();
-            if (m.size() > 55) m = m.substr(0, 52) + "...";
+            if (m.size() > 55) m = CLFTextUtil::utf8SafeHead(m, 52, "...");
             return m;
         }
     } catch (...) {}
     if (argsJson.empty() || argsJson == "{}" || argsJson == "[]") return "";
-    if (argsJson.size() > 60) return argsJson.substr(0, 57) + "...";
+    if (argsJson.size() > 60) return CLFTextUtil::utf8SafeHead(argsJson, 57, "...");
     return argsJson;
 }
 
@@ -68,7 +70,7 @@ ToolResultDisplay formatToolResult(const std::string& resultJson) {
                 detail = r["stderr"].get<std::string>();
             else if (r.contains("stdout") && !r["stdout"].get<std::string>().empty())
                 detail = r["stdout"].get<std::string>();
-            if (detail.size() > 80) detail = detail.substr(0, 77) + "...";
+            if (detail.size() > 80) detail = CLFTextUtil::utf8SafeHead(detail, 77, "...");  // A2
             return {false, detail.empty() ? ("exit " + std::to_string(code)) : detail, 0, 0};
         }
         bool success = r.value("success", true);

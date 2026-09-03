@@ -4,6 +4,7 @@
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFMessageCodec.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：localNow / utf8SafeHead
 
 #include <algorithm>
 #include <chrono>
@@ -22,16 +23,8 @@ namespace CLF::CLFCore {
 namespace {
 
 std::string timestampStr() {
-    std::time_t now = std::time(nullptr);
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &now);
-#else
-    localtime_r(&now, &tm);
-#endif
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d_%H-%M-%S", &tm);
-    return std::string(buf);
+    // A2：平台 ifdef → CLFTextUtil::localNow（格式零变化）
+    return CLFTextUtil::localNow("%Y-%m-%d_%H-%M-%S");
 }
 
 std::string extractTitle(const std::vector<CLFMessage>& messages) {
@@ -40,14 +33,9 @@ std::string extractTitle(const std::vector<CLFMessage>& messages) {
             std::string title = msg.m_content;
             for (auto& c : title)
                 if (c == '\n' || c == '\r') c = ' ';
-            if (title.size() > 50) {
-                // UTF-8 边界安全截断（不劈半多字节字符）
-                size_t cut = 47;
-                while (cut > 0
-                       && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80)
-                    --cut;
-                title = title.substr(0, cut) + "...";
-            }
+            // UTF-8 边界安全截断（A2：回退循环 → utf8SafeHead；阈值 50 语义保留）
+            if (title.size() > 50)
+                title = CLFTextUtil::utf8SafeHead(title, 47, "...");
             return title;
         }
     }
@@ -63,13 +51,8 @@ std::string sanitizeFilename(const std::string& input) {
             c = '_';
         }
     }
-    if (out.size() > 80) {
-        size_t cut = 77;
-        while (cut > 0
-               && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80)
-            --cut;
-        out = out.substr(0, cut) + "...";
-    }
+    if (out.size() > 80)
+        out = CLFTextUtil::utf8SafeHead(out, 77, "...");  // A2：安全截断收敛（阈值 80 保留）
     return out;
 }
 
@@ -159,13 +142,8 @@ std::string CLFSessionManager::makeNewSessionPath(const std::string& dirPath,
     std::string title = firstInput;
     for (auto& c : title)
         if (c == '\n' || c == '\r') c = ' ';
-    if (title.size() > 50) {
-        size_t cut = 47;
-        while (cut > 0
-               && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80)
-            --cut;
-        title = title.substr(0, cut) + "...";
-    }
+    if (title.size() > 50)
+        title = CLFTextUtil::utf8SafeHead(title, 47, "...");  // A2：安全截断收敛（阈值 50 保留）
     title = sanitizeFilename(title);
     if (!suffix.empty()) title += suffix;
 

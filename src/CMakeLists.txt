@@ -4,6 +4,7 @@
 add_library(clf_types STATIC
     CLFTypes/CLFEncoding.cpp
     CLFTypes/CLFPeriodicTimer.cpp
+    CLFTypes/CLFTextUtil.cpp
 )
 target_include_directories(clf_types PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

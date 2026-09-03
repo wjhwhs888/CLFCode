@@ -3,6 +3,7 @@
 
 #include "CLFCore/CLFSystemPromptBuilder.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：估算/截断/替换/时间戳归位
 
 #include <algorithm>
 #include <cstdio>
@@ -42,24 +43,7 @@ std::string execCommand(const std::string& cmd) {
     return result;
 }
 
-int estimateTokenChars(const std::string& s) {
-    int ascii = 0, nonAscii = 0;
-    for (size_t i = 0; i < s.size(); ++i) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        if (c < 0x80) ++ascii;
-        else if ((c & 0xC0) == 0xC0) ++nonAscii;
-    }
-    return (ascii / 4) + (nonAscii * 3 / 2);
-}
-
-std::string replaceAll(std::string s, const std::string& from, const std::string& to) {
-    size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
-        s.replace(pos, from.size(), to);
-        pos += to.size();
-    }
-    return s;
-}
+// （A2：estimateTokenChars/replaceAll 已归位 CLFTextUtil，原定义删除）
 
 // ============================================================================
 // 缓存: L1 宪法
@@ -127,18 +111,18 @@ std::string CLFSystemPromptBuilder::build(const Context& ctx) {
     }
 
     // ⑥ Token 预算（skillsBlock 可能被截断）
-    int headerTokens = estimateTokenChars(tpl);
+    int headerTokens = CLFTextUtil::estimateTokenChars(tpl);
     skillsBlock = applyTokenBudget(skillsBlock, ctx, headerTokens);
 
     // ⑦ 变量替换
     std::string lang = (ctx.interactionLanguage == "zh-CN") ? "中文" : ctx.interactionLanguage;
     std::string envInfo = osInfo + "\n- 工作目录：" + ctx.workspaceRoot + "\n- Shell：" + shellInfo;
 
-    std::string result = replaceAll(tpl, "{{model_name}}", ctx.modelName);
-    result = replaceAll(result, "{{interaction_language}}", lang);
-    result = replaceAll(result, "{{os_info}}", envInfo);
-    result = replaceAll(result, "{{project_context}}", projectCtx);
-    result = replaceAll(result, "{{skills}}", skillsBlock);
+    std::string result = CLFTextUtil::replaceAll(tpl, "{{model_name}}", ctx.modelName);
+    result = CLFTextUtil::replaceAll(result, "{{interaction_language}}", lang);
+    result = CLFTextUtil::replaceAll(result, "{{os_info}}", envInfo);
+    result = CLFTextUtil::replaceAll(result, "{{project_context}}", projectCtx);
+    result = CLFTextUtil::replaceAll(result, "{{skills}}", skillsBlock);
 
     return result;
 }
@@ -260,11 +244,10 @@ std::string CLFSystemPromptBuilder::captureGitStatus(const std::string& workspac
         result += "- 工作区状态：" + std::to_string(count) + " 个文件有变更\n";
     }
 
-    // 时间戳
-    char timeStr[32];
-    std::tm* tm = std::localtime(&now);
-    std::strftime(timeStr, sizeof(timeStr), "%H:%M:%S", tm);
-    result += std::string("（Git 状态捕获于 ") + timeStr + "，如需实时状态请使用 execute_command 查询）\n";
+    // 时间戳（A2：唯一裸 localtime → CLFTextUtil::localNow，线程安全）
+    result += std::string("（Git 状态捕获于 ")
+           + CLFTextUtil::localNow("%H:%M:%S")
+           + "，如需实时状态请使用 execute_command 查询）\n";
 
     // 更新缓存
     s_gitCache.info           = result;
@@ -293,7 +276,8 @@ std::string CLFSystemPromptBuilder::loadProjectRules(const std::string& workspac
         if (content.empty()) return "";
         bool truncated = false;
         if (content.size() > static_cast<size_t>(kMaxChars)) {
-            content = content.substr(0, kMaxChars);
+            // A2：字节级截断 → utf8SafeHead（不劈半多字节；无 ellipsis，截断标记在下方）
+            content = CLFTextUtil::utf8SafeHead(content, kMaxChars, "");
             truncated = true;
         }
         std::string header = "## 项目规则（来自 " + filename + "）\n";
@@ -366,7 +350,7 @@ std::string CLFSystemPromptBuilder::applyTokenBudget(const std::string& skillsBl
     constexpr double kDefaultSystemRatio = 0.3;
     int systemBudget = static_cast<int>(ctx.maxContextWindow * kDefaultSystemRatio);
 
-    int skillsTokens = estimateTokenChars(skillsBlock);
+    int skillsTokens = CLFTextUtil::estimateTokenChars(skillsBlock);
     int total = headerTokens + skillsTokens;
 
     if (total <= systemBudget) return skillsBlock;  // 未超预算
@@ -398,7 +382,7 @@ std::string CLFSystemPromptBuilder::applyTokenBudget(const std::string& skillsBl
     int accumulated = headerTokens;
     std::string kept;
     for (size_t i = 0; i < sections.size(); ++i) {
-        int secTokens = estimateTokenChars(sections[i]);
+        int secTokens = CLFTextUtil::estimateTokenChars(sections[i]);
         std::string sep = kept.empty() ? "" : "\n\n---\n";
         if (accumulated + secTokens <= systemBudget || i == 0) {
             // L1 宪法（i==0）必保留；其他段在预算内才保留

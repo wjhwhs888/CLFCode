@@ -13,10 +13,12 @@
 #include "CLFUI/CLFTipsBar.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：utf8SafeHead
 
 #include <filesystem>
 
 namespace CLF::CLFUI {
+using CLF::CLFCore::CLFTextUtil;   // A2
 using namespace CLF::CLFCore;
 
 // CPR/ANSI 残留剥离（A1 抽取：两处逐字同构）
@@ -151,9 +153,16 @@ ftxui::Element CLFReplView::render() {
     if (!snap.pendingLine.empty()) {
         const auto& pl = snap.pendingLine;
         if (wrapW > 0) {
+            // A2（R4）：字节 wrap → CJK 感知宽度切分（与主内容硬换行统一；
+            // 渲染行为变更：CJK 文本换行点不再劈半字符，T3 视觉回归覆盖）
+            std::string remaining = pl;
             size_t partIdx = 0;
-            for (size_t pos = 0; pos < pl.size(); pos += wrapW)
-                addRow(pl.substr(pos, wrapW), RowKind::Pending, 0, partIdx++, 0);
+            while (!remaining.empty()) {
+                std::string part = Sel::substrByWidth(remaining, wrapW);
+                if (part.empty()) part = remaining.substr(0, 1);
+                addRow(part, RowKind::Pending, 0, partIdx++, 0);
+                remaining = remaining.substr(part.size());
+            }
         } else {
             addRow(pl, RowKind::Pending, 0, 0, 0);
         }
@@ -161,18 +170,13 @@ ftxui::Element CLFReplView::render() {
 
     // ---- 思考过程（内容区最后，Ctrl+T 折叠/展开） ----
     if (snap.thinkingActive || !snap.thinkingLines.empty()) {
-        // P1-3: 折叠行摘要——running 取实时尾行，完成取首行（UTF-8 边界截断）
-        auto truncateUtf8 = [&](const std::string& s, size_t maxBytes) -> std::string {
-            if (s.size() <= maxBytes) return s;
-            size_t cut = maxBytes;
-            while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80) --cut;
-            return s.substr(0, cut) + "…";
-        };
+        // P1-3: 折叠行摘要——running 取实时尾行，完成取首行
+        // （A2：UTF-8 边界截断 lambda → CLFTextUtil::utf8SafeHead）
         std::string fold = "  Thought for " + std::to_string(snap.thinkingElapsed) + "s";
         if (!snap.thinkingLines.empty()) {
             const std::string& src = snap.thinkingActive
                 ? snap.thinkingLines.back() : snap.thinkingLines.front();
-            fold += " · " + truncateUtf8(src, 80);
+            fold += " · " + CLFTextUtil::utf8SafeHead(src, 80);
         }
         fold += " (ctrl+t 展开)";
         addRow(fold, RowKind::ThinkingFold, 0, 0, 3);

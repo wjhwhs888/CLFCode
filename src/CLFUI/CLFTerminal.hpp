@@ -59,8 +59,8 @@ public:
     // === ICLFOutput ⑥ 思考内容 ===
     void appendThinking(const std::string& text) override;
     void clearThinking() override;
-    bool hasThinkingContent() const;
-    std::vector<std::string> getThinkingLines() const;
+    // （A2：hasThinkingContent/getThinkingLines 死代码已删——零调用，
+    //   思考行列表由 contentSnapshot 直接提供）
 
     // 线程安全：confirm 工作线程写 / 主线程 CatchEvent 读
     bool isConfirmActive() const { std::lock_guard lock(m_mutex); return m_confirmActive; }

@@ -1,7 +1,7 @@
 // CLFClipboard.cpp — 系统剪贴板实现
 
 #include "CLFUI/CLFClipboard.hpp"
-#include "CLFCore/CLFContext.hpp"  // sanitizeUtf8
+#include "CLFTypes/CLFEncoding.hpp"  // sanitizeUtf8（A2 归位：UI 不再依赖 core 的 Context 头）
 
 #ifdef _WIN32
 #include <windows.h>
@@ -23,7 +23,7 @@ std::string CLFClipboard::read() {
     if (len > 1) WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &raw[0], len, nullptr, nullptr);
     GlobalUnlock(h);
     CloseClipboard();
-    return CLF::CLFCore::sanitizeUtf8(raw);  // 防止截断 UTF-8 导致半字光标
+    return CLF::CLFCore::CLFEncoding::sanitizeUtf8(raw);  // 防止截断 UTF-8 导致半字光标
 #else
     return "";
 #endif

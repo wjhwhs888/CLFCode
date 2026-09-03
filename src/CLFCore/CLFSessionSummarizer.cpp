@@ -4,6 +4,7 @@
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFProtocolAdapter.hpp"
 #include "CLFNetwork/ICLFHttpClient.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：utf8SafeHead
 
 #include <nlohmann/json.hpp>
 #include <set>
@@ -257,10 +258,11 @@ CLFSessionSummary CLFSessionSummarizer::buildFallback(
         }
     }
 
-    // 摘要 = 第一条 user 消息截断
+    // 摘要 = 第一条 user 消息截断（A2：字节级 substr → utf8SafeHead，
+    // 摘要文本注入 system 提示，劈半会产生非法 UTF-8；阈值 200 语义保留）
     if (!firstUserMsg.empty()) {
         summary.m_summary = firstUserMsg.size() > 200
-                          ? firstUserMsg.substr(0, 197) + "..."
+                          ? CLFTextUtil::utf8SafeHead(firstUserMsg, 197, "...")
                           : firstUserMsg;
     } else {
         summary.m_summary = "(无用户输入)";
@@ -269,7 +271,7 @@ CLFSessionSummary CLFSessionSummarizer::buildFallback(
     // 当前计划 = 最后一条 user 消息（如果与首条不同）
     if (!lastUserMsg.empty() && lastUserMsg != firstUserMsg) {
         summary.m_currentPlan = lastUserMsg.size() > 200
-                              ? lastUserMsg.substr(0, 197) + "..."
+                              ? CLFTextUtil::utf8SafeHead(lastUserMsg, 197, "...")
                               : lastUserMsg;
     }
 

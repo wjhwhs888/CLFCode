@@ -1,40 +1,28 @@
 // CLFSelectionModel.cpp — 选区状态机实现
 
 #include "CLFUI/CLFSelectionModel.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：宽度工具实现收敛至此
 
 #include <algorithm>
 
 namespace CLF::CLFUI {
+using CLF::CLFCore::CLFTextUtil;   // A2
 
 // ============================================================================
-// 显示宽度工具
+// 显示宽度工具（A2：实现收敛至 CLFTextUtil，本类静态方法保持 API 转发——
+// 调用方零改动；与 Terminal cjkWidth 的两套等价实现已合并）
 // ============================================================================
 
 int CLFSelectionModel::charWidth(unsigned char c) {
-    if (c < 0x80) return 1;   // ASCII
-    if (c >= 0xC0) return 2;  // UTF-8 多字节首字节（CJK/全角计 2）
-    return 0;                 // UTF-8 续字节
+    return CLFTextUtil::charWidth(c);
 }
 
 int CLFSelectionModel::displayWidth(const std::string& s) {
-    int w = 0;
-    for (size_t i = 0; i < s.size(); ++i)
-        w += charWidth(static_cast<unsigned char>(s[i]));
-    return w;
+    return CLFTextUtil::displayWidth(s);
 }
 
 std::string CLFSelectionModel::substrByWidth(const std::string& s, int maxW) {
-    int w = 0;
-    for (size_t i = 0; i < s.size();) {
-        int cw = charWidth(static_cast<unsigned char>(s[i]));
-        if (cw == 0) { ++i; continue; }           // UTF-8 续字节，不单独算
-        if (w + cw > maxW) return s.substr(0, i);
-        w += cw;
-        if (cw == 2) { ++i; while (i < s.size()
-            && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
-        else { ++i; }
-    }
-    return s;
+    return CLFTextUtil::substrByWidth(s, maxW);
 }
 
 size_t CLFSelectionModel::colToByte(const std::string& s, int col) {

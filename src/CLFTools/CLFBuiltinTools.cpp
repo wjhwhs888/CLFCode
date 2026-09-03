@@ -16,8 +16,10 @@
 #include "CLFTools/CLFFileOps.hpp"
 #include "CLFTools/CLFSearchContent.hpp"
 #include "CLFTools/CLFWebFetch.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：localNow
 
 namespace CLF::CLFTools {
+using CLF::CLFCore::CLFTextUtil;   // A2
 
 // ============================================================================
 // Handler 实现
@@ -114,21 +116,8 @@ namespace {
 constexpr std::uintmax_t kMaxReadFileSize = 50ull * 1024 * 1024;
 
 std::string getCurrentTimeHandler(const std::string& /*args*/) {
-    std::time_t now = std::time(nullptr);
-    std::tm localTime{};
-    // 双平台（整体审查 P2-8）：Windows localtime_s / POSIX localtime_r
-#ifdef _WIN32
-    if (localtime_s(&localTime, &now) != 0) {
-        return "[Error] Failed to get local time";
-    }
-#else
-    if (localtime_r(&now, &localTime) == nullptr) {
-        return "[Error] Failed to get local time";
-    }
-#endif
-    char buf[64];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &localTime);
-    return std::string(buf);
+    // A2：平台 ifdef → CLFTextUtil::localNow（格式零变化）
+    return CLFTextUtil::localNow("%Y-%m-%d %H:%M:%S");
 }
 
 std::string echoHandler(const std::string& args) {

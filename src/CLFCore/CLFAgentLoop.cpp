@@ -9,6 +9,7 @@
 #include "CLFCore/CLFSkillLoader.hpp"
 #include "CLFCore/CLFStreamAccumulator.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"
 #include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
@@ -25,21 +26,6 @@ namespace CLF::CLFCore {
 namespace fs = std::filesystem;
 
 namespace {
-
-// 按 \n 拆分为多行追加（折叠块渲染按行处理）
-void appendSplitLines(std::vector<std::string>& out, const std::string& text) {
-    if (text.empty()) { out.emplace_back(); return; }
-    size_t pos = 0;
-    while (pos < text.size()) {
-        size_t nl = text.find('\n', pos);
-        if (nl == std::string::npos) {
-            out.push_back(text.substr(pos));
-            break;
-        }
-        out.push_back(text.substr(pos, nl - pos));
-        pos = nl + 1;
-    }
-}
 
 // A5-触顶收尾（设计-工具调用循环上限机制改造 §3.2）：
 // 循环耗尽后追加给模型的收尾提示（仅存 context 内存，不进 jsonl）
@@ -230,27 +216,17 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
-                    if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        if (m_output) m_output->emitError(response.m_error);
-                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+                    // A2：错误重试收敛至 handleHttpError（原内联 ~25 行）
+                    switch (handleHttpError(response.m_error, consecutiveErrors)) {
+                    case HttpErrorAction::ReturnError:
                         return std::string("[Error] ") + response.m_error;
-                    }
-                    // 按错误类别定重试上限：其他 4xx = 2（重试 1 次即止）/ 429·5xx·网络 = 3
-                    const int maxAttempts = CLFRetryPolicy::maxAttemptsForError(response.m_error);
-                    if (++consecutiveErrors >= maxAttempts) {
-                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+                    case HttpErrorAction::ReturnTooMany:
                         return std::string("[Error] Too many errors: ") + response.m_error;
-                    }
-                    if (m_output) m_output->emitContent(
-                        "\n⚠ " + response.m_error + " — retry "
-                        + std::to_string(consecutiveErrors) + "/"
-                        + std::to_string(maxAttempts) + "\n");
-                    // ③ 可中断等待 (每 100ms 检查一次)
-                    for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    if (m_interrupted) {
+                    case HttpErrorAction::ReturnInterrupted:
                         emitInterrupted();
                         return std::string("[Interrupted]");
+                    case HttpErrorAction::Continue:
+                        break;
                     }
                     continue;
                 }
@@ -285,27 +261,17 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Interrupted]");
                 }
                 if (!response.m_error.empty()) {
-                    if (CLFRetryPolicy::isFatalHttpError(response.m_error)) {
-                        if (m_output) m_output->emitError(response.m_error);
-                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+                    // A2：错误重试收敛至 handleHttpError（与流式路径同款）
+                    switch (handleHttpError(response.m_error, consecutiveErrors)) {
+                    case HttpErrorAction::ReturnError:
                         return std::string("[Error] ") + response.m_error;
-                    }
-                    // 按错误类别定重试上限：其他 4xx = 2（重试 1 次即止）/ 429·5xx·网络 = 3
-                    const int maxAttempts = CLFRetryPolicy::maxAttemptsForError(response.m_error);
-                    if (++consecutiveErrors >= maxAttempts) {
-                        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+                    case HttpErrorAction::ReturnTooMany:
                         return std::string("[Error] Too many errors: ") + response.m_error;
-                    }
-                    if (m_output) m_output->emitContent(
-                        "\n⚠ " + response.m_error + " — retry "
-                        + std::to_string(consecutiveErrors) + "/"
-                        + std::to_string(maxAttempts) + "\n");
-                    // ③ 可中断等待 (每 100ms 检查一次)
-                    for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    if (m_interrupted) {
+                    case HttpErrorAction::ReturnInterrupted:
                         emitInterrupted();
                         return std::string("[Interrupted]");
+                    case HttpErrorAction::Continue:
+                        break;
                     }
                     continue;
                 }
@@ -790,6 +756,11 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
     //    messages 已驻留 m_context，回显只是显示投影——R1 裁决不做懒加载）
     if (m_output) {
         std::vector<std::string> echoLines;
+        // A2：appendSplitLines → CLFTextUtil::splitLines（追加式；空文本保留空段语义）
+        auto appendEchoLines = [&](const std::string& text) {
+            auto lines = CLFTextUtil::splitLines(text, /*keepEmpty=*/true);
+            echoLines.insert(echoLines.end(), lines.begin(), lines.end());
+        };
         int userCount = 0, assistantCount = 0;
 
         if (isJsonl) {
@@ -811,10 +782,10 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
                     if (!CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) continue;
                     for (const auto& msg : turnMsgs) {
                         if (msg.m_role == "user") {
-                            appendSplitLines(echoLines, "> " + msg.m_content);
+                            appendEchoLines("> " + msg.m_content);
                             ++userCount;
                         } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                            appendSplitLines(echoLines, msg.m_content);
+                            appendEchoLines(msg.m_content);
                             ++assistantCount;
                         }
                         // tool 消息跳过（终端不需要显示）
@@ -845,10 +816,10 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
         } else {
             for (const auto& msg : messages) {
                 if (msg.m_role == "user") {
-                    appendSplitLines(echoLines, "> " + msg.m_content);
+                    appendEchoLines("> " + msg.m_content);
                     ++userCount;
                 } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                    appendSplitLines(echoLines, msg.m_content);
+                    appendEchoLines(msg.m_content);
                     ++assistantCount;
                 }
                 // tool / system 消息跳过（终端不需要显示）
@@ -893,6 +864,32 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 // ============================================================================
 // 私有方法
 // ============================================================================
+
+// A2：流式/同步错误重试收敛（原两处内联 ~25 行×2，逻辑逐行搬移——
+// 致命/超限/中断三态返回指令，调用方 switch 分发；等待段保持可中断）
+CLFAgentLoop::HttpErrorAction CLFAgentLoop::handleHttpError(
+    const std::string& error, int& consecutiveErrors) {
+    if (CLFRetryPolicy::isFatalHttpError(error)) {
+        if (m_output) m_output->emitError(error);
+        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        return HttpErrorAction::ReturnError;
+    }
+    // 按错误类别定重试上限：其他 4xx = 2（重试 1 次即止）/ 429·5xx·网络 = 3
+    const int maxAttempts = CLFRetryPolicy::maxAttemptsForError(error);
+    if (++consecutiveErrors >= maxAttempts) {
+        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        return HttpErrorAction::ReturnTooMany;
+    }
+    if (m_output) m_output->emitContent(
+        "\n⚠ " + error + " — retry "
+        + std::to_string(consecutiveErrors) + "/"
+        + std::to_string(maxAttempts) + "\n");
+    // ③ 可中断等待 (每 100ms 检查一次)
+    for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (m_interrupted) return HttpErrorAction::ReturnInterrupted;
+    return HttpErrorAction::Continue;
+}
 
 void CLFAgentLoop::emitInterrupted() {
     // P0-5: 统一文案（原 9 处两版文案）+ clearThinking + Warn 状态点

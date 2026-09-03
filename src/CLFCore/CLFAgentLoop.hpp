@@ -158,6 +158,12 @@ public:
     void setModelName(const std::string& name);
 
 private:
+    // A2：流式/同步错误重试收敛（原两处 ~25 行重复，§2.6-3.8/P1-11 后半）
+    // 分类处理：致命 → ReturnError；重试耗尽 → ReturnTooMany；等待期中断 →
+    // ReturnInterrupted（调用方 emitInterrupted + return）；其余 → Continue
+    enum class HttpErrorAction { ReturnError, ReturnTooMany, ReturnInterrupted, Continue };
+    HttpErrorAction handleHttpError(const std::string& error, int& consecutiveErrors);
+
     // P0-5: turn 级中断消息单点收敛——统一文案 + clearThinking + Warn 状态点
     // （9 处内联收敛至此；工具层 "⎿ ⏹ 已中断" 保持层级区分不走此路径）
     void emitInterrupted();

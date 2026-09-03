@@ -3,6 +3,7 @@
 #include "CLFCore/CLFPasserby.hpp"
 
 #include "CLFTypes/ICLFOutput.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // A2：localNowTm（消平台 ifdef）
 
 #include <ctime>
 
@@ -24,13 +25,8 @@ void CLFPasserby::onTurnFinished() {
 }
 
 bool CLFPasserby::defaultTimeOk() {
-    std::time_t now = std::time(nullptr);
-    std::tm lt{};
-#ifdef _WIN32
-    localtime_s(&lt, &now);
-#else
-    localtime_r(&now, &lt);
-#endif
+    // A2：字段读取场景（非格式化）→ CLFTextUtil::localNowTm（消平台 ifdef）
+    const std::tm lt = CLFTextUtil::localNowTm();
     // 特殊日期全天：10 月 20 日（tm_mon 0 基）
     if (lt.tm_mon == 9 && lt.tm_mday == 20) return true;
     // 深夜窗：22:00–06:00（含跨日）
