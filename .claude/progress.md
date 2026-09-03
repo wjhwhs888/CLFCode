@@ -2,6 +2,17 @@
 
 ## 进行中
 
+### 【插件化与集成三阶段】阶段 1 评审·取证·修订 ✅（2026-09-03 晚，谷价时段；方案待排期执行）
+- **【文档一致性审计】（2026-09-03 晚，用户定调：防执行期引用混乱）**：全套文档交叉引用逐条核对。修复：总纲章节重编号（两个"五、"→五~八）+ 评审记录 63→69 条 + §一 补边界清单 + §三 阶段 2 出口标准同步（"全部模块插件化"→能力层+工具层）+ §七 索引明细化；分册 16 处（P2-2 denied 4→2、§2.3 遗留 JSON 表述、9→10 handler、时间戳 6→7 处、截断 7+9 精确化、825-845、§七 专项验证与 A2 单安全版对齐、总体方案 §六→§七 引用、B1 遗留项删除、B3 依赖解除、适配器层加阶段 2 联动注）；边界清单 6 处（F1-F5 悬空引用、§五 冒烟清单→T5、A1 行号 3 处、A2-2 补 .cpp、A2 标题补覆盖项）；阶段 2 分册 2 处（"1-2 模块"→FileOps 域试点）；README 重写对齐实际目录（原树列了 5 个不存在的文件、缺 40+ 实际文件）
+- **总纲**：`设计/设计-总体方案-插件化与集成.md`（阶段 1/2/3 三分册 + 边界清单配套）。上游决策已拍板 7 条（DLL 热拔插/两个世界/各自适配/三阶段顺序/自治兜底/安装模型/试点 dsh）
+- **本轮工作（pro 评审取证）**：分册源码断言逐条对照实读（5 大文件 + hpp/CMake 全读，grep 交叉验证）——边界清单 69 条销号表全部核实：8 条证伪修订、61 条证实/定案
+- **证伪修订 8 处**：① denied 回显 4→2 处 ② P1-6 死代码精确化（findIncomplete/removeAllIncomplete/promote 零引用可删；save 测试引用 7 处保留测试设施；migrateLegacyIncomplete main:162 生产调用保留；新增 Repl::saveSession/AgentLoop::saveSession 死壳）③ P1-8 行号补 .cpp ④ A2 UTF-8 截断**单安全版**（取证：库中无精确字节场景，原双函数方案作废）⑤ A3 范围定案 ⑥ B1 **m_risk 复用**（Write/Command 已可替代 2 类名字匹配，仅新增 m_isSearch/m_isRead 统计标签；executor 匹配点全集 7 处，原列 516/542 证伪）⑦ B2 收敛为**单新方法 closeSessionAndReset()**（cmdClear 无确认交互，B2-5 原断言证伪；原 4 方法大多已存在）⑧ B3 **m_todoPanelDone 语义定案**（回合级展示生命周期，接口保留+C2 随 CLFTodoStore 迁移）
+- **新发现**：ToolExecutor readCount/progressReads 口径不一致（list_directory 只入后者）；m_escPending/m_escTime/m_escTimer + getThinkingLines/hasThinkingContent 死代码；main.cpp:139-140 重复注释
+- **阶段 1 批次**：A3（死代码热身）→ A1（Repl 拆分）→ A2（字符工具）→ A4（handler 脚手架）→ B5 → B1 → B2/B4 → B3 → C1-C4；出口 = P0/P1 清零 + 无 CMake hack + 回归全绿
+- **【阶段 2 论证深化】（2026-09-03 晚，用户定调：目标在功能、方案论证详细了再动手）**：调用链空白打通 + ABI 细化 + 开放项 9 项全定案（详 `设计-阶段2-自身插件化设计方案.md` 论证定案注记）。核心定案：basic/core/UI 不迁 DLL；5 能力域 DLL（fileops/command/search/web/misc）；9 工具随域迁 + todo_write/compress_context 自引用留 core；适配器并入工具域；C1 回流补接口化（ICLFFileService，试点 core 零改动）；试点依赖最小集 = C1（含接口化）+ B1
+- **【非插件模块全量审查】（2026-09-03 晚，用户定调：功能混杂/大文件/调用执行混杂，要详细 SOLID 检查）**：30 文件全查（core 14 + UI 12 + basic 4）→ 5 需实质重组 / 8 轻度 / 17 干净。新增 P 项 8 条（P0-7 Builder 6 簇混杂+双文件级静态对象+裸 localtime、P0-8 Context sanitizeUtf8 被 UI 反向引用+容器含策略、P1-13 token 估算双实现、P1-14 execCommand 与 CommandExec 重复、P1-15 ConfigLoader 30+ if 样板、P1-16 SecurityPolicy 双簇、P2-7 Logger 窄路径、P2-8 ProtocolAdapter 2 小项）；A2 取证补漏（时间戳 7 处、截断点+2）。批次新增 B6/C5/C6 + 顺手批；执行序 A3→A1→A2→A4→B5→B1→B2/B4→B3→B6→C1-C4→C5→C6。底稿已归档 `设计/归档/归档-代码审查-非插件模块全量审查.md`（结论全回流分册）。副产品：能力层 4 文件仅依赖 basic → 5 域 DLL 拆分零障碍（验证阶段 2 §3.7）
+- **待办**：用户拍板后从 A3 开工（每批 ctest + 冒烟）；阶段 3 分册仍标识性（激活 = 阶段 2 完成 + 用户排期）
+
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
 
