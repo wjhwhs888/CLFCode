@@ -49,13 +49,6 @@ public:
     // 估算当前 token 数（简单按字符数 / 4 估算）
     int estimateTokens() const;
 
-    // 序列化全部消息为 JSON 字符串（供会话持久化）
-    std::string serialize() const;
-
-    // 从 JSON 字符串恢复消息（跳过 system 消息——身份由 Agent 重新注入）
-    // 返回 false 表示数据无效
-    bool restore(const std::string& jsonData);
-
 private:
     std::vector<CLFMessage> m_messages;
     int                     m_maxContextWindow;

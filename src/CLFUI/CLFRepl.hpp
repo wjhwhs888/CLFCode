@@ -55,7 +55,6 @@ public:
 
 private:
     void printBanner();
-    void saveSession(bool isFinal);
 
     CLF::CLFCore::CLFAgentLoop& m_agent;
     CLF::CLFTypes::ICLFOutput*  m_output;

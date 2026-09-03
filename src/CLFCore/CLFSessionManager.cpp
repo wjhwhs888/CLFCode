@@ -112,6 +112,24 @@ bool endsWithSuffix(const std::string& name, const std::string& suffix) {
         && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+// 读 jsonl 首行 header 的 title/savedAt（A3：list 与 loadJsonl 共用
+// parseHeaderLine 单点；本 helper 收敛"读首行 + parse"样板）。
+// 返回 false = 打开失败/首行不可解析（调用方自行 fallback，如 stem）
+bool readHeaderInfo(const std::string& jsonlPath,
+                    std::string* outTitle, std::string* outSavedAt) {
+    std::ifstream file(fs::u8path(jsonlPath));
+    if (!file.is_open()) return false;
+    std::string firstLine;
+    if (!std::getline(file, firstLine)) return false;
+    try {
+        CLFMessageCodec::parseHeaderLine(
+            nlohmann::json::parse(firstLine), outTitle, outSavedAt);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 } // anonymous namespace
 
 // ============================================================================
@@ -190,6 +208,8 @@ bool CLFSessionManager::copyLines(const std::string& srcPath, const std::string&
 // save — 原子写入 latest.json 或归档为时间戳.json
 // ============================================================================
 
+// ⚠ 测试设施（A3，2026-09-03）：jsonl 时代生产零调用——qa 造 latest.json 供
+// list/load 测试；生产写入走 append* 系列。新代码不应使用。
 std::string CLFSessionManager::save(const std::vector<CLFMessage>& messages,
                                      const std::string& dirPath,
                                      bool finalize,
@@ -386,19 +406,15 @@ std::vector<CLFSessionInfo> CLFSessionManager::list(const std::string& dirPath, 
         info.m_isLatest = hasActive && (info.m_path == *activeFilePath);
 
         try {
-            std::ifstream file(fs::u8path(info.m_path));
-            std::ostringstream oss;
-            oss << file.rdbuf();
             std::string title;
             if (endsWithSuffix(info.m_path, ".jsonl")) {
-                // jsonl：title 取第一行 header 的 title 字段
-                std::ifstream lineFile(fs::u8path(info.m_path));
-                std::string firstLine;
-                if (std::getline(lineFile, firstLine)) {
-                    CLFMessageCodec::parseHeaderLine(
-                        nlohmann::json::parse(firstLine), &title, &info.m_savedAt);
-                }
+                // jsonl：title 取首行 header（A3：readHeaderInfo 收敛"读首行+parse"，
+                // 与 loadJsonl 共用 parseHeaderLine 单点；解析失败 → false → stem fallback）
+                readHeaderInfo(info.m_path, &title, &info.m_savedAt);
             } else {
+                std::ifstream file(fs::u8path(info.m_path));
+                std::ostringstream oss;
+                oss << file.rdbuf();
                 CLFMessageCodec::parseFull(oss.str(), nullptr, &info.m_savedAt, &title);
             }
             info.m_title = title.empty() ? "(untitled)" : title;
@@ -563,59 +579,6 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
     CLFLogger::instance().info("[LoadJsonl] success: " + filePath + ", "
                                + std::to_string(outMessages.size()) + " msgs");
     return true;
-}
-
-// ============================================================================
-// 旧版兼容方法（保留以支持测试，新代码不应使用）
-// ============================================================================
-
-std::string CLFSessionManager::findIncomplete(const std::string& dirPath) {
-    std::error_code ec;
-    if (!fs::exists(dirPath, ec) || !fs::is_directory(dirPath, ec)) return "";
-
-    std::string newest;
-    fs::file_time_type newestTime{};
-    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
-        if (name.find("_incomplete.json") == std::string::npos) continue;
-
-        auto time = entry.last_write_time(ec);
-        if (newest.empty() || time > newestTime) {
-            newest = entry.path().string();
-            newestTime = time;
-        }
-    }
-    return newest;
-}
-
-int CLFSessionManager::removeAllIncomplete(const std::string& dirPath) {
-    std::error_code ec;
-    if (!fs::exists(dirPath, ec) || !fs::is_directory(dirPath, ec)) return 0;
-
-    int removed = 0;
-    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
-        if (name.find("_incomplete.json") != std::string::npos) {
-            if (fs::remove(entry.path(), ec)) ++removed;
-        }
-    }
-    return removed;
-}
-
-std::string CLFSessionManager::promote(const std::string& incompletePath) {
-    fs::path p(incompletePath);
-    std::string name = p.filename().string();
-    if (name.find("_incomplete.json") == std::string::npos) return incompletePath;
-
-    std::string newName = name.substr(0, name.size() - std::string("_incomplete.json").size())
-                        + ".json";
-    fs::path newPath = p.parent_path() / newName;
-
-    std::error_code ec;
-    fs::rename(p, newPath, ec);
-    return ec ? "" : newPath.string();
 }
 
 // ============================================================================

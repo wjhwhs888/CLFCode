@@ -999,8 +999,4 @@ void CLFRepl::cycleMode() {
     m_agent.setSecurityMode(next);
 }
 
-void CLFRepl::saveSession(bool isFinal) {
-    m_agent.saveSession(m_historyDir, isFinal);
-}
-
 } // namespace CLF::CLFUI

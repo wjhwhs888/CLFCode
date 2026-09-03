@@ -1,9 +1,10 @@
 // qa_CLFSessionManager.cpp — 会话管理单元测试
-// 覆盖：save/load round-trip、cleanupOld、jsonl 追加式保存（J 系列，2026-09-02）
+// 覆盖：save/load round-trip（save 为测试设施，A3 标注）、cleanupOld、
+//       jsonl 追加式保存（J 系列，2026-09-02）
 //
-// 已移除 3 个 _incomplete 旧语义用例（findIncomplete/promote 断言 save(true) 产生
-// _incomplete.json——该语义在覆盖式时代（08-12）已废除，save(true) 现为归档，
-// 测试失效于实现，非实现缺陷。旧接口保留为 legacy，不再有测试背书）
+// A3（2026-09-03）：findIncomplete/removeAllIncomplete/promote 三函数已随
+// 死代码清理删除——其旧用例早前已移除（覆盖式时代语义，08-12 废除），
+// 本次无测试改动；save() 保留为测试设施（造 latest.json 供 list/load 用例）。
 
 #include <boost/ut.hpp>
 #include <chrono>
@@ -414,6 +415,21 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         std::vector<CLFMessage> msgs2;
         expect(!CLFSessionManager::loadJsonl(badPath, msgs2));
         expect(fs::exists(up(badPath + ".bak")));
+
+        fs::remove_all(up(dir));
+    };
+
+    "J12 list 损坏首行 jsonl → 不崩 + stem fallback（A3-3，2026-09-03）"_test = [] {
+        auto dir = makeTempDir();
+        std::string path = u8ToString(up(dir) / up("2026-08-25_10-00-00_损坏标题会话.jsonl"));
+        {
+            std::ofstream f(up(path), std::ios::binary);
+            f << "not json at all\n";   // 首行损坏（撕裂写入，非 header）
+        }
+
+        auto sessions = CLFSessionManager::list(dir, 10);
+        expect(sessions.size() == 1_ul);                          // 仍列出，不崩
+        expect(sessions[0].m_title.find("损坏标题会话") != std::string::npos);  // stem fallback
 
         fs::remove_all(up(dir));
     };

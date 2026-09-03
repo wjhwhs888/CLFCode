@@ -11,7 +11,14 @@
 - **阶段 1 批次**：A3（死代码热身）→ A1（Repl 拆分）→ A2（字符工具）→ A4（handler 脚手架）→ B5 → B1 → B2/B4 → B3 → C1-C4；出口 = P0/P1 清零 + 无 CMake hack + 回归全绿
 - **【阶段 2 论证深化】（2026-09-03 晚，用户定调：目标在功能、方案论证详细了再动手）**：调用链空白打通 + ABI 细化 + 开放项 9 项全定案（详 `设计-阶段2-自身插件化设计方案.md` 论证定案注记）。核心定案：basic/core/UI 不迁 DLL；5 能力域 DLL（fileops/command/search/web/misc）；9 工具随域迁 + todo_write/compress_context 自引用留 core；适配器并入工具域；C1 回流补接口化（ICLFFileService，试点 core 零改动）；试点依赖最小集 = C1（含接口化）+ B1
 - **【非插件模块全量审查】（2026-09-03 晚，用户定调：功能混杂/大文件/调用执行混杂，要详细 SOLID 检查）**：30 文件全查（core 14 + UI 12 + basic 4）→ 5 需实质重组 / 8 轻度 / 17 干净。新增 P 项 8 条（P0-7 Builder 6 簇混杂+双文件级静态对象+裸 localtime、P0-8 Context sanitizeUtf8 被 UI 反向引用+容器含策略、P1-13 token 估算双实现、P1-14 execCommand 与 CommandExec 重复、P1-15 ConfigLoader 30+ if 样板、P1-16 SecurityPolicy 双簇、P2-7 Logger 窄路径、P2-8 ProtocolAdapter 2 小项）；A2 取证补漏（时间戳 7 处、截断点+2）。批次新增 B6/C5/C6 + 顺手批；执行序 A3→A1→A2→A4→B5→B1→B2/B4→B3→B6→C1-C4→C5→C6。底稿已归档 `设计/归档/归档-代码审查-非插件模块全量审查.md`（结论全回流分册）。副产品：能力层 4 文件仅依赖 basic → 5 域 DLL 拆分零障碍（验证阶段 2 §3.7）
-- **待办**：用户拍板后从 A3 开工（每批 ctest + 冒烟）；阶段 3 分册仍标识性（激活 = 阶段 2 完成 + 用户排期）
+- **【阶段 1 执行开始（2026-09-03 晚）】批次 A3 死代码清理 ✅（ctest 21/21 + 冒烟 exit=0）**：
+  - 删：findIncomplete/removeAllIncomplete/promote（零引用，测试无背书注释同步清理）
+  - 删：CLFRepl::saveSession + CLFAgentLoop::saveSession 死壳（grep 已核测试零引用）
+  - 删：CLFContext::serialize/restore（生产零调用，qa 引用 3 处 → 删 2 个旧语义用例——损坏保护语义已由 SessionManager::load 的 .bak 承担）
+  - 留：SessionManager::save 保留为测试设施（hpp/cpp 注释标记"新代码不应使用"，头部"保存模型"注释更新为 jsonl 时代）
+  - 改：list 复用 header 解析——新增 readHeaderInfo helper（收敛"读首行+parse"样板，与 loadJsonl 共用 parseHeaderLine 单点）；补 J12 用例（损坏首行 jsonl → 不崩 + stem fallback）
+  - 验证：MSVC 增量构建 38/38 + ctest 21/21 + --version exit=0。**环境记录**：Kits 在 D:/Windows Kits/10（非 Program Files (x86)）；ninja 实际路径 bin/ninja/win/x64/ninja.exe
+- **待办**：下一批 A1（CLFRepl 拆分，纯搬移 + stripCprResidual + 删 m_escTimer 死代码）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。

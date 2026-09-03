@@ -1,8 +1,6 @@
 // CLFContext.cpp — 对话上下文实现
-// 序列化 → 委托 CLFMessageCodec
 
 #include "CLFCore/CLFContext.hpp"
-#include "CLFCore/CLFMessageCodec.hpp"
 
 #include <algorithm>
 #include <string>
@@ -184,22 +182,6 @@ int CLFContext::estimateTokens() const {
         total += estimateTokensForMessage(msg);
     }
     return total;
-}
-
-std::string CLFContext::serialize() const {
-    return CLFMessageCodec::serialize(m_messages);
-}
-
-bool CLFContext::restore(const std::string& jsonData) {
-    auto messages = CLFMessageCodec::parse(jsonData);
-    if (messages.empty()) return false;
-
-    m_messages.clear();
-    for (auto& msg : messages) {
-        if (msg.m_role == "system") continue;
-        m_messages.push_back(std::move(msg));
-    }
-    return !m_messages.empty();
 }
 
 } // namespace CLF::CLFCore

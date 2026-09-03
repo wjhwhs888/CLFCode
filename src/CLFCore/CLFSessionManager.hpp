@@ -1,10 +1,10 @@
 // CLFSessionManager.hpp — 会话文件管理
 // 负责会话的保存/加载/列表/清理（doc/contextHistory/ 目录）
 //
-// 保存模型：
-//   每轮回合后 → latest.json（原子写入 .tmp → rename）
-//   /exit /clear → latest.json 重命名为 时间戳.json（归档）
-//   关窗/崩溃 → latest.json 保留，内容为最后一条完整对话
+// 保存模型（jsonl 时代，2026-09-02 起）：
+//   jsonl 追加式保存：每轮 turn 行/todo 快照/complete/summary 行即时追加
+//   （写入由 CLFAgentLoop 的会话文件原语经 append* 完成，生产不走 save()）
+//   save() 覆盖式写 latest.json 为旧版遗留——生产零调用，保留为测试设施
 //
 // example:
 //   std::string dir = "doc/contextHistory";
@@ -33,9 +33,10 @@ struct CLFSessionInfo {
 
 class CLFSessionManager {
 public:
-    // 保存会话
-    // finalize=false: 保存到 latest.json（原子写入 .tmp → rename，每轮回合后调用）
-    // finalize=true:  重命名 latest.json → 时间戳.json（/exit 和 /clear 时调用）
+    // 保存会话（⚠ 测试设施：jsonl 时代生产零调用——qa 造 latest.json 供
+    // list/load 测试用，新代码不应使用；生产写入走 append* 系列）
+    // finalize=false: 保存到 latest.json（原子写入 .tmp → rename）
+    // finalize=true:  重命名 latest.json → 时间戳.json
     // skills: 已加载的知识库名称列表，写入 JSON 的 skills 字段
     // summary: 会话摘要，写入 JSON 的 summary 对象（nullptr 或 m_valid=false 时跳过）
     // 返回文件路径，失败返回空串
@@ -108,11 +109,6 @@ public:
                           std::vector<CLFTodoItem>* outTodos = nullptr,
                           std::vector<CLFTodoItem>* outCompleteTodos = nullptr,
                           CLFSessionInfo* outHeaderInfo = nullptr);
-
-    // —— 旧版兼容（保留以支持测试，新代码不应使用） ——
-    static std::string findIncomplete(const std::string& dirPath);
-    static int removeAllIncomplete(const std::string& dirPath);
-    static std::string promote(const std::string& incompletePath);
 
     // —— 迁移 ——
     // 将旧版 _incomplete.json 迁移为 latest.json（保留最新的一个，删除其余）

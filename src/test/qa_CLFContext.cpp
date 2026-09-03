@@ -1,5 +1,7 @@
 // qa_CLFContext.cpp — CLFContext 单元测试
-// 覆盖：token 估算、system 永不截断、长工具结果截断、serialize/restore round-trip
+// 覆盖：token 估算、system 永不截断、长工具结果截断
+// （serialize/restore 用例随 A3 删除——覆盖式时代语义，jsonl 时代由
+//   CLFSessionManager::load/loadJsonl 承担，restoreSession 分流调用）
 
 #include <boost/ut.hpp>
 #include "CLFCore/CLFContext.hpp"
@@ -42,41 +44,6 @@ const boost::ut::suite<"CLFContext"> tests = [] {
         auto messages = ctx.getMessages();
         expect(messages.size() == 1);
         expect(messages[0].m_content.find("[truncated") != std::string::npos);
-    };
-
-    "serialize/restore round-trip 保留 tool_calls 全字段"_test = [] {
-        CLFContext ctx;
-        ctx.addMessage("system", "identity");
-        ctx.addMessage("user", "hello");
-
-        CLFToolCall tc;
-        tc.m_id        = "call_abc";
-        tc.m_name      = "get_time";
-        tc.m_arguments = "{}";
-        ctx.addAssistantToolCalls({tc});
-
-        ctx.addToolResult("call_abc", "get_time", "2026-07-31");
-
-        std::string json = ctx.serialize();
-
-        CLFContext restored;
-        expect(restored.restore(json));
-        auto messages = restored.getMessages();
-
-        // system 被跳过（身份由 Agent 重新注入）
-        expect(messages.size() == 3);
-        expect(messages[0].m_role == "user");
-        expect(messages[1].m_role == "assistant");
-        expect(messages[1].m_toolCalls.size() == 1);
-        expect(messages[1].m_toolCalls[0].m_id == "call_abc");
-        expect(messages[1].m_toolCalls[0].m_name == "get_time");
-        expect(messages[2].m_role == "tool");
-        expect(messages[2].m_toolCallId == "call_abc");
-    };
-
-    "restore 无效 JSON 返回 false"_test = [] {
-        CLFContext ctx;
-        expect(!ctx.restore("not valid json{{"));
     };
 };
 

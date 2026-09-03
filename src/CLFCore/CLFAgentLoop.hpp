@@ -63,12 +63,6 @@ public:
 
     // —— 会话持久化 ——
 
-    // 保存当前会话
-    // finalize=false: 存为 latest.json（每轮回合后调用，原子写入）
-    // finalize=true:  归档 latest.json → 时间戳.json（/exit 和 /clear 调用）
-    // 返回文件路径，失败返回空串
-    std::string saveSession(const std::string& dirPath, bool finalize) const;
-
     // 从会话文件恢复（跳过 system 消息，回显历史，重新注入 skills）
     bool restoreSession(const std::string& filePath);
 
