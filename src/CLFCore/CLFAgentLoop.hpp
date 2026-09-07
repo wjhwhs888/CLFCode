@@ -18,6 +18,9 @@
 #include "CLFCore/CLFSystemPromptBuilder.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionSummarizer.hpp"
+#include "CLFCore/CLFSessionFileCtx.hpp"
+#include "CLFCore/CLFSummaryCache.hpp"
+#include "CLFCore/CLFTodoStore.hpp"
 
 namespace CLF::CLFNetwork { class ICLFHttpClient; }
 namespace CLF::CLFPluginApi { class ICLFFileService; }
@@ -76,27 +79,19 @@ public:
 
     //待办清单读写（S2-6：随会话持久化，不独立落盘）
     // 由 todo_write 工具 handler 通过捕获的 agent 引用调用
-    // 线程安全（2026-09-02，设计-任务清单UI显示 §3.9）：handler 在 asyncSubmit
-    // 工作线程写、UI 主线程渲染读——getTodos 锁内拷贝返回副本，setTodos 锁内替换。
-    // ⚠️ 返回副本：禁止对结果元素取引用/指针后跨语句使用（临时即亡）；
-    // range-for（const auto& t : agent.getTodos()）安全（生命周期延长）
+    // C2：转发 CLFTodoStore（数据/锁随对象走）；线程模型与副本语义见 CLFTodoStore
     // example:
     //   agent.setTodos(parsedTodos);
     //   for (const auto& t : agent.getTodos()) show(t);
-    std::vector<CLFTodoItem> getTodos() const {
-        std::lock_guard<std::mutex> lock(m_todosMutex);
-        return m_todos;
-    }
-    void setTodos(std::vector<CLFTodoItem> todos) {
-        std::lock_guard<std::mutex> lock(m_todosMutex);
-        m_todos = std::move(todos);
-    }
+    std::vector<CLFTodoItem> getTodos() const { return m_todoStore.getTodos(); }
+    void setTodos(std::vector<CLFTodoItem> todos) { m_todoStore.setTodos(std::move(todos)); }
 
     // —— 会话文件上下文（jsonl 追加式保存，设计-会话追加式保存.jsonl §3.9，2026-09-02）——
     // 所有访问全在 asyncSubmit 工作线程串行（§3.8），锁为防御性
+    // C2：数据/操作已迁 CLFSessionFileCtx，以下为转发门面（UI 调用面零变化）
 
     // 注入历史目录（CLFRepl 构造时调用；beginSessionFile 建文件用）
-    void setHistoryDir(const std::string& dir) { m_historyDir = dir; }
+    void setHistoryDir(const std::string& dir) { m_sessionFileCtx.setHistoryDir(dir); }
 
     // B2（2026-09-03，R1 裁决）：会话生命周期收敛 core——
     // beginTurnSession：回合开始前的会话准备（轮初两步条件判定收编）：
@@ -110,7 +105,7 @@ public:
 
     // 当前活动会话文件（空串 = 无活动文件）
     void        setActiveSessionFile(const std::string& jsonlPath);
-    std::string getActiveSessionFile() const;   // 锁内拷贝（m_sessionCtxMutex）
+    std::string getActiveSessionFile() const;   // 锁内拷贝（防御性）
 
     // 懒创建会话文件（CLFRepl::submit 在第一条新对话输入时调用）：
     //   m_resumedFrom 非空 → 复制源文件全部行（header 原样，session_id 延续语义）
@@ -129,24 +124,24 @@ public:
     std::string appendTurnLine();
 
     // m_todoDirty：仅 create/update/clear 置位（list 不调）；决定 turn 行是否带 todos 快照
-    void markTodosDirty() { m_todoDirty.store(true); }
+    void markTodosDirty() { m_todoStore.markTodosDirty(); }
 
     // 关闭当前会话文件（/clear 用）：生成摘要 → 追加 summary 行 → 关闭（文件保留为
     // 独立会话）。摘要开关关/无效时跳过行写入。幂等（无活动文件时仅生成缓存）
     void closeSessionFileWithSummary();
 
     // resume 续写态（restoreSession 内部置位；/clear 与 beginSessionFile 清除）
-    void              setResumedFrom(const std::string& p) { m_resumedFrom = p; }
-    const std::string& getResumedFrom() const { return m_resumedFrom; }
+    void              setResumedFrom(const std::string& p) { m_sessionFileCtx.setResumedFrom(p); }
+    const std::string& getResumedFrom() const { return m_sessionFileCtx.getResumedFrom(); }
 
     // todo 面板显示开关（B3 语义定案 2026-09-03）：= 回合级 todo 面板展示生命周期
     // 状态——core 在回合边界维护、UI 只读消费：
     //   清（面板显示）：todo_write create/update、resume 非全完成快照
     //   置（面板隐藏）：finishTurn 全完成收尾、beginTurnSession 新回合、
     //                  closeSessionAndReset、resume 全完成快照
-    // C2 时随 CLFTodoStore 迁移（B3 定案：接口保留不改名）
-    void setTodoPanelDone(bool done) { m_todoPanelDone.store(done); }
-    bool isTodoPanelDone() const      { return m_todoPanelDone.load(); }
+    // C2：已随 CLFTodoStore 迁移（B3 定案：接口保留不改名，转发实现）
+    void setTodoPanelDone(bool done) { m_todoStore.setTodoPanelDone(done); }
+    bool isTodoPanelDone() const      { return m_todoStore.isTodoPanelDone(); }
 
     // —— 查询 ——
 
@@ -222,19 +217,9 @@ private:
     std::function<bool(const std::string&)> m_confirmCallback;
     std::vector<CLFTool>              m_tools;
     std::vector<std::string>          m_loadedSkills;
-    std::unique_ptr<CLFSessionSummarizer> m_summarizer;
-    CLFSessionSummary                 m_cachedSummary;    // /exit 时生成，saveSession 时消费
-    std::vector<CLFTodoItem>          m_todos;            // S2-6: 待办清单，saveSession 时随会话写入
-    mutable std::mutex                m_todosMutex;       // 2026-09-02: 工作线程写 ↔ 主线程渲染读（设计 §3.9）
-    // —— jsonl 会话上下文（设计 §3.9，2026-09-02）——
-    std::atomic<bool>                 m_todoPanelDone{false};  // 面板显示开关（工作线程置位 ↔ 渲染读）
-    std::atomic<bool>                 m_todoDirty{false};      // 本轮操作过 create/update/clear（list 不置）
-    std::string                       m_activeSessionFile;     // 活动会话文件（防御性互斥见下）
-    mutable std::mutex                m_sessionCtxMutex;       // m_activeSessionFile 读写互斥（防御性）
-    std::string                       m_resumedFrom;           // 非空 = resume 续写态（工作线程串行，无锁）
-    std::string                       m_historyDir;            // 会话历史目录（CLFRepl 构造时注入）
-    size_t                            m_turnStartMsgCount = 0; // runTurn 入口轮初消息数（appendTurnLine 差集）
-    int                               m_turnsSinceSummary = 0; // S3-1 摘要频控轮计数
+    CLFSummaryCache                   m_summaryCache;     // C2: 生成器+缓存+频控随对象
+    CLFTodoStore                      m_todoStore;        // C2: todos 数据+锁+面板/脏标记随对象
+    CLFSessionFileCtx                 m_sessionFileCtx;   // C2: 会话文件状态+操作随对象
 
     // S3-1: 追加 summary 行落盘（摘要有效且有活动文件时；自动触发/工具/关闭共用）
     void appendSummaryLineNow();

@@ -48,10 +48,13 @@ add_library(clf_core STATIC
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRetryPolicy.cpp
     CLFCore/CLFSecurityPolicy.cpp
+    CLFCore/CLFSessionFileCtx.cpp
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSessionSummarizer.cpp
     CLFCore/CLFSkillLoader.cpp
+    CLFCore/CLFSummaryCache.cpp
     CLFCore/CLFSystemPromptBuilder.cpp
+    CLFCore/CLFTodoStore.cpp
     CLFCore/CLFToolExecutor.cpp
 )
 target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities)
@@ -110,7 +113,8 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFMessageCodec qa_CLFPeriodicTimer
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
                      qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel
-                     qa_CLFTipsBar qa_CLFCapabilities)
+                     qa_CLFTipsBar qa_CLFCapabilities
+                     qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -211,6 +215,19 @@ add_test(NAME qa_CLFTipsBar COMMAND qa_CLFTipsBar)
 add_executable(qa_CLFCapabilities test/qa_CLFCapabilities.cpp)
 target_link_libraries(qa_CLFCapabilities PRIVATE clf_core clf_capabilities)
 add_test(NAME qa_CLFCapabilities COMMAND qa_CLFCapabilities)
+
+# C2 拆角色三组件（2026-09-07）
+add_executable(qa_CLFTodoStore test/qa_CLFTodoStore.cpp)
+target_link_libraries(qa_CLFTodoStore PRIVATE clf_core)
+add_test(NAME qa_CLFTodoStore COMMAND qa_CLFTodoStore)
+
+add_executable(qa_CLFSessionFileCtx test/qa_CLFSessionFileCtx.cpp)
+target_link_libraries(qa_CLFSessionFileCtx PRIVATE clf_core)
+add_test(NAME qa_CLFSessionFileCtx COMMAND qa_CLFSessionFileCtx)
+
+add_executable(qa_CLFSummaryCache test/qa_CLFSummaryCache.cpp)
+target_link_libraries(qa_CLFSummaryCache PRIVATE clf_core)
+add_test(NAME qa_CLFSummaryCache COMMAND qa_CLFSummaryCache)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
