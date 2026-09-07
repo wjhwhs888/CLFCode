@@ -3,11 +3,10 @@
 ## 进行中
 
 ### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
-- **基线**：`bb01fc4`（A 批 + B 批 8 批次 + C1/C2/C3/C4 全部落地，ctest 26/26 + 冒烟 exit=0）
-- **下一步 = C 批第 5 项 C5（CLFSystemPromptBuilder 拆分重建）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C5 执行（P0-7/P1-14）：
-  拆 CLFSystemInfoProvider（detectOsInfo/detectShellInfo/captureGitStatus，Git TTL 缓存改实例成员）+ CLFSubprocessRunner（popen/_popen 封装——CommandExec 迁插件后 core 不可依赖之）+ CLFProjectRulesLoader（loadProjectRules + utf8SafeHead 安全截断）；消除 s_constitutionCache/s_gitCache 文件级非平凡静态对象（改 Builder 实例成员）；Builder 收窄：模板加载+组装+预算+变量替换（build() 流程不变）。依赖 A2 已就绪（replaceAll/时间戳/token 估算/截断直接消费）
+- **基线**：`d897809`（A 批 + B 批 8 批次 + C1~C5 全部落地，**P0 项 8 条全部清零**，ctest 27/27 + 冒烟 exit=0）
+- **下一步 = C 批最后一项 C6（CLFConfigLoader 表驱动）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C6 执行（P1-15）：
+  字段映射表替代 30+ if(contains)（{json key → 读取 lambda/类型枚举} 静态表）；新配置项 = CLFAgentConfig 加字段 + 表加一行；可独立执行（不依赖其他批）。C6 完成后阶段 1 全部 P0/P1 清零 → 出口验收（§八）+ 阶段 2 试点衔接
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **C 批剩余**：C5（Builder 重建）→ C6（ConfigLoader 表驱动）
 - **⚠ C4 遗留**：确认交互实机冒烟（确认/取消/Esc/Tab 切换/中断五路径）待用户验收（C4-3）
 - **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案，C1 接口化已为试点铺路）；阶段 3 仍标识性
 
@@ -32,7 +31,7 @@
 - **【批次 A2 公共字符工具 ✅（2026-09-03 晚，ctest 21/21 + 冒烟 exit=0）】**：新建 **CLFTextUtil**（basic/clf_types）：utf8SafeHead/Tail（16+ 截断点收敛，阈值语义逐处保留）、charWidth/displayWidth/substrByWidth（SelectionModel/Terminal 两套等价合并，SelectionModel 保持 API 转发零调用方改动）、splitLines、localNow/localNowTm（7 处时间戳 ifdef → 5 处收敛 + CLFTypes 2 内联封装保持 + Builder 裸 localtime 消除）、token 估算（Context/Builder 双实现统一，id/name 整数除语义保真）、replaceAll 归位。**sanitizeUtf8 归位 CLFEncoding**（Clipboard 不再依赖 Context 头——P0-8 分层泄漏消除）。**handleHttpError** 收敛 AgentLoop 私有（流式/同步 ~25 行×2 → 单实现 + HttpErrorAction 枚举三态）。删 getThinkingLines/hasThinkingContent 死代码。View pendingLine wrap → substrByWidth（R4 行为变更：CJK 换行点变化）。踩坑：sed 误伤定义行/锚点短路致 include 漏插（4 轮修复）；CLFUI/CLFTools 命名空间需 using。**遗留**：T3 视觉回归（CJK 长输入换行）待实机
 - **【批次 A4a handler 脚手架收敛 ✅（2026-09-03 晚，ctest 21/21 + 冒烟 exit=0）】**：detail::withHandlerScaffold 统一 parse/try-catch/dump 骨架（原 8 处同构样板）；7 handler 改造（readFile/webFetch/writeFile/editFile/listDirectory/executeCommand/search lambda，业务与容错保留——url 必填/cwd 边界/行切片语义逐一保真）；todo_write 状态机不碰（A4-2）；search 错误文案统一 "Handler error: "（qa 无文案断言，行为变化仅错误文本）。**A4b 结果结构化推迟至 B1 后**（与 executor 改造联动，分册 A4 已注）+ P2-8 后半（ProtocolAdapter m_error 显式字段）随 A4b
 - **【B 批推进（2026-09-03 晚）】**：**B5 ✅（cf4ee97）** ICLFOutput 注释修正（17 方法 10 通道 + 扩展纪律）；**B1 ✅（f6ed67d）** 能力标签（m_risk 复用 + m_isSearch/m_isRead + 口径统一；qa T5 忘打标实证——测试同步打标）；**B2/B4 ✅（d470e30）** 会话收敛（beginTurnSession/closeSessionAndReset——P0-4 关闭）+ 恢复回显外移（CLFSessionEchoLine——P0-6 关闭）+ JsonlType 常量单点（P1-7 关闭）；qa T7 测试更新（折叠块断言 → 结构化行断言）。每批 ctest 21/21 + 冒烟 exit=0
-- **【B 批全部完成（2026-09-03 晚）】**：**B3 ✅ + B6 ✅（fdca1b8）** todoPanelDone 语义注释定案（回合级展示生命周期，C2 随 CLFTodoStore 迁移）+ CLFDangerousCommandDetector 拆分（P1-16 双簇分离，SecurityPolicy API 转发测试零改）。**P0 项：P0-1~P0-6 已关（A1/B1/A2/B2/B3/B4）；P0-8 已关（A2 前半 sanitizeUtf8 归位 + C2b 后半 Context 纯容器化）；仅剩 P0-7（C5 待）**
+- **【B 批全部完成（2026-09-03 晚）】**：**B3 ✅ + B6 ✅（fdca1b8）** todoPanelDone 语义注释定案（回合级展示生命周期，C2 随 CLFTodoStore 迁移）+ CLFDangerousCommandDetector 拆分（P1-16 双簇分离，SecurityPolicy API 转发测试零改）。**P0 项 8 条全部清零 ✅：P0-1（A1）P0-2（B1）P0-3（A2）P0-4（B2）P0-5（B3）P0-6（B4）P0-7（C5）P0-8（A2+C2b）**
 - **【C1 ✅（2026-09-07 谷时段，两提交：5a239e4 + 0707c39）】归属修正 + 接口化**：
   - **C1a 归属修正**：FileOps/Diff 四文件移入 `src/CLFCapabilities/FileOps/`（命名空间 CLF::CLFTools 保留，阶段 2 迁 DLL 再重定）；新增 clf_capabilities 目标（链 clf_types 单向）；clf_core 删 2 个 CLFTools 源直编（CMake hack 消除）+ 链 clf_capabilities；clf_tools 同链；qa_CLFFileOps 改链 capabilities。依赖图：capabilities ← core/tools 单向无环 ✓
   - **C1b 接口化**：`src/CLFPluginApi/CLFFileService.hpp`（唯一跨 DLL 共享头：CLFFileInfo POD + CLFDiffOpCode 编码 + CLFFileCallbacks 回调集 + ICLFFileService 纯虚，禁依赖项目其他头）；CLFFileServiceImpl（进程内适配：POD → 静态函数转调，枚举序 static_assert 双向钉死）；ToolExecutor 构造注入 ICLFFileService*（必需依赖置默认参数组之前——C++ 规则：默认实参后不能跟无默认参数，踩坑已记录）+ prepareWritePreview 回调接收器化（readFile/previewEdit/computeDiff 三调用点 + TOCTOU getFileInfo）+ **读失败静默行为保真**（现状忽略返回值 = 新文件语义，注释钉死）；AgentLoop 构造加 fileService 借用参数（nullptr → 默认实现兜底，试点时管理器注入，core 零改动）
@@ -53,7 +52,11 @@
   - 新增窄操作：clearContent（启动重置）/ consumeRefreshPending（刷新消费）/ submitConfirm(accepted)（确认协议收敛，锁序 confirmMutex→mutex 嵌套与原内联一致 + cv 唤醒单点化）/ confirmSelection + cycleConfirmSelection / interruptFromUi（3 处中断收敛）
   - ConfirmBar 渲染改走 ContentSnapshot（零直读）；C4-4 纪律遵守（纯封装零接口化）
   - **⚠ 遗留（C4-3）**：确认交互实机冒烟（确认/取消/Esc/Tab 切换/中断五路径）待用户验收——ctest 无 Terminal 自动化
-- **待办**：C 批剩余（C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
+- **【C5 ✅（2026-09-07 谷时段，d897809）】Builder 拆分重建（P0-7 关闭 → P0 项 8 条全部清零）**：
+  - 三组件落定（逻辑原样搬移）：**CLFSubprocessRunner**（popen/_popen 封装静态 run——P1-14 后半：CommandExec 迁插件后 core 的独立子进程通道）/ **CLFProjectRulesLoader**（PROJECTRULES.md→CLAUDE.md 降级 + 5000 字符 UTF-8 安全截断）/ **CLFSystemInfoProvider**（detectOsInfo/detectShellInfo 静态 + captureGitStatus 实例方法，Git TTL 30s 缓存随实例）
+  - **静态对象消除**：s_gitCache → InfoProvider 实例成员、s_constitutionCache → Builder 实例成员（mtime 缓存语义不变）
+  - Builder 实例化收窄（build 改实例方法，流程保真）；AgentLoop 持成员（2 处调用点）。新增 qa_CLFSystemComponents 8 用例。ctest 27/27 + 冒烟 exit=0
+- **待办**：C 批最后一项（C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
