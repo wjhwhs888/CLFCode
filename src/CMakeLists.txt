@@ -46,6 +46,7 @@ add_library(clf_core STATIC
     CLFCore/CLFLogger.cpp
     CLFCore/CLFMessageCodec.cpp
     CLFCore/CLFPasserby.cpp
+    CLFCore/CLFProjectRulesLoader.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRetryPolicy.cpp
     CLFCore/CLFSecurityPolicy.cpp
@@ -53,7 +54,9 @@ add_library(clf_core STATIC
     CLFCore/CLFSessionManager.cpp
     CLFCore/CLFSessionSummarizer.cpp
     CLFCore/CLFSkillLoader.cpp
+    CLFCore/CLFSubprocessRunner.cpp
     CLFCore/CLFSummaryCache.cpp
+    CLFCore/CLFSystemInfoProvider.cpp
     CLFCore/CLFSystemPromptBuilder.cpp
     CLFCore/CLFTodoStore.cpp
     CLFCore/CLFToolExecutor.cpp
@@ -116,7 +119,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel
                      qa_CLFTipsBar qa_CLFCapabilities
                      qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache
-                     qa_CLFContextWindow)
+                     qa_CLFContextWindow qa_CLFSystemComponents)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -235,6 +238,11 @@ add_test(NAME qa_CLFSummaryCache COMMAND qa_CLFSummaryCache)
 add_executable(qa_CLFContextWindow test/qa_CLFContextWindow.cpp)
 target_link_libraries(qa_CLFContextWindow PRIVATE clf_core)
 add_test(NAME qa_CLFContextWindow COMMAND qa_CLFContextWindow)
+
+# C5 拆分组件（RulesLoader/InfoProvider/SubprocessRunner，2026-09-07）
+add_executable(qa_CLFSystemComponents test/qa_CLFSystemComponents.cpp)
+target_link_libraries(qa_CLFSystemComponents PRIVATE clf_core)
+add_test(NAME qa_CLFSystemComponents COMMAND qa_CLFSystemComponents)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

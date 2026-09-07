@@ -1,90 +1,41 @@
 // CLFSystemPromptBuilder.cpp — System Prompt 构建器实现
-// 模板加载 → 动态上下文捕获 → 规则/Skill/L1宪法组装 → Token 预算 → 变量替换
+// 模板加载 → 动态上下文组装 → 规则/Skill/L1宪法组装 → Token 预算 → 变量替换
+// C5（2026-09-07）收窄：OS/Shell/Git 捕获 → CLFSystemInfoProvider、
+// 子进程执行 → CLFSubprocessRunner、项目规则 → CLFProjectRulesLoader
 
 #include "CLFCore/CLFSystemPromptBuilder.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFProjectRulesLoader.hpp"
+#include "CLFCore/CLFSubprocessRunner.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：估算/截断/替换/时间戳归位
 
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
-#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#ifdef _WIN32
-#define popen  _popen
-#define pclose _pclose
-#endif
-
 namespace fs = std::filesystem;
 
 namespace CLF::CLFCore {
 
-namespace {
-
 // ============================================================================
-// 工具函数
-// ============================================================================
-
-std::string execCommand(const std::string& cmd) {
-    std::string result;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    char buf[256];
-    while (fgets(buf, sizeof(buf), pipe)) {
-        result += buf;
-    }
-    pclose(pipe);
-    if (!result.empty() && result.back() == '\n') result.pop_back();
-    return result;
-}
-
-// （A2：estimateTokenChars/replaceAll 已归位 CLFTextUtil，原定义删除）
-
-// ============================================================================
-// 缓存: L1 宪法
-// ============================================================================
-
-struct ConstitutionCache {
-    std::string content;
-    fs::file_time_type mtime;
-};
-static ConstitutionCache s_constitutionCache;
-
-// ============================================================================
-// 缓存: Git 状态
-// ============================================================================
-
-struct GitCache {
-    std::string info;
-    std::string workspaceRoot;
-    std::time_t captureTime = 0;
-};
-static GitCache s_gitCache;
-
-constexpr int kGitTTLSeconds = 30;
-
-} // anonymous namespace
-
-// ============================================================================
-// build() — 主入口
+// build() — 主入口（流程不变，C5 保真）
 // ============================================================================
 
 std::string CLFSystemPromptBuilder::build(const Context& ctx) {
     // ① 加载模板（文件 → 降级默认）
     std::string tpl = loadTemplate();
 
-    // ② 动态上下文
-    std::string osInfo = detectOsInfo();
-    std::string shellInfo = detectShellInfo();
+    // ② 动态上下文（C5：OS/Shell 检测经 CLFSystemInfoProvider）
+    std::string osInfo    = CLFSystemInfoProvider::detectOsInfo();
+    std::string shellInfo = CLFSystemInfoProvider::detectShellInfo();
 
-    // ③ 项目信息
-    std::string gitInfo = captureGitStatus(ctx.workspaceRoot);
-    std::string rules = loadProjectRules(ctx.workspaceRoot);
+    // ③ 项目信息（C5：Git 捕获经 InfoProvider 实例缓存；规则经 CLFProjectRulesLoader）
+    std::string gitInfo = m_infoProvider.captureGitStatus(ctx.workspaceRoot);
+    std::string rules = CLFProjectRulesLoader::loadProjectRules(ctx.workspaceRoot);
     std::string projectCtx;
     if (!gitInfo.empty()) projectCtx += gitInfo;
     if (!rules.empty()) {
@@ -172,7 +123,7 @@ std::string CLFSystemPromptBuilder::defaultTemplate() {
 }
 
 // ============================================================================
-// L1 宪法（缓存 + mtime 检测）
+// L1 宪法（mtime 缓存随实例——C5 消文件级静态对象）
 // ============================================================================
 
 std::string CLFSystemPromptBuilder::loadConstitution() {
@@ -181,8 +132,8 @@ std::string CLFSystemPromptBuilder::loadConstitution() {
     if (!fs::exists(path, ec)) return "";
 
     auto ftime = fs::last_write_time(path, ec);
-    if (!ec && ftime == s_constitutionCache.mtime && !s_constitutionCache.content.empty()) {
-        return s_constitutionCache.content;  // mtime 未变，复用缓存
+    if (!ec && ftime == m_constitutionCache.mtime && !m_constitutionCache.content.empty()) {
+        return m_constitutionCache.content;  // mtime 未变，复用缓存
     }
 
     std::ifstream file(path);
@@ -190,153 +141,9 @@ std::string CLFSystemPromptBuilder::loadConstitution() {
     std::ostringstream oss;
     oss << file.rdbuf();
 
-    s_constitutionCache.content = oss.str();
-    s_constitutionCache.mtime   = ftime;
-    return s_constitutionCache.content;
-}
-
-// ============================================================================
-// Git 状态（跨平台 popen + TTL 30s 缓存）
-// ============================================================================
-
-std::string CLFSystemPromptBuilder::captureGitStatus(const std::string& workspaceRoot) {
-    // 检查缓存是否有效
-    std::time_t now = std::time(nullptr);
-    if (s_gitCache.workspaceRoot == workspaceRoot &&
-        s_gitCache.captureTime > 0 &&
-        (now - s_gitCache.captureTime) < kGitTTLSeconds) {
-        return s_gitCache.info;  // 缓存命中
-    }
-
-    // 检查是否为 git 仓库
-    std::error_code ec;
-    if (!fs::exists(workspaceRoot + "/.git", ec)) {
-        s_gitCache = {};
-        return "";
-    }
-
-    // 保存当前目录，切换到工作区执行 git 命令
-    std::string result;
-    std::string branch = execCommand("git -C \"" + workspaceRoot + "\" branch --show-current 2>nul");
-    if (branch.empty()) {
-        s_gitCache = {};
-        return "";
-    }
-
-    result = "- Git 分支：" + branch + "\n- 最近提交：\n";
-    std::string log = execCommand("git -C \"" + workspaceRoot + "\" log --oneline -5 2>nul");
-    if (!log.empty()) {
-        std::istringstream iss(log);
-        std::string line;
-        while (std::getline(iss, line)) {
-            if (!line.empty()) result += "  " + line + "\n";
-        }
-    }
-
-    std::string status = execCommand("git -C \"" + workspaceRoot + "\" status --short 2>nul");
-    if (status.empty()) {
-        result += "- 工作区状态：干净（无未提交变更）\n";
-    } else {
-        int count = 0;
-        std::istringstream iss(status);
-        std::string line;
-        while (std::getline(iss, line)) { if (!line.empty()) ++count; }
-        result += "- 工作区状态：" + std::to_string(count) + " 个文件有变更\n";
-    }
-
-    // 时间戳（A2：唯一裸 localtime → CLFTextUtil::localNow，线程安全）
-    result += std::string("（Git 状态捕获于 ")
-           + CLFTextUtil::localNow("%H:%M:%S")
-           + "，如需实时状态请使用 execute_command 查询）\n";
-
-    // 更新缓存
-    s_gitCache.info           = result;
-    s_gitCache.workspaceRoot  = workspaceRoot;
-    s_gitCache.captureTime    = now;
-    return result;
-}
-
-// ============================================================================
-// 项目规则
-// ============================================================================
-
-std::string CLFSystemPromptBuilder::loadProjectRules(const std::string& workspaceRoot) {
-    constexpr int kMaxChars = 5000;
-
-    auto tryRead = [&](const std::string& filename) -> std::string {
-        std::string path = workspaceRoot + "/" + filename;
-        std::error_code ec;
-        if (!fs::exists(path, ec)) return "";
-        if (fs::file_size(path, ec) == 0) return "";  // 空文件不降级
-        std::ifstream file(path);
-        if (!file.is_open()) return "";
-        std::ostringstream oss;
-        oss << file.rdbuf();
-        std::string content = oss.str();
-        if (content.empty()) return "";
-        bool truncated = false;
-        if (content.size() > static_cast<size_t>(kMaxChars)) {
-            // A2：字节级截断 → utf8SafeHead（不劈半多字节；无 ellipsis，截断标记在下方）
-            content = CLFTextUtil::utf8SafeHead(content, kMaxChars, "");
-            truncated = true;
-        }
-        std::string header = "## 项目规则（来自 " + filename + "）\n";
-        if (truncated) content += "\n[…项目规则超过5000字符，已截断]";
-        return header + content;
-    };
-
-    std::string result = tryRead("PROJECTRULES.md");
-    if (!result.empty()) return result;
-    return tryRead("CLAUDE.md");
-}
-
-// ============================================================================
-// OS / Shell 检测
-// ============================================================================
-
-std::string CLFSystemPromptBuilder::detectOsInfo() {
-#ifdef _WIN32
-    std::string ver = execCommand("ver 2>nul");
-    if (!ver.empty()) {
-        // "Microsoft Windows [Version 10.0.26200]" → "Windows 10.0.26200"
-        size_t pos = ver.find("Windows");
-        if (pos != std::string::npos) {
-            ver = ver.substr(pos);
-            // 去掉末尾的 ]
-            size_t rb = ver.find(']');
-            if (rb != std::string::npos) ver = ver.substr(0, rb);
-        }
-        return "- 操作系统：" + ver;
-    }
-    return "- 操作系统：Windows";
-#else
-    std::string uname = execCommand("uname -a 2>/dev/null");
-    if (!uname.empty()) return "- 操作系统：" + uname;
-    return "- 操作系统：Linux / macOS";
-#endif
-}
-
-std::string CLFSystemPromptBuilder::detectShellInfo() {
-#ifdef _WIN32
-    const char* comspec = std::getenv("COMSPEC");
-    if (comspec) {
-        std::string s(comspec);
-        // 判断是 cmd 还是 bash
-        if (s.find("bash") != std::string::npos) return "bash (Git Bash)";
-        if (s.find("powershell") != std::string::npos || s.find("pwsh") != std::string::npos)
-            return "PowerShell";
-        return "cmd.exe";
-    }
-    return "cmd.exe";
-#else
-    const char* shell = std::getenv("SHELL");
-    if (shell) {
-        std::string s(shell);
-        size_t pos = s.rfind('/');
-        return (pos != std::string::npos) ? s.substr(pos + 1) : s;
-    }
-    return "sh";
-#endif
+    m_constitutionCache.content = oss.str();
+    m_constitutionCache.mtime   = ftime;
+    return m_constitutionCache.content;
 }
 
 // ============================================================================

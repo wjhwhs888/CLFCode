@@ -778,7 +778,7 @@ void CLFAgentLoop::emitInterrupted() {
 
 void CLFAgentLoop::injectSystemPrompt() {
     auto ctx = buildSystemPromptContext();
-    m_context.setSystemPrompt(CLFSystemPromptBuilder::build(ctx));
+    m_context.setSystemPrompt(m_systemPromptBuilder.build(ctx));
 }
 
 CLFSystemPromptBuilder::Context CLFAgentLoop::buildSystemPromptContext() const {
@@ -800,7 +800,7 @@ CLFSystemPromptBuilder::Context CLFAgentLoop::buildSystemPromptContext() const {
 
 void CLFAgentLoop::rebuildSystemMessage() {
     auto ctx = buildSystemPromptContext();
-    m_context.setSystemPrompt(CLFSystemPromptBuilder::build(ctx));
+    m_context.setSystemPrompt(m_systemPromptBuilder.build(ctx));
 }
 
 } // namespace CLF::CLFCore

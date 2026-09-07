@@ -222,6 +222,7 @@ private:
     CLFSummaryCache                   m_summaryCache;     // C2: 生成器+缓存+频控随对象
     CLFTodoStore                      m_todoStore;        // C2: todos 数据+锁+面板/脏标记随对象
     CLFSessionFileCtx                 m_sessionFileCtx;   // C2: 会话文件状态+操作随对象
+    CLFSystemPromptBuilder            m_systemPromptBuilder;  // C5: 实例化（缓存随实例）
 
     // S3-1: 追加 summary 行落盘（摘要有效且有活动文件时；自动触发/工具/关闭共用）
     void appendSummaryLineNow();
