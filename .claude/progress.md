@@ -2,13 +2,12 @@
 
 ## 进行中
 
-### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
-- **基线**：`ddf768c`（阶段 1 全部批次落地：A3/A1/A2/A4/B5/B1/B2/B4/B3/B6/C1-C6，**P0/P1 全部清零**，ctest 28/28 + 冒烟 exit=0）
-- **下一步 = 阶段 1 出口验收（§八）**：
-  1. 用户实机冒烟：交互五路径（对话/工具调用/确认/粘贴/恢复会话）+ C4-3 确认专项（确认/取消/Esc/Tab 切换/中断）+ C5 Builder 路径（系统提示生成正常）
-  2. 验收通过 → 设计文档归档（`设计/归档/`）+ 阶段 2 开工：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（分册 §4.1 步骤 2 起，C1 接口化已铺路）
+### ▶ 下次开工指引（2026-09-07 发布收尾时更新，从这里接着干）
+- **基线**：`v0.7.0` tag（阶段 1 全部批次落地 + 用户实机验收通过 + 设计文档归档；ctest 28/28 + 冒烟 exit=0）
+- **当前状态**：v0.7.0 已打 tag 推送，**发布由用户执行**（release.ps1，memory：release-workflow 三步对应）；用户将在其他机器实测新版本
+- **下一步 = 阶段 2 开工（等用户发布+实测反馈后）**：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（阶段 2 分册 §4.1 步骤 2 起——步骤 1 C1+ 已落地）；随后 2.2a tools.fileops.dll 试点（C1 接口化已铺路，core 零改动承诺待验证）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **⚠ 遗留**：C4-3 确认交互实机冒烟待用户验收；C2-3 接口化（ProtocolAdapter 等）缓做记录在案
+- **⚠ 遗留**：C2-3 接口化（ProtocolAdapter 等）缓做记录在案（C3 注记）；「首次运行崩溃修复」长期观察未闭环（progress 长期观察区）
 - **阶段 2 出口后**：试点 FileOps 迁 DLL（tools.fileops.dll）——C1 接口化后 core 零改动承诺待验证
 
 
@@ -83,6 +82,15 @@
   - 若走 → 先做 M1（CLFJsonRpcClient 与 MCP 传输同构，价值独立于决策）；若不走 → 自研轻量 subagent
 
 ## 已完成
+
+### 2026-09-07 阶段 1 代码审查与模块重构 ✅ 全部完成（v0.7.0 发布中，tag 已打）
+- **全部批次落地（ddf768c 基线）**：A3（死代码清理）→ A1（Repl 拆分）→ A2（字符工具）→ A4（handler 脚手架）→ B5/B1/B2/B4/B3/B6（接口纪律/标签/会话收敛/回显外移/语义定案/危险命令拆分）→ **C1（能力层独立+接口化）→ C2（AgentLoop 拆角色+Context 纯容器）→ C3（ICLFOutput 四窄接口）→ C4（Terminal 封装）→ C5（Builder 拆分重建）→ C6（ConfigLoader 表驱动）**
+- **P0 项 8 条 + P1 项 16 条全部清零**；ctest 21 → 28 套件全绿（新增 7 套件 49 用例）；零 CMake hack、依赖图单向无环
+- **用户实机验收通过（2026-09-07）**：按常用测试路径实测——确认交互（C4 专项）、正常对话（C2/C5 路径）全部正常
+- **收尾**：设计文档归档（阶段 1 分册 + 边界清单 + 功能修复批 → `设计/归档/`，总纲/README 引用同步）；CHANGELOG v0.7.0 段落；VERSION bump v0.7.0；tag 已打
+- **阶段 2 前置已铺路**：C1 接口化（ICLFFileService 落 clf_plugin_api 头 + ToolExecutor 经接口调用）——试点 FileOps 迁 DLL 时 core 零改动
+
+### 更早完成区（A 阶段本体自研 / dsh Spike / 各版本发布）——见下
 
 ### 2026-09-02 A5 工具调用循环上限机制改造 ✅（两阶段全落地，待人工验收 Tips 行；未发布——攒入下一版本）
 - **设计**：flash 草案 → pro 三审定稿（`设计/设计-工具调用循环上限机制改造.md`）——三审修 9 处：伪代码结构（finalResponse 机制照草案实现会 fall 触顶路径）、T2 构造复制 vs 成功复制冲突、悬空引用×2、静默计时挂载点（流式回调→输出活动计数）、阈值可注入、触顶文案补"继续"引导、收尾 user 消息 jsonl 语义、max-tokens+tool_calls 边界、concluded 空文本边界
