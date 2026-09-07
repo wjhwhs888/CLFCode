@@ -3,12 +3,13 @@
 ## 进行中
 
 ### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
-- **基线**：`d897809`（A 批 + B 批 8 批次 + C1~C5 全部落地，**P0 项 8 条全部清零**，ctest 27/27 + 冒烟 exit=0）
-- **下一步 = C 批最后一项 C6（CLFConfigLoader 表驱动）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C6 执行（P1-15）：
-  字段映射表替代 30+ if(contains)（{json key → 读取 lambda/类型枚举} 静态表）；新配置项 = CLFAgentConfig 加字段 + 表加一行；可独立执行（不依赖其他批）。C6 完成后阶段 1 全部 P0/P1 清零 → 出口验收（§八）+ 阶段 2 试点衔接
+- **基线**：`ddf768c`（阶段 1 全部批次落地：A3/A1/A2/A4/B5/B1/B2/B4/B3/B6/C1-C6，**P0/P1 全部清零**，ctest 28/28 + 冒烟 exit=0）
+- **下一步 = 阶段 1 出口验收（§八）**：
+  1. 用户实机冒烟：交互五路径（对话/工具调用/确认/粘贴/恢复会话）+ C4-3 确认专项（确认/取消/Esc/Tab 切换/中断）+ C5 Builder 路径（系统提示生成正常）
+  2. 验收通过 → 设计文档归档（`设计/归档/`）+ 阶段 2 开工：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（分册 §4.1 步骤 2 起，C1 接口化已铺路）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **⚠ C4 遗留**：确认交互实机冒烟（确认/取消/Esc/Tab 切换/中断五路径）待用户验收（C4-3）
-- **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案，C1 接口化已为试点铺路）；阶段 3 仍标识性
+- **⚠ 遗留**：C4-3 确认交互实机冒烟待用户验收；C2-3 接口化（ProtocolAdapter 等）缓做记录在案
+- **阶段 2 出口后**：试点 FileOps 迁 DLL（tools.fileops.dll）——C1 接口化后 core 零改动承诺待验证
 
 
 ### 【插件化与集成三阶段】阶段 1 评审·取证·修订 ✅（2026-09-03 晚，谷价时段；方案待排期执行）
@@ -56,7 +57,12 @@
   - 三组件落定（逻辑原样搬移）：**CLFSubprocessRunner**（popen/_popen 封装静态 run——P1-14 后半：CommandExec 迁插件后 core 的独立子进程通道）/ **CLFProjectRulesLoader**（PROJECTRULES.md→CLAUDE.md 降级 + 5000 字符 UTF-8 安全截断）/ **CLFSystemInfoProvider**（detectOsInfo/detectShellInfo 静态 + captureGitStatus 实例方法，Git TTL 30s 缓存随实例）
   - **静态对象消除**：s_gitCache → InfoProvider 实例成员、s_constitutionCache → Builder 实例成员（mtime 缓存语义不变）
   - Builder 实例化收窄（build 改实例方法，流程保真）；AgentLoop 持成员（2 处调用点）。新增 qa_CLFSystemComponents 8 用例。ctest 27/27 + 冒烟 exit=0
-- **待办**：C 批最后一项（C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
+- **【C6 ✅（2026-09-07 谷时段，ddf768c）】ConfigLoader 表驱动（P1-15 关闭）**：
+  - 26 字段映射表（constexpr POD：section/key/类型枚举/成员指针槽）替代 30+ if(contains)——新配置项 = 结构加字段 + 表加一行（2 处→1 处）
+  - 7 类型枚举语义保真：stop 追加不清空 vs command_allowlist clear 先行、IntMap 逐键过滤、类型过滤保持默认
+  - 新增 qa_CLFConfigLoader 5 用例（26 字段全断言 = 映射表形状钉子）。ctest 28/28 + 冒烟 exit=0
+  - **阶段 1 全部 P0/P1 清零 → 出口标准达成（§八.1/2/4），§八.3 功能回归待用户实机验收**
+- **待办**：阶段 1 出口验收（用户实机冒烟五路径 + C4-3 确认专项）→ 设计文档归档 → 阶段 2 开工（2.1 插件管理器）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
