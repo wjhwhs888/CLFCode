@@ -12,15 +12,15 @@ CLFConfirmBar::PromptParts CLFConfirmBar::splitPrompt(const std::string& prompt)
     return {prompt.substr(0, nl), prompt.substr(nl + 1)};
 }
 
-ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
-    if (!terminal.isConfirmActive())
+ftxui::Element CLFConfirmBar::render(const CLFTerminal::ContentSnapshot& snap) const {
+    if (!snap.confirmActive)
         return ftxui::emptyElement();
 
     using namespace ftxui;
 
     auto opts = ftxui::hbox();
-    for (size_t i = 0; i < terminal.m_confirmOpts.size(); ++i) {
-        bool sel = (static_cast<int>(i) == terminal.m_confirmSel);
+    for (size_t i = 0; i < snap.confirmOpts.size(); ++i) {
+        bool sel = (static_cast<int>(i) == snap.confirmSel);
         auto marker = sel
             ? ftxui::bold(ftxui::text("●") | ftxui::color(ftxui::Color::Green))
             : ftxui::dim(ftxui::text("○"));
@@ -28,7 +28,7 @@ ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
             std::move(opts),
             ftxui::text("  [") | ftxui::dim,
             marker,
-            ftxui::text("] " + terminal.m_confirmOpts[i])
+            ftxui::text("] " + snap.confirmOpts[i])
         );
     }
     opts = ftxui::hbox(
@@ -38,7 +38,7 @@ ftxui::Element CLFConfirmBar::render(const CLFTerminal& terminal) const {
     );
 
     // P2-2: headline 琥珀加粗 / 参数 detail dim（dsh 审批卡模式）
-    auto parts = splitPrompt(terminal.m_confirmPrompt);
+    auto parts = splitPrompt(snap.confirmPrompt);
     ftxui::Elements body;
     body.push_back(ftxui::hbox({
         ftxui::text("  ⚠ "),

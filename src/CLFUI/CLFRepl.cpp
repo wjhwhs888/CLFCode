@@ -125,8 +125,7 @@ int CLFRepl::run() {
         auto  screen   = ftxui::ScreenInteractive::FullscreenPrimaryScreen();
         if (terminal) {
             terminal->setScreen(&screen);
-            terminal->m_contentBuffer.clear();
-            terminal->m_pendingLine.clear();
+            terminal->clearContent();   // C4：启动重置窄操作
         }
         m_dispatcher->setOnExit([&] { screen.ExitLoopClosure()(); });
         printBanner();

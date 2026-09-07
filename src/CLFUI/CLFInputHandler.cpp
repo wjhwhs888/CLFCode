@@ -102,25 +102,17 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     if (terminal && terminal->isConfirmActive()) {
         // confirm 激活期内取消任何待提交（定时线程可能已确认，见 0b）
         pasteCoalescer.onOtherEvent(std::chrono::steady_clock::now());
-        // "返回"/ESC/CtrlC 统一行为: 拒绝 + 中断 Agent，回到输入编辑
+        // "返回"/ESC/CtrlC 统一行为: 拒绝 + 中断 Agent，回到输入编辑。
+        // C4：结果写入/唤醒经 CLFTerminal::submitConfirm 收敛（锁序保真）
         auto cancelWithInterrupt = [&] {
-            if (terminal->m_interruptCb)
-                terminal->m_interruptCb();  // 先中断再唤醒 worker
-            {
-                std::lock_guard lock(terminal->m_confirmMutex);
-                terminal->m_confirmResult = false;
-                terminal->setConfirmActive(false);
-            }
-            terminal->m_confirmCv.notify_one();
+            terminal->interruptFromUi();    // 先中断再唤醒 worker
+            terminal->submitConfirm(false);
         };
 
         if (e == ftxui::Event::Return) {
-            if (terminal->m_confirmSel == 0) {
+            if (terminal->confirmSelection() == 0) {
                 // "确认" → 同意执行
-                std::lock_guard lock(terminal->m_confirmMutex);
-                terminal->m_confirmResult = true;
-                terminal->setConfirmActive(false);
-                terminal->m_confirmCv.notify_one();
+                terminal->submitConfirm(true);
             } else {
                 // "返回" → 中断
                 cancelWithInterrupt();
@@ -133,7 +125,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
         }
         if (e == ftxui::Event::ArrowLeft || e == ftxui::Event::ArrowRight) {
             // 两选项切换: 0↔1
-            terminal->m_confirmSel = 1 - terminal->m_confirmSel;
+            terminal->cycleConfirmSelection();
             return true;
         }
         // Shift+Tab: 确认栏期间仍可切换安全模式
@@ -312,8 +304,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
             dbgEvt("  CtrlC busy="
                    + std::string(asyncSubmit.busy() ? "1" : "0"));
         if (asyncSubmit.busy()) {
-            if (terminal && terminal->m_interruptCb)
-                terminal->m_interruptCb();
+            if (terminal) terminal->interruptFromUi();
         }
         // 空闲：消费且无动作（不退出）
         return true;
@@ -335,8 +326,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
         m_lastEscTime = now;
 
         // 5b. 立即中断
-        if (terminal && terminal->m_interruptCb)
-            terminal->m_interruptCb();
+        if (terminal) terminal->interruptFromUi();
         m_justInterrupted = true;
         if (asyncSubmit.busy() || m_needRestoreInput) {
             inputText.clear();

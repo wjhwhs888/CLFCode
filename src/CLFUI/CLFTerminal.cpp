@@ -317,6 +317,37 @@ void CLFTerminal::onInterrupt(std::function<void()> cb) {
     m_interruptCb = std::move(cb);
 }
 
+// ============================================================================
+// C4 窄操作（2026-09-07）：状态封装后的外部访问收敛点
+// ============================================================================
+
+void CLFTerminal::clearContent() {
+    // 启动重置（CLFRepl::run 构造时调用）：清残留内容缓冲与待写行
+    m_contentBuffer.clear();
+    m_pendingLine.clear();
+}
+
+bool CLFTerminal::consumeRefreshPending() {
+    return m_refreshPending.exchange(false);
+}
+
+void CLFTerminal::submitConfirm(bool accepted) {
+    // 锁序与原 CLFInputHandler 内联代码一致（confirmMutex → mutex 嵌套）：
+    // confirm() 的 cv wait 谓词（!m_confirmActive）经 m_mutex 读取，故
+    // 结果与激活态须在同一确认锁临界区内更新，再 notify 唤醒
+    {
+        std::lock_guard confirmLock(m_confirmMutex);
+        m_confirmResult = accepted;
+        std::lock_guard stateLock(m_mutex);
+        m_confirmActive = false;
+    }
+    m_confirmCv.notify_one();
+}
+
+void CLFTerminal::interruptFromUi() {
+    if (m_interruptCb) m_interruptCb();
+}
+
 void CLFTerminal::emitError(const std::string& msg) {
     notifyActivity();  // A5 ⑨
     // P0-1: 错误折叠摘要 = 首行 + 截断（dsh "错误首行即摘要"模式）

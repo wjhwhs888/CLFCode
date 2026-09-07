@@ -5,14 +5,15 @@
 
 #include <ftxui/dom/elements.hpp>
 
-namespace CLF::CLFUI {
+#include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 参数完整类型
 
-class CLFTerminal;
+namespace CLF::CLFUI {
 
 class CLFConfirmBar {
 public:
-    // 渲染确认栏（active=false 时返回 emptyElement）
-    ftxui::Element render(const CLFTerminal& terminal) const;
+    // 渲染确认栏（C4：改走 ContentSnapshot——快照含 confirm 全字段，
+    // active=false 时返回 emptyElement；状态收 private 后零直读）
+    ftxui::Element render(const CLFTerminal::ContentSnapshot& snapshot) const;
 
     // P2-2: 拆分 prompt——首行 headline（琥珀加粗），其余 detail（dim）
     // 纯函数可单测（T8）

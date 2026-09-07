@@ -83,7 +83,7 @@ ftxui::Element CLFReplView::render() {
     auto& m_agent = m_repl.m_agent;
     auto& m_dispatcher = m_repl.m_dispatcher;
 
-    if (terminal) terminal->m_refreshPending = false;
+    if (terminal) terminal->consumeRefreshPending();
 
     // 每帧剥离 CPR / ANSI 残留（\033 被 CatchEvent 吃掉后残留 [n;mR）
     // 不能用 m_justInterrupted 单帧判断（CPR 字节可能在渲染后到达）
@@ -368,7 +368,8 @@ ftxui::Element CLFReplView::render() {
         m_input->Render(),
         thinSep(),
         modeLine,
-        m_confirmBar.render(*terminal),
+        // C4：确认栏渲染走快照（状态收 private 后不再直读 Terminal 成员）
+        m_confirmBar.render(m_lastSnapshot),
     });
 }
 
