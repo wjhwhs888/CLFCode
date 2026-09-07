@@ -3,11 +3,11 @@
 ## 进行中
 
 ### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
-- **基线**：`aa4ef3c`（A 批 + B 批 8 批次 + C1 + C2 全部落地，ctest 26/26 + 冒烟 exit=0）
-- **下一步 = C 批第 3 项 C3（ICLFOutput 拆窄接口）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C3 执行：
-  17 方法归四接口（内容/状态/交互/辅助，逐方法裁决表 C3-1 先行）；CLFTerminal 聚合形式（C3-2：多继承 vs 组合，pro 定）；调用面改动清单先行（C3-3：AgentLoop/Executor/Repl 构造参数 + 4 mock 最小集）；qa mock 分化（C3-4）。C2-3 接口化（ProtocolAdapter 等）缓做记录在此，C3 后按需评估
+- **基线**：`27e1fde`（A 批 + B 批 8 批次 + C1/C2/C3 全部落地，ctest 26/26 + 冒烟 exit=0）
+- **下一步 = C 批第 4 项 C4（CLFTerminal 封装）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C4 执行：
+  状态收 private + submitConfirm/cancelConfirm 收敛确认协议。前置取证 C4-1：public 直写点清单一处不漏（grep Terminal 成员直写点 → 映射窄操作 appendLine/submitConfirm/cancelConfirm/setInterruptCb）；C4-2 确认协议收敛时序（确认全链路发起/等待/唤醒/取消/超时）；C4-3 冒烟加确认专项；C4-4 只封装不接口化（防范围蔓延）。A1 已拆 Repl → 直写点集中在 Repl/View/InputHandler
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **C 批剩余**：C3（ICLFOutput 拆窄）→ C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
+- **C 批剩余**：C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
 - **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案，C1 接口化已为试点铺路）；阶段 3 仍标识性
 
 
@@ -42,7 +42,12 @@
   - **C2b CLFContext 收窄（P0-8 后半关闭）**：**CLFContextWindow** 策略类（窗口截断自 getMessages 原样搬移）+ **truncateToolResult 归位 CLFTextUtil**（8000 截断移出）+ CLFContext 纯容器（构造删参数、getMessages 全量、仅 sanitize 存储不变量）；AgentLoop 发 API/摘要输入前 apply；差集/轮初计数改全量语义（行为等价——截断从尾部保留，新增必在窗内）
   - **测试**：新增 qa_CLFTodoStore(6) + qa_CLFSessionFileCtx(6) + qa_CLFSummaryCache(4) + qa_CLFContextWindow(6)；qa_CLFContext 改纯容器断言。ctest 26/26 + 冒烟 exit=0。踩坑：① Windows 文件锁——ifstream 未析构就 remove_all（测试读文件作用域化）② shared_ptr 参数构造 nullptr 需显式传参
   - **C2-3 接口化缓做**（评估记录）：ProtocolAdapter/SecurityPolicy/Summarizer 接口化收益低（qa 全真实实现、无 mock 需求），C3 后按需
-- **待办**：C 批剩余（C3 ICLFOutput 拆窄 → C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
+- **【C3 ✅（2026-09-07 谷时段，27e1fde）】ICLFOutput 拆窄四接口（ISP 落地）**：
+  - 归位表（C3-1 落定）：内容 4（emitContent/emitRaw/emitStyledLine/showFoldedBlock）+ 进度状态 8（setStatus/setStatusTextOnly/setStatusKind/showProgress/finishProgress/requestRefresh/notifyActivity/activityCount）+ 交互 2（confirm/onInterrupt）+ 辅助 3（emitError/appendThinking/clearThinking）
+  - ICLFOutput 收窄为**聚合接口**（仅继承四窄接口无新方法）——CLFTerminal 类声明零改动（聚合形式 = 接口层多继承，比 Terminal 多继承/组合持有更轻，C3-2 落定）
+  - 签名窄化按使用清单：Passerby→Content / ThinkingIndicator→Progress / TipsBar→Progress（1 方法消费者示范）+ ToolExecutor→Content+Progress 两指针（5 方法，含 renderDiff/guard 重定向）。**保持宽（回流记录）**：AgentLoop（9 方法全通道编排）/ Repl（装配点）/ Commands（3 方法跨两通道留维护）
+  - mock 分化：qa_CLFPasserby 17→4 方法、qa_CLFTipsBar 17→3 方法。踩坑：复合条件 `if (m_output && ...)` 残留（批量替换只命中 `if (m_output)` 整条件）——4 处逐行按通道重定向。ctest 26/26 + 冒烟 exit=0
+- **待办**：C 批剩余（C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
