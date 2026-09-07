@@ -10,7 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "CLFCapabilities/FileOps/CLFDiff.hpp"
-#include "CLFCapabilities/FileOps/CLFFileOps.hpp"
+#include "CLFPluginApi/CLFFileService.hpp"
 
 namespace CLF::CLFCore {
 
@@ -117,24 +117,68 @@ struct WritePreview {
 };
 
 // ============================================================================
+// ICLFFileService 回调接收器（C1 接口化）
+// ctx 聚合结构 + 静态回调转发（无捕获 → POD 函数指针）
+// ============================================================================
+
+// previewEdit 接收：新内容 + 错误
+struct EditCollector {
+    std::string newContent;
+    std::string error;
+};
+
+void onSnapContent(void* ctx, const char* data, size_t len) {
+    static_cast<FileSnapshot*>(ctx)->content.append(data, len);
+}
+
+void onEditContent(void* ctx, const char* data, size_t len) {
+    static_cast<EditCollector*>(ctx)->newContent.append(data, len);
+}
+
+void onEditError(void* ctx, const char* msg) {
+    static_cast<EditCollector*>(ctx)->error = msg;
+}
+
+void onPreviewDiffLine(void* ctx, int op, int oldLineNo, int newLineNo, const char* text) {
+    auto* p = static_cast<WritePreview*>(ctx);
+    p->diffLines.push_back({static_cast<CLF::CLFTools::CLFDiffOp>(op),
+                            oldLineNo, newLineNo, text});
+}
+
+void onPreviewDiffStats(void* ctx, int added, int removed, int hunks,
+                        int truncated, const char* truncReason) {
+    auto* s = &static_cast<WritePreview*>(ctx)->diffStats;
+    s->added     = added;
+    s->removed   = removed;
+    s->hunks     = hunks;
+    s->truncated = truncated != 0;
+    s->truncReason = truncReason ? truncReason : "";
+}
+
+// ============================================================================
 // prepareWritePreview — 设计 §2.1 Step 1
 // ============================================================================
 
-WritePreview prepareWritePreview(const CLFToolCall& call) {
+WritePreview prepareWritePreview(CLF::CLFPluginApi::ICLFFileService* fileService,
+                                 const CLFToolCall& call) {
     WritePreview preview;
     try {
         auto args = nlohmann::json::parse(call.m_arguments);
         preview.filePath = args.value("path", "");
 
-        // 读取旧文件快照
-        CLF::CLFTools::CLFFileSnapshot snap;
-        CLF::CLFTools::readFileWithSnapshot(preview.filePath, snap);
-        preview.oldSnapshot.content = snap.content;
-        preview.oldSnapshot.mtime   = snap.mtime;
-        preview.oldSnapshot.size    = snap.size;
+        // 读取旧文件快照（C1：经 ICLFFileService 回调接收。
+        // 读失败静默 = 行为保真——现状忽略 readFileWithSnapshot 返回值，
+        // 文件不存在 → 空快照 → "新文件"语义，故 readCb 不设 onError）
+        CLF::CLFPluginApi::CLFFileCallbacks readCb;
+        readCb.onContent = onSnapContent;
+        CLF::CLFPluginApi::CLFFileInfo info;
+        fileService->readFile(preview.filePath.c_str(), &info,
+                              &preview.oldSnapshot, &readCb);
+        preview.oldSnapshot.mtime = info.mtime;
+        preview.oldSnapshot.size  = info.size;
 
         // 准备新旧内容
-        std::string oldContent = snap.content;
+        std::string oldContent = preview.oldSnapshot.content;
         std::string newContent;
 
         // B1-7 复查：此处为 write_file/edit_file 的**行为分支**（覆盖 vs 替换，
@@ -145,24 +189,31 @@ WritePreview prepareWritePreview(const CLFToolCall& call) {
         } else if (call.m_name == "edit_file") {
             std::string oldStr = args.value("old_string", "");
             std::string newStr = args.value("new_string", "");
-            auto editPreview = CLF::CLFTools::previewEdit(oldContent, oldStr, newStr);
-            if (!editPreview.m_success) {
+            EditCollector editCol;
+            CLF::CLFPluginApi::CLFFileCallbacks editCb;
+            editCb.onContent = onEditContent;
+            editCb.onError   = onEditError;
+            if (!fileService->previewEdit(oldContent.data(), oldContent.size(),
+                                          oldStr.c_str(), newStr.c_str(),
+                                          &editCol, &editCb)) {
                 preview.valid = false;
-                preview.errorMsg = editPreview.m_error;
+                preview.errorMsg = std::move(editCol.error);
                 return preview;
             }
-            newContent = editPreview.m_content;
-            preview.newContent = std::move(editPreview.m_content);
+            newContent = editCol.newContent;
+            preview.newContent = std::move(editCol.newContent);
         } else {
             preview.valid = false;
             preview.errorMsg = "not a write tool";
             return preview;
         }
 
-        // 计算 diff
-        CLF::CLFTools::CLFDiffStats stats;
-        preview.diffLines = CLF::CLFTools::computeDiff(oldContent, newContent, stats);
-        preview.diffStats = stats;
+        // 计算 diff（C1：行流 + 统计经回调直写 preview）
+        CLF::CLFPluginApi::CLFFileCallbacks diffCb;
+        diffCb.onDiffLine = onPreviewDiffLine;
+        diffCb.onStats    = onPreviewDiffStats;
+        fileService->computeDiff(oldContent.c_str(), newContent.c_str(),
+                                 5, &preview, &diffCb);
         preview.valid = true;
         return preview;
     } catch (const std::exception& e) {
@@ -309,6 +360,7 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
                                  CLFSecurityPolicy& policy,
                                  std::function<bool(const std::string&)> confirmCallback,
                                  ToolStats& stats,
+                                 CLF::CLFPluginApi::ICLFFileService* fileService,
                                  CLF::CLFTypes::ICLFOutput* output,
                                  std::atomic<bool>* interruptFlag,
                                  const CLFTimerLabels* labels,
@@ -317,6 +369,7 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
     , m_securityPolicy(policy)
     , m_confirmCallback(std::move(confirmCallback))
     , m_stats(stats)
+    , m_fileService(fileService)
     , m_output(output)
     , m_interruptFlag(interruptFlag)
     , m_labels(labels)
@@ -446,7 +499,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
         if (isWriteTool) {
             // --- Step 1: prepareWritePreview ---
-            preview = prepareWritePreview(call);
+            preview = prepareWritePreview(m_fileService, call);
 
             // --- Step 1.5: valid 检查 ---
             if (!preview.valid) {
@@ -490,14 +543,13 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 }
             }
 
-            // --- Step 5: TOCTOU 校验 ---
+            // --- Step 5: TOCTOU 校验（C1：经 ICLFFileService::getFileInfo）---
             {
-                auto currentMtime = CLF::CLFTools::getFileMtime(preview.filePath);
-                auto currentSize  = CLF::CLFTools::getFileSize(preview.filePath);
-                if ((preview.oldSnapshot.mtime != 0 && currentMtime != 0 &&
-                     currentMtime != preview.oldSnapshot.mtime) ||
-                    (preview.oldSnapshot.size != 0 && currentSize != 0 &&
-                     currentSize != preview.oldSnapshot.size)) {
+                auto current = m_fileService->getFileInfo(preview.filePath.c_str());
+                if ((preview.oldSnapshot.mtime != 0 && current.mtime != 0 &&
+                     current.mtime != preview.oldSnapshot.mtime) ||
+                    (preview.oldSnapshot.size != 0 && current.size != 0 &&
+                     current.size != preview.oldSnapshot.size)) {
                     result.m_content = "File modified after preview. Please review again.";
                     if (m_output) {
                         m_output->emitContent(

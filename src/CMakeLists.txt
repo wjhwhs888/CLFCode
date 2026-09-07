@@ -15,6 +15,7 @@ target_include_directories(clf_types PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(clf_capabilities STATIC
     CLFCapabilities/FileOps/CLFFileOps.cpp
     CLFCapabilities/FileOps/CLFDiff.cpp
+    CLFCapabilities/FileOps/CLFFileServiceImpl.cpp
 )
 target_link_libraries(clf_capabilities PUBLIC clf_types)
 target_include_directories(clf_capabilities PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -109,7 +110,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFMessageCodec qa_CLFPeriodicTimer
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
                      qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel
-                     qa_CLFTipsBar)
+                     qa_CLFTipsBar qa_CLFCapabilities)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -205,6 +206,11 @@ add_test(NAME qa_CLFTodoPanel COMMAND qa_CLFTodoPanel)
 add_executable(qa_CLFTipsBar test/qa_CLFTipsBar.cpp)
 target_link_libraries(qa_CLFTipsBar PRIVATE clf_core clf_ui)
 add_test(NAME qa_CLFTipsBar COMMAND qa_CLFTipsBar)
+
+# 能力层接口契约 + executor 经接口全链路（C1，2026-09-07）
+add_executable(qa_CLFCapabilities test/qa_CLFCapabilities.cpp)
+target_link_libraries(qa_CLFCapabilities PRIVATE clf_core clf_capabilities)
+add_test(NAME qa_CLFCapabilities COMMAND qa_CLFCapabilities)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

@@ -148,7 +148,8 @@ std::string echoHandler(const std::string& args) {
 }
 
 // S2-1: 边界/大小/行范围三项均在 handler 层实施——CLFFileOps::readFile 还被
-// previewEdit 等内部路径调用，在底层加限制会误伤配置读取。
+// FileOps 内部路径（editFile/readFileWithSnapshot）调用，在底层加限制会误伤。
+// 取证（阶段 2 分册 §3.7）：FileOps 唯一跨层调用方 = CLFToolExecutor（C1 已接口化）。
 // A4a：脚手架收敛至 detail::withHandlerScaffold（parse/try-catch/dump 统一）
 std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
     return detail::withHandlerScaffold(args, [allowAbsolute](const nlohmann::json& params, nlohmann::json& result) {

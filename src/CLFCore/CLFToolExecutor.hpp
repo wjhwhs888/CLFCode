@@ -16,6 +16,7 @@
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 
+namespace CLF::CLFPluginApi { class ICLFFileService; }
 namespace CLF::CLFCore {
 
 struct ToolStats;
@@ -26,6 +27,7 @@ public:
                     CLFSecurityPolicy& policy,
                     std::function<bool(const std::string&)> confirmCallback,
                     ToolStats& stats,
+                    CLF::CLFPluginApi::ICLFFileService* fileService,
                     CLF::CLFTypes::ICLFOutput* output = nullptr,
                     std::atomic<bool>* interruptFlag = nullptr,
                     const CLFTimerLabels* labels = nullptr,
@@ -44,6 +46,7 @@ private:
     std::atomic<bool>* m_interruptFlag;
     const CLFTimerLabels* m_labels = nullptr;
     std::atomic<int>* m_thinkingSec = nullptr;
+    CLF::CLFPluginApi::ICLFFileService* m_fileService = nullptr;
 };
 
 } // namespace CLF::CLFCore

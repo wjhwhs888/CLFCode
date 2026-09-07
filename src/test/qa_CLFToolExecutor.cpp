@@ -10,6 +10,7 @@
 
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
+#include "CLFCapabilities/FileOps/CLFFileServiceImpl.hpp"
 
 using namespace boost::ut;
 using CLF::CLFCore::CLFTool;
@@ -56,8 +57,10 @@ CLFToolExecutor makeExecutor(std::vector<CLFTool>& tools, MockOutput& out,
     static CLF::CLFCore::CLFTimerLabels labels;  // 默认 "thought"/"thinking" 标签
     static CLFSecurityPolicy policy(CLFSecurityMode::Auto);
     static std::atomic<bool> interruptFlag{false};
-    return CLFToolExecutor(tools, policy, nullptr, stats, &out, &interruptFlag,
-                           &labels, &thinkingSec);
+    // C1：无状态转调层（平凡构造，测试进程生命周期；与上 static 同模式）
+    static CLF::CLFCapabilities::CLFFileServiceImpl fileService;
+    return CLFToolExecutor(tools, policy, nullptr, stats, &fileService,
+                           &out, &interruptFlag, &labels, &thinkingSec);
 }
 
 } // anonymous namespace

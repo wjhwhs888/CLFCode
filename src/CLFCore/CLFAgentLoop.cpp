@@ -13,6 +13,8 @@
 #include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
+#include "CLFCapabilities/FileOps/CLFFileServiceImpl.hpp"
+#include "CLFPluginApi/CLFFileService.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -40,15 +42,22 @@ constexpr const char* kTurnCapNotice =
 
 CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
                            std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient,
-                           const CLFTimerLabels& labels)
+                           const CLFTimerLabels& labels,
+                           CLF::CLFPluginApi::ICLFFileService* fileService)
     : m_config(config)
     , m_labels(labels)
     , m_context(config.m_maxContextWindow)
     , m_httpClient(httpClient ? httpClient
                               : std::make_shared<CLF::CLFNetwork::CLFHttpClient>(
                                     config.m_apiBaseUrl, config.m_apiKey))
+    , m_fileService(fileService)
     , m_securityPolicy(CLFSecurityPolicy::modeFromString(config.m_securityMode))
     , m_summarizer(std::make_unique<CLFSessionSummarizer>(m_httpClient, m_config)) {
+    if (!m_fileService) {
+        // C1 兜底：进程内默认实现；阶段 2 试点经构造参数注入 DLL 工厂实例
+        m_fileServiceOwner = std::make_unique<CLF::CLFCapabilities::CLFFileServiceImpl>();
+        m_fileService = m_fileServiceOwner.get();
+    }
     m_httpClient->setTimeout(config.m_maxResponseDelaySec);
     m_securityPolicy.setCommandAllowlist(config.m_commandAllowlist);  // S2-2
     injectSystemPrompt();
@@ -319,7 +328,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 }
                 m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
                 CLFToolExecutor executor(m_tools, m_securityPolicy,
-                                         m_confirmCallback, m_lastToolStats, m_output,
+                                         m_confirmCallback, m_lastToolStats,
+                                         m_fileService, m_output,
                                          &m_interrupted, &m_labels, &thinkingSec);
                 auto results = executor.execute(parsed.m_toolCalls);
                 for (const auto& result : results) {

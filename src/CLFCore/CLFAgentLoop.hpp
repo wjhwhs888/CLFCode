@@ -20,13 +20,18 @@
 #include "CLFCore/CLFSessionSummarizer.hpp"
 
 namespace CLF::CLFNetwork { class ICLFHttpClient; }
+namespace CLF::CLFPluginApi { class ICLFFileService; }
 namespace CLF::CLFCore {
 
 class CLFAgentLoop {
 public:
+    // fileService：文件能力域服务注入（借用不拥有；阶段 2 试点时由插件管理器
+    // getService 提供）；nullptr → 进程内默认实现 CLFFileServiceImpl（C1 兜底，
+    // 装配点不变，默认实现由 AgentLoop 持有）
     explicit CLFAgentLoop(const CLFAgentConfig& config,
                           std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> httpClient = nullptr,
-                          const CLFTimerLabels& labels = {});
+                          const CLFTimerLabels& labels = {},
+                          CLF::CLFPluginApi::ICLFFileService* fileService = nullptr);
     ~CLFAgentLoop();
 
     // 注册工具后，m_tools 中的 handler 可能捕获 *this 的引用
@@ -209,6 +214,9 @@ private:
     CLFTimerLabels                    m_labels;
     CLFContext                        m_context;
     std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> m_httpClient;
+    // C1：文件能力域服务——注入借用 + 默认实现持有（ToolExecutor 每轮借用 m_fileService）
+    CLF::CLFPluginApi::ICLFFileService* m_fileService = nullptr;
+    std::unique_ptr<CLF::CLFPluginApi::ICLFFileService> m_fileServiceOwner;
     CLFProtocolAdapter                m_protocolAdapter;
     CLFSecurityPolicy                 m_securityPolicy;
     std::function<bool(const std::string&)> m_confirmCallback;
