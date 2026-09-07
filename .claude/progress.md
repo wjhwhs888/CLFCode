@@ -3,11 +3,11 @@
 ## 进行中
 
 ### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
-- **基线**：`0707c39`（A 批 + B 批 8 批次 + C1 全部落地，ctest 22/22 + 冒烟 exit=0）
-- **下一步 = C 批第 2 项 C2（AgentLoop 拆角色）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C2 执行：
-  抽 CLFSessionFileCtx / CLFTodoStore / CLFSummaryCache，AgentLoop 只编排；CLFContext 收窄为纯容器（截断/窗口策略归会话对象）；m_todoPanelDone 随 CLFTodoStore 迁移（B3 定案）+ P0-8 后半（sanitizeUtf8 已被 UI 反向引用问题随 A2 已修，容器含策略项随 C2）
+- **基线**：`aa4ef3c`（A 批 + B 批 8 批次 + C1 + C2 全部落地，ctest 26/26 + 冒烟 exit=0）
+- **下一步 = C 批第 3 项 C3（ICLFOutput 拆窄接口）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C3 执行：
+  17 方法归四接口（内容/状态/交互/辅助，逐方法裁决表 C3-1 先行）；CLFTerminal 聚合形式（C3-2：多继承 vs 组合，pro 定）；调用面改动清单先行（C3-3：AgentLoop/Executor/Repl 构造参数 + 4 mock 最小集）；qa mock 分化（C3-4）。C2-3 接口化（ProtocolAdapter 等）缓做记录在此，C3 后按需评估
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **C 批剩余**：C2 → C3（ICLFOutput 拆窄）→ C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
+- **C 批剩余**：C3（ICLFOutput 拆窄）→ C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
 - **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案，C1 接口化已为试点铺路）；阶段 3 仍标识性
 
 
@@ -31,13 +31,18 @@
 - **【批次 A2 公共字符工具 ✅（2026-09-03 晚，ctest 21/21 + 冒烟 exit=0）】**：新建 **CLFTextUtil**（basic/clf_types）：utf8SafeHead/Tail（16+ 截断点收敛，阈值语义逐处保留）、charWidth/displayWidth/substrByWidth（SelectionModel/Terminal 两套等价合并，SelectionModel 保持 API 转发零调用方改动）、splitLines、localNow/localNowTm（7 处时间戳 ifdef → 5 处收敛 + CLFTypes 2 内联封装保持 + Builder 裸 localtime 消除）、token 估算（Context/Builder 双实现统一，id/name 整数除语义保真）、replaceAll 归位。**sanitizeUtf8 归位 CLFEncoding**（Clipboard 不再依赖 Context 头——P0-8 分层泄漏消除）。**handleHttpError** 收敛 AgentLoop 私有（流式/同步 ~25 行×2 → 单实现 + HttpErrorAction 枚举三态）。删 getThinkingLines/hasThinkingContent 死代码。View pendingLine wrap → substrByWidth（R4 行为变更：CJK 换行点变化）。踩坑：sed 误伤定义行/锚点短路致 include 漏插（4 轮修复）；CLFUI/CLFTools 命名空间需 using。**遗留**：T3 视觉回归（CJK 长输入换行）待实机
 - **【批次 A4a handler 脚手架收敛 ✅（2026-09-03 晚，ctest 21/21 + 冒烟 exit=0）】**：detail::withHandlerScaffold 统一 parse/try-catch/dump 骨架（原 8 处同构样板）；7 handler 改造（readFile/webFetch/writeFile/editFile/listDirectory/executeCommand/search lambda，业务与容错保留——url 必填/cwd 边界/行切片语义逐一保真）；todo_write 状态机不碰（A4-2）；search 错误文案统一 "Handler error: "（qa 无文案断言，行为变化仅错误文本）。**A4b 结果结构化推迟至 B1 后**（与 executor 改造联动，分册 A4 已注）+ P2-8 后半（ProtocolAdapter m_error 显式字段）随 A4b
 - **【B 批推进（2026-09-03 晚）】**：**B5 ✅（cf4ee97）** ICLFOutput 注释修正（17 方法 10 通道 + 扩展纪律）；**B1 ✅（f6ed67d）** 能力标签（m_risk 复用 + m_isSearch/m_isRead + 口径统一；qa T5 忘打标实证——测试同步打标）；**B2/B4 ✅（d470e30）** 会话收敛（beginTurnSession/closeSessionAndReset——P0-4 关闭）+ 恢复回显外移（CLFSessionEchoLine——P0-6 关闭）+ JsonlType 常量单点（P1-7 关闭）；qa T7 测试更新（折叠块断言 → 结构化行断言）。每批 ctest 21/21 + 冒烟 exit=0
-- **【B 批全部完成（2026-09-03 晚）】**：**B3 ✅ + B6 ✅（fdca1b8）** todoPanelDone 语义注释定案（回合级展示生命周期，C2 随 CLFTodoStore 迁移）+ CLFDangerousCommandDetector 拆分（P1-16 双簇分离，SecurityPolicy API 转发测试零改）。**P0 项全关闭：P0-1（A1）P0-2（B1）P0-3（A2）P0-4（B2）P0-5（B3）P0-6（B4）P0-7（C5 待）P0-8（A2+C2 待）**
+- **【B 批全部完成（2026-09-03 晚）】**：**B3 ✅ + B6 ✅（fdca1b8）** todoPanelDone 语义注释定案（回合级展示生命周期，C2 随 CLFTodoStore 迁移）+ CLFDangerousCommandDetector 拆分（P1-16 双簇分离，SecurityPolicy API 转发测试零改）。**P0 项：P0-1~P0-6 已关（A1/B1/A2/B2/B3/B4）；P0-8 已关（A2 前半 sanitizeUtf8 归位 + C2b 后半 Context 纯容器化）；仅剩 P0-7（C5 待）**
 - **【C1 ✅（2026-09-07 谷时段，两提交：5a239e4 + 0707c39）】归属修正 + 接口化**：
   - **C1a 归属修正**：FileOps/Diff 四文件移入 `src/CLFCapabilities/FileOps/`（命名空间 CLF::CLFTools 保留，阶段 2 迁 DLL 再重定）；新增 clf_capabilities 目标（链 clf_types 单向）；clf_core 删 2 个 CLFTools 源直编（CMake hack 消除）+ 链 clf_capabilities；clf_tools 同链；qa_CLFFileOps 改链 capabilities。依赖图：capabilities ← core/tools 单向无环 ✓
   - **C1b 接口化**：`src/CLFPluginApi/CLFFileService.hpp`（唯一跨 DLL 共享头：CLFFileInfo POD + CLFDiffOpCode 编码 + CLFFileCallbacks 回调集 + ICLFFileService 纯虚，禁依赖项目其他头）；CLFFileServiceImpl（进程内适配：POD → 静态函数转调，枚举序 static_assert 双向钉死）；ToolExecutor 构造注入 ICLFFileService*（必需依赖置默认参数组之前——C++ 规则：默认实参后不能跟无默认参数，踩坑已记录）+ prepareWritePreview 回调接收器化（readFile/previewEdit/computeDiff 三调用点 + TOCTOU getFileInfo）+ **读失败静默行为保真**（现状忽略返回值 = 新文件语义，注释钉死）；AgentLoop 构造加 fileService 借用参数（nullptr → 默认实现兜底，试点时管理器注入，core 零改动）
   - **qa_CLFCapabilities 新套件 13 用例**（S1-S8 接口契约 + E1-E5 executor 全链路：write/edit 预览 diff 渲染 + TOCTOU 阻断 + 读失败静默）——**填补 qa_CLFToolExecutor 原 Write 工具零覆盖盲区**（C1 改写 prepareWritePreview 后此覆盖为必需）。踩坑：① 测试拼 JSON 用 `R"({"path":")" + path` 手拼——Windows 路径反斜杠成非法 JSON 转义 → parse 异常 → valid=false（改 nlohmann::json 对象构造）；② CLFSecurityMode 无 Confirm 值（写确认 = Edit 模式 L3）
   - ctest 22/22 + 冒烟 exit=0；P2-6 顺手修（BuiltinTools 过时注释）；CHANGELOG 补 C1 条目
-- **待办**：C 批剩余（C2 AgentLoop 拆角色 → C3 ICLFOutput 拆窄 → C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
+- **【C2 ✅（2026-09-07 谷时段，两提交：5b375d2 + aa4ef3c）】AgentLoop 拆角色 + Context 收窄，P0 项全部清零**：
+  - **C2a 三对象抽取（公共 API 零变化）**：**CLFTodoStore**（todos 数据+锁+面板/脏标记，锁随对象；allDoneSnapshot 收敛 finishTurn/restoreSession 两处全完成判定——B3 迁移定案落地）；**CLFSessionFileCtx**（活动文件/resumedFrom/historyDir/轮初消息数 + beginSessionFile/appendTurn 差集/appendSummaryLine/collectEchoLines——restoreSession 回显解析搬入，C2-2 落点；modelName/loadedSkills 参数传入不持 AgentLoop 引用）；**CLFSummaryCache**（生成器+缓存+频控，shouldSummarize 参数化）。AgentLoop 公共 API 全保留转发门面——todo_write/compress_context handler 与 UI 调用面零改动（BuiltinTools 零改）
+  - **C2b CLFContext 收窄（P0-8 后半关闭）**：**CLFContextWindow** 策略类（窗口截断自 getMessages 原样搬移）+ **truncateToolResult 归位 CLFTextUtil**（8000 截断移出）+ CLFContext 纯容器（构造删参数、getMessages 全量、仅 sanitize 存储不变量）；AgentLoop 发 API/摘要输入前 apply；差集/轮初计数改全量语义（行为等价——截断从尾部保留，新增必在窗内）
+  - **测试**：新增 qa_CLFTodoStore(6) + qa_CLFSessionFileCtx(6) + qa_CLFSummaryCache(4) + qa_CLFContextWindow(6)；qa_CLFContext 改纯容器断言。ctest 26/26 + 冒烟 exit=0。踩坑：① Windows 文件锁——ifstream 未析构就 remove_all（测试读文件作用域化）② shared_ptr 参数构造 nullptr 需显式传参
+  - **C2-3 接口化缓做**（评估记录）：ProtocolAdapter/SecurityPolicy/Summarizer 接口化收益低（qa 全真实实现、无 mock 需求），C3 后按需
+- **待办**：C 批剩余（C3 ICLFOutput 拆窄 → C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
