@@ -9,8 +9,8 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 
-#include "CLFTools/CLFDiff.hpp"
-#include "CLFTools/CLFFileOps.hpp"
+#include "CLFCapabilities/FileOps/CLFDiff.hpp"
+#include "CLFCapabilities/FileOps/CLFFileOps.hpp"
 
 namespace CLF::CLFCore {
 

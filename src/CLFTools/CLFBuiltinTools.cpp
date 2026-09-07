@@ -14,7 +14,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFTools/CLFCommandExec.hpp"
-#include "CLFTools/CLFFileOps.hpp"
+#include "CLFCapabilities/FileOps/CLFFileOps.hpp"
 #include "CLFTools/CLFSearchContent.hpp"
 #include "CLFTools/CLFWebFetch.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：localNow

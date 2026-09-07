@@ -1,6 +1,6 @@
 // CLFDiff.cpp — 行级 LCS diff 计算实现
 
-#include "CLFTools/CLFDiff.hpp"
+#include "CLFCapabilities/FileOps/CLFDiff.hpp"
 
 #include <algorithm>
 #include <cstring>

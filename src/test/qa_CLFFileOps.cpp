@@ -9,7 +9,7 @@
 #include <fstream>
 #include <string>
 
-#include "CLFTools/CLFFileOps.hpp"
+#include "CLFCapabilities/FileOps/CLFFileOps.hpp"
 
 using namespace boost::ut;
 namespace fs = std::filesystem;

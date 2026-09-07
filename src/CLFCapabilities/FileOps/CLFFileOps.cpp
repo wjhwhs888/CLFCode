@@ -2,7 +2,7 @@
 // 原子写入：临时文件 + flush + MoveFileEx/rename
 // 编码转换 → 委托 CLFEncoding
 
-#include "CLFTools/CLFFileOps.hpp"
+#include "CLFCapabilities/FileOps/CLFFileOps.hpp"
 #include "CLFTypes/CLFEncoding.hpp"
 
 #include <cstdio>

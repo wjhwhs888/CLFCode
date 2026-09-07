@@ -9,6 +9,17 @@ add_library(clf_types STATIC
 target_include_directories(clf_types PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
+# CLFCapabilities — 能力层雏形（C1：FileOps/Diff 归属修正，依赖 clf_types 单向）
+# 阶段 2 试点时 FileOps 域迁 DLL，此目标即迁移单元
+# ============================================================================
+add_library(clf_capabilities STATIC
+    CLFCapabilities/FileOps/CLFFileOps.cpp
+    CLFCapabilities/FileOps/CLFDiff.cpp
+)
+target_link_libraries(clf_capabilities PUBLIC clf_types)
+target_include_directories(clf_capabilities PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# ============================================================================
 # CLFNetwork — HTTP 传输 (依赖 CLFTypes)
 # ============================================================================
 add_library(clf_network STATIC
@@ -41,10 +52,8 @@ add_library(clf_core STATIC
     CLFCore/CLFSkillLoader.cpp
     CLFCore/CLFSystemPromptBuilder.cpp
     CLFCore/CLFToolExecutor.cpp
-    CLFTools/CLFDiff.cpp          # 编入 clf_core 避免循环依赖
-    CLFTools/CLFFileOps.cpp       # 编入 clf_core（被 CLFToolExecutor 直接调用）
 )
-target_link_libraries(clf_core PUBLIC clf_types clf_network)
+target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities)
 target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
@@ -78,7 +87,7 @@ add_library(clf_tools STATIC
     CLFTools/CLFSearchContent.cpp
     CLFTools/CLFWebFetch.cpp
 )
-target_link_libraries(clf_tools PUBLIC clf_core)
+target_link_libraries(clf_tools PUBLIC clf_core clf_capabilities)
 target_include_directories(clf_tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
@@ -143,7 +152,7 @@ target_link_libraries(qa_CLFRetryPolicy PRIVATE clf_core)
 add_test(NAME qa_CLFRetryPolicy COMMAND qa_CLFRetryPolicy)
 
 add_executable(qa_CLFFileOps test/qa_CLFFileOps.cpp)
-target_link_libraries(qa_CLFFileOps PRIVATE clf_core)
+target_link_libraries(qa_CLFFileOps PRIVATE clf_capabilities)
 add_test(NAME qa_CLFFileOps COMMAND qa_CLFFileOps)
 
 # clf_tools 经 clf_core 间接拉入 clf_network（httplib+SSL），静态库按需拉取
