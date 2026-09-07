@@ -1,5 +1,7 @@
 // qa_CLFContext.cpp — CLFContext 单元测试
-// 覆盖：token 估算、system 永不截断、长工具结果截断
+// 覆盖：token 估算、纯容器语义（全量返回、无截断）
+// C2b（2026-09-07）：窗口截断用例迁 qa_CLFContextWindow；
+// 长工具结果截断用例迁 qa_CLFTextUtil 系（truncateToolResult 归位 CLFTextUtil）
 // （serialize/restore 用例随 A3 删除——覆盖式时代语义，jsonl 时代由
 //   CLFSessionManager::load/loadJsonl 承担，restoreSession 分流调用）
 
@@ -26,24 +28,43 @@ const boost::ut::suite<"CLFContext"> tests = [] {
         expect(ctx.estimateTokens() >= 140 && ctx.estimateTokens() <= 160);
     };
 
-    "system 消息永不截断"_test = [] {
-        CLFContext ctx(100); // 极小窗口
-        ctx.addMessage("system", "system rules that must never be truncated");
+    "C2b 纯容器：getMessages 全量返回（无截断）"_test = [] {
+        CLFContext ctx;
         for (int i = 0; i < 50; ++i) {
-            ctx.addMessage("user", std::string(50, 'x')); // 每条 ~12 token
+            ctx.addMessage("user", std::string(50, 'x'));
         }
         auto messages = ctx.getMessages();
-        expect(messages.size() >= 1);
-        expect(messages.front().m_role == "system");
+        expect(messages.size() == 50u);   // 全量，不做窗口截断
     };
 
-    "长工具结果自动截断 + 标记"_test = [] {
+    "C2b 纯容器：addToolResult 不做内容截断（策略归调用方）"_test = [] {
         CLFContext ctx;
-        std::string huge(20000, 'y'); // 超 8000 字符
+        std::string huge(20000, 'y');
         ctx.addToolResult("call_1", "read_file", huge);
         auto messages = ctx.getMessages();
-        expect(messages.size() == 1);
-        expect(messages[0].m_content.find("[truncated") != std::string::npos);
+        expect(messages.size() == 1u);
+        expect(messages[0].m_content.size() == huge.size());   // 原样入库
+    };
+
+    "setSystemPrompt 去重 + 单条语义"_test = [] {
+        CLFContext ctx;
+        ctx.setSystemPrompt("v1");
+        ctx.setSystemPrompt("v1");   // 相同内容跳过
+        ctx.setSystemPrompt("v2");   // 替换
+        auto messages = ctx.getMessages();
+        expect(messages.size() == 1u);
+        expect(messages[0].m_role == "system");
+        expect(messages[0].m_content == "v2");
+    };
+
+    "removeSystemMessages 仅移除 system"_test = [] {
+        CLFContext ctx;
+        ctx.setSystemPrompt("sys");
+        ctx.addMessage("user", "keep");
+        ctx.removeSystemMessages();
+        auto messages = ctx.getMessages();
+        expect(messages.size() == 1u);
+        expect(messages[0].m_role == "user");
     };
 };
 

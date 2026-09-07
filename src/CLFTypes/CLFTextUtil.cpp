@@ -77,6 +77,15 @@ std::string CLFTextUtil::replaceAll(std::string s, const std::string& from,
     return s;
 }
 
+std::string CLFTextUtil::truncateToolResult(const std::string& content) {
+    // C2b：自 CLFContext::truncateContent 原样搬移（8000 阈值 + 标记语义保真；
+    // A2 已将字节级 substr 换为 utf8SafeHead——不劈半多字节）
+    constexpr size_t kMaxMessageChars = 8000;
+    if (content.size() <= kMaxMessageChars) return content;
+    return utf8SafeHead(content, kMaxMessageChars)
+           + "\n\n[truncated, original: " + std::to_string(content.size()) + " chars]";
+}
+
 std::vector<std::string> CLFTextUtil::splitLines(const std::string& text,
                                                  bool keepEmpty) {
     std::vector<std::string> out;

@@ -14,6 +14,7 @@
 #include "CLFTypes/CLFTypes.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFContext.hpp"
+#include "CLFCore/CLFContextWindow.hpp"
 #include "CLFCore/CLFProtocolAdapter.hpp"
 #include "CLFCore/CLFSystemPromptBuilder.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
@@ -208,6 +209,7 @@ private:
     CLFAgentConfig                    m_config;
     CLFTimerLabels                    m_labels;
     CLFContext                        m_context;
+    CLFContextWindow                  m_window;    // C2b: 窗口截断策略（发 API 前 apply）
     std::shared_ptr<CLF::CLFNetwork::ICLFHttpClient> m_httpClient;
     // C1：文件能力域服务——注入借用 + 默认实现持有（ToolExecutor 每轮借用 m_fileService）
     CLF::CLFPluginApi::ICLFFileService* m_fileService = nullptr;

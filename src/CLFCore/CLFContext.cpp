@@ -1,4 +1,5 @@
-// CLFContext.cpp — 对话上下文实现
+// CLFContext.cpp — 对话上下文容器实现（C2b：纯容器化）
+// 窗口截断 → CLFContextWindow；tool result 截断 → CLFTextUtil::truncateToolResult
 
 #include "CLFCore/CLFContext.hpp"
 #include "CLFTypes/CLFEncoding.hpp"
@@ -8,24 +9,6 @@
 #include <string>
 
 namespace CLF::CLFCore {
-
-namespace {
-
-constexpr size_t kMaxMessageChars = 8000;
-
-std::string truncateContent(const std::string& content, bool isToolResult) {
-    if (content.size() <= kMaxMessageChars) return content;
-    if (!isToolResult) return content;
-    // A2：字节级截断 → utf8SafeHead（原 substr(0, kMaxMessageChars) 会劈半多字节）
-    return CLFTextUtil::utf8SafeHead(content, kMaxMessageChars)
-           + "\n\n[truncated, original: " + std::to_string(content.size()) + " chars]";
-}
-
-} // anonymous namespace
-
-CLFContext::CLFContext(int maxContextWindow)
-    : m_maxContextWindow(maxContextWindow) {
-}
 
 void CLFContext::addMessage(const std::string& role, const std::string& content) {
     m_messages.push_back({role, CLFEncoding::sanitizeUtf8(content)});
@@ -43,9 +26,11 @@ void CLFContext::addAssistantToolCalls(const std::vector<CLFToolCall>& toolCalls
 void CLFContext::addToolResult(const std::string& toolCallId,
                                const std::string& name,
                                const std::string& content) {
+    // C2b：内容截断移出（CLFTextUtil::truncateToolResult，调用方截断后入库）；
+    // 容器仅保证存储不变量（sanitize 合法 UTF-8）
     CLFMessage msg;
     msg.m_role       = "tool";
-    msg.m_content    = truncateContent(CLFEncoding::sanitizeUtf8(content), true);
+    msg.m_content    = CLFEncoding::sanitizeUtf8(content);
     msg.m_toolCallId = toolCallId;
     msg.m_name       = name;
     m_messages.push_back(std::move(msg));
@@ -56,32 +41,8 @@ void CLFContext::appendMessage(const CLFMessage& msg) {
 }
 
 std::vector<CLFMessage> CLFContext::getMessages() const {
-    std::vector<CLFMessage> result;
-    std::vector<CLFMessage> nonSystem;
-    int tokenCount = 0;
-
-    for (const auto& msg : m_messages) {
-        if (msg.m_role == "system") {
-            result.push_back(msg);
-            tokenCount += CLFTextUtil::estimateTokensForMessage(msg);
-        } else {
-            nonSystem.push_back(msg);
-        }
-    }
-
-    std::vector<CLFMessage> truncated;
-    for (auto it = nonSystem.rbegin(); it != nonSystem.rend(); ++it) {
-        int msgTokens = CLFTextUtil::estimateTokensForMessage(*it);
-        if (tokenCount + msgTokens > m_maxContextWindow && !truncated.empty()) {
-            break;
-        }
-        tokenCount += msgTokens;
-        truncated.push_back(*it);
-    }
-
-    std::reverse(truncated.begin(), truncated.end());
-    result.insert(result.end(), truncated.begin(), truncated.end());
-    return result;
+    // C2b：全量返回（窗口截断策略在 CLFContextWindow::apply）
+    return m_messages;
 }
 
 void CLFContext::clear() {

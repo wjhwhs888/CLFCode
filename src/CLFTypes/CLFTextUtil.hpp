@@ -43,6 +43,12 @@ public:
     // 按显示宽度切分（不劈半多字节字符）；maxW<=0 返回原串
     static std::string substrByWidth(const std::string& s, int maxW);
 
+    // ============ 消息内容截断 ============
+
+    // tool result 消息内容截断（C2b 自 CLFContext 移出——容器不再含内容策略）：
+    // 超 8000 字符 → utf8SafeHead + 截断标记；未超 → 原样返回
+    static std::string truncateToolResult(const std::string& content);
+
     // ============ 通用字符串替换 ============
 
     // 全量替换所有 from → to（A2 自 CLFSystemPromptBuilder 归位）

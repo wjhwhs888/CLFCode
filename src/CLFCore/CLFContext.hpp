@@ -1,5 +1,8 @@
-// CLFContext.hpp — 对话上下文管理器
-// 管理对话历史、token 估算和上下文窗口截断
+// CLFContext.hpp — 对话上下文容器（C2b：纯容器化，2026-09-07）
+// 职责收窄：消息存储与基础增删查 + token 估算。
+// 窗口截断策略已迁 CLFContextWindow（发 API 前 apply）；
+// tool result 内容截断已迁 CLFTextUtil::truncateToolResult（调用方截断后入库）。
+// 存储不变量：入库内容经 sanitizeUtf8（合法 UTF-8）。
 
 #pragma once
 
@@ -14,7 +17,7 @@ namespace CLF::CLFCore {
 
 class CLFContext {
 public:
-    explicit CLFContext(int maxContextWindow = 65536);
+    CLFContext() = default;
 
     // 添加消息
     void addMessage(const std::string& role, const std::string& content);
@@ -31,7 +34,7 @@ public:
     // 完整添加一条消息（会话恢复用，保留全部字段）
     void appendMessage(const CLFMessage& msg);
 
-    // 获取消息列表（自动截断到窗口大小）
+    // 获取消息列表（全量返回，无截断——窗口截断由 CLFContextWindow::apply 负责）
     std::vector<CLFMessage> getMessages() const;
 
     // 清空历史
@@ -51,7 +54,6 @@ public:
 
 private:
     std::vector<CLFMessage> m_messages;
-    int                     m_maxContextWindow;
 };
 
 } // namespace CLF::CLFCore

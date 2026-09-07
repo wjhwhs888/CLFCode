@@ -41,6 +41,7 @@ add_library(clf_core STATIC
     CLFCore/CLFArgParser.cpp
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
+    CLFCore/CLFContextWindow.cpp
     CLFCore/CLFDangerousCommandDetector.cpp
     CLFCore/CLFLogger.cpp
     CLFCore/CLFMessageCodec.cpp
@@ -114,7 +115,8 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFPasteCoalescer qa_CLFSelectionModel
                      qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel
                      qa_CLFTipsBar qa_CLFCapabilities
-                     qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache)
+                     qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache
+                     qa_CLFContextWindow)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -228,6 +230,11 @@ add_test(NAME qa_CLFSessionFileCtx COMMAND qa_CLFSessionFileCtx)
 add_executable(qa_CLFSummaryCache test/qa_CLFSummaryCache.cpp)
 target_link_libraries(qa_CLFSummaryCache PRIVATE clf_core)
 add_test(NAME qa_CLFSummaryCache COMMAND qa_CLFSummaryCache)
+
+# 消息窗口截断策略（C2b，2026-09-07）
+add_executable(qa_CLFContextWindow test/qa_CLFContextWindow.cpp)
+target_link_libraries(qa_CLFContextWindow PRIVATE clf_core)
+add_test(NAME qa_CLFContextWindow COMMAND qa_CLFContextWindow)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

@@ -46,7 +46,8 @@ CLFAgentLoop::CLFAgentLoop(const CLFAgentConfig& config,
                            CLF::CLFPluginApi::ICLFFileService* fileService)
     : m_config(config)
     , m_labels(labels)
-    , m_context(config.m_maxContextWindow)
+    , m_context()
+    , m_window(config.m_maxContextWindow)
     , m_httpClient(httpClient ? httpClient
                               : std::make_shared<CLF::CLFNetwork::CLFHttpClient>(
                                     config.m_apiBaseUrl, config.m_apiKey))
@@ -149,8 +150,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             return std::string("[Interrupted]");
         }
         try {
+            // C2b：发 API 前窗口截断（system 永不截断，尾部保留）
             std::string body = m_protocolAdapter.buildChatRequest(
-                m_context.getMessages(), m_tools, m_config);
+                m_window.apply(m_context.getMessages()), m_tools, m_config);
 
             CLFAssistantResponse parsed;
 
@@ -333,8 +335,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                                          &m_interrupted, &m_labels, &thinkingSec);
                 auto results = executor.execute(parsed.m_toolCalls);
                 for (const auto& result : results) {
+                    // C2b：tool result 内容截断在入库前（容器不再含内容策略）
                     m_context.addToolResult(
-                        result.m_toolCallId, result.m_name, result.m_content);
+                        result.m_toolCallId, result.m_name,
+                        CLFTextUtil::truncateToolResult(result.m_content));
                     if (result.m_concludesTurn) concluded = true;
                 }
                 if (m_interrupted) {
@@ -397,7 +401,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         CLFAgentConfig wrapUpConfig = m_config;
         wrapUpConfig.m_stream = false;
         std::string body = m_protocolAdapter.buildChatRequest(
-            m_context.getMessages(), m_tools, wrapUpConfig);
+            m_window.apply(m_context.getMessages()), m_tools, wrapUpConfig);
         CLF::CLFNetwork::CLFHttpResponse response =
             m_httpClient->postJson("/v1/chat/completions", body);
         thinking.stop();
@@ -654,8 +658,9 @@ void CLFAgentLoop::setModelName(const std::string& name) {
 }
 
 void CLFAgentLoop::generateAndCacheSummary() {
-    // C2：生成+缓存+开关判定在 CLFSummaryCache
-    m_summaryCache.generate(m_context.getMessages());
+    // C2：生成+缓存+开关判定在 CLFSummaryCache。
+    // C2b：摘要输入 = 窗口内消息（与旧 getMessages 截断语义保真）
+    m_summaryCache.generate(m_window.apply(m_context.getMessages()));
 }
 
 bool CLFAgentLoop::restoreSession(const std::string& filePath,
