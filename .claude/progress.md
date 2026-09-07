@@ -2,15 +2,13 @@
 
 ## 进行中
 
-### ▶ 下次开工指引（2026-09-03 晚收尾时记录，从这里接着干）
-- **基线**：`fdca1b8`（A 批 + B 批 8 批次全部落地，ctest 21/21 + 冒烟 exit=0）
-- **下一步 = C 批第 1 项 C1（归属修正 + 接口化）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C1 执行：
-  1. FileOps/Diff 独立目标 clf_capabilities（CMake target 依赖图：capabilities ← core/tools 单向，边界清单 C1-1~C1-4 已取证）
-  2. 定义 ICLFFileService 接口（clf_plugin_api 头，阶段 2 分册 §3.1② 草案）+ ToolExecutor 改经接口调用（现状直调点：ToolExecutor.cpp:121-169）
-  3. ctest + 冒烟 + 独立提交
+### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
+- **基线**：`0707c39`（A 批 + B 批 8 批次 + C1 全部落地，ctest 22/22 + 冒烟 exit=0）
+- **下一步 = C 批第 2 项 C2（AgentLoop 拆角色）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C2 执行：
+  抽 CLFSessionFileCtx / CLFTodoStore / CLFSummaryCache，AgentLoop 只编排；CLFContext 收窄为纯容器（截断/窗口策略归会话对象）；m_todoPanelDone 随 CLFTodoStore 迁移（B3 定案）+ P0-8 后半（sanitizeUtf8 已被 UI 反向引用问题随 A2 已修，容器含策略项随 C2）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **C 批顺序**：C1 → C2（AgentLoop 拆角色）→ C3（ICLFOutput 拆窄）→ C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
-- **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案）；阶段 3 仍标识性
+- **C 批剩余**：C2 → C3（ICLFOutput 拆窄）→ C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
+- **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案，C1 接口化已为试点铺路）；阶段 3 仍标识性
 
 
 ### 【插件化与集成三阶段】阶段 1 评审·取证·修订 ✅（2026-09-03 晚，谷价时段；方案待排期执行）
@@ -34,7 +32,12 @@
 - **【批次 A4a handler 脚手架收敛 ✅（2026-09-03 晚，ctest 21/21 + 冒烟 exit=0）】**：detail::withHandlerScaffold 统一 parse/try-catch/dump 骨架（原 8 处同构样板）；7 handler 改造（readFile/webFetch/writeFile/editFile/listDirectory/executeCommand/search lambda，业务与容错保留——url 必填/cwd 边界/行切片语义逐一保真）；todo_write 状态机不碰（A4-2）；search 错误文案统一 "Handler error: "（qa 无文案断言，行为变化仅错误文本）。**A4b 结果结构化推迟至 B1 后**（与 executor 改造联动，分册 A4 已注）+ P2-8 后半（ProtocolAdapter m_error 显式字段）随 A4b
 - **【B 批推进（2026-09-03 晚）】**：**B5 ✅（cf4ee97）** ICLFOutput 注释修正（17 方法 10 通道 + 扩展纪律）；**B1 ✅（f6ed67d）** 能力标签（m_risk 复用 + m_isSearch/m_isRead + 口径统一；qa T5 忘打标实证——测试同步打标）；**B2/B4 ✅（d470e30）** 会话收敛（beginTurnSession/closeSessionAndReset——P0-4 关闭）+ 恢复回显外移（CLFSessionEchoLine——P0-6 关闭）+ JsonlType 常量单点（P1-7 关闭）；qa T7 测试更新（折叠块断言 → 结构化行断言）。每批 ctest 21/21 + 冒烟 exit=0
 - **【B 批全部完成（2026-09-03 晚）】**：**B3 ✅ + B6 ✅（fdca1b8）** todoPanelDone 语义注释定案（回合级展示生命周期，C2 随 CLFTodoStore 迁移）+ CLFDangerousCommandDetector 拆分（P1-16 双簇分离，SecurityPolicy API 转发测试零改）。**P0 项全关闭：P0-1（A1）P0-2（B1）P0-3（A2）P0-4（B2）P0-5（B3）P0-6（B4）P0-7（C5 待）P0-8（A2+C2 待）**
-- **待办**：C 批（C1 归属修正+接口化 → C2 AgentLoop 拆角色 → C3 ICLFOutput 拆窄 → C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
+- **【C1 ✅（2026-09-07 谷时段，两提交：5a239e4 + 0707c39）】归属修正 + 接口化**：
+  - **C1a 归属修正**：FileOps/Diff 四文件移入 `src/CLFCapabilities/FileOps/`（命名空间 CLF::CLFTools 保留，阶段 2 迁 DLL 再重定）；新增 clf_capabilities 目标（链 clf_types 单向）；clf_core 删 2 个 CLFTools 源直编（CMake hack 消除）+ 链 clf_capabilities；clf_tools 同链；qa_CLFFileOps 改链 capabilities。依赖图：capabilities ← core/tools 单向无环 ✓
+  - **C1b 接口化**：`src/CLFPluginApi/CLFFileService.hpp`（唯一跨 DLL 共享头：CLFFileInfo POD + CLFDiffOpCode 编码 + CLFFileCallbacks 回调集 + ICLFFileService 纯虚，禁依赖项目其他头）；CLFFileServiceImpl（进程内适配：POD → 静态函数转调，枚举序 static_assert 双向钉死）；ToolExecutor 构造注入 ICLFFileService*（必需依赖置默认参数组之前——C++ 规则：默认实参后不能跟无默认参数，踩坑已记录）+ prepareWritePreview 回调接收器化（readFile/previewEdit/computeDiff 三调用点 + TOCTOU getFileInfo）+ **读失败静默行为保真**（现状忽略返回值 = 新文件语义，注释钉死）；AgentLoop 构造加 fileService 借用参数（nullptr → 默认实现兜底，试点时管理器注入，core 零改动）
+  - **qa_CLFCapabilities 新套件 13 用例**（S1-S8 接口契约 + E1-E5 executor 全链路：write/edit 预览 diff 渲染 + TOCTOU 阻断 + 读失败静默）——**填补 qa_CLFToolExecutor 原 Write 工具零覆盖盲区**（C1 改写 prepareWritePreview 后此覆盖为必需）。踩坑：① 测试拼 JSON 用 `R"({"path":")" + path` 手拼——Windows 路径反斜杠成非法 JSON 转义 → parse 异常 → valid=false（改 nlohmann::json 对象构造）；② CLFSecurityMode 无 Confirm 值（写确认 = Edit 模式 L3）
+  - ctest 22/22 + 冒烟 exit=0；P2-6 顺手修（BuiltinTools 过时注释）；CHANGELOG 补 C1 条目
+- **待办**：C 批剩余（C2 AgentLoop 拆角色 → C3 ICLFOutput 拆窄 → C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
