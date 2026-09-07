@@ -13,25 +13,18 @@
 
 using namespace boost::ut;
 using CLF::CLFUI::CLFTipsBar;
-using CLF::CLFTypes::ICLFOutput;
+using CLF::CLFTypes::ICLFProgressOutput;
 
 namespace {
 
-// 全空输出 Mock（notifyActivity 用基类实现自增计数）
-class MockOutput : public ICLFOutput {
+// C3 mock 分化：TipsBar 仅依赖 ICLFProgressOutput（activityCount 基类非虚实现），
+// mock 只实现进度通道 2 个纯虚
+class MockOutput : public ICLFProgressOutput {
 public:
-    void emitContent(const std::string&) override {}
-    void emitRaw(const std::string&) override {}
-    void emitStyledLine(const std::string&, LineStyle) override {}
     void setStatus(const std::string&, int, int) override {}
     void setStatusTextOnly(const std::string&) override {}
-    bool confirm(const std::string&) override { return false; }
-    void onInterrupt(std::function<void()>) override {}
     void showProgress(const std::vector<std::string>&) override {}
     void finishProgress(const std::string&) override {}
-    void emitError(const std::string&) override {}
-    void appendThinking(const std::string&) override {}
-    void clearThinking() override {}
 };
 
 // 写临时 tips 文件（UTF-8 行 + 注释 + 空行），返回路径

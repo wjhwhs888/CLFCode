@@ -14,22 +14,14 @@ using CLF::CLFCore::CLFPasserby;
 
 namespace {
 
-class MockOutput : public CLF::CLFTypes::ICLFOutput {
+// C3 mock 分化：Passerby 仅依赖 ICLFContentOutput，mock 只实现内容通道
+class MockOutput : public CLF::CLFTypes::ICLFContentOutput {
 public:
     void emitContent(const std::string&) override {}
     void emitRaw(const std::string&) override {}
     void emitStyledLine(const std::string& line, LineStyle) override {
         emitted.push_back(line);
     }
-    void setStatus(const std::string&, int, int) override {}
-    void setStatusTextOnly(const std::string&) override {}
-    bool confirm(const std::string&) override { return false; }
-    void onInterrupt(std::function<void()>) override {}
-    void showProgress(const std::vector<std::string>&) override {}
-    void finishProgress(const std::string&) override {}
-    void emitError(const std::string&) override {}
-    void appendThinking(const std::string&) override {}
-    void clearThinking() override {}
 
     std::vector<std::string> emitted;
 };

@@ -60,7 +60,7 @@ CLFToolExecutor makeExecutor(std::vector<CLFTool>& tools, MockOutput& out,
     // C1：无状态转调层（平凡构造，测试进程生命周期；与上 static 同模式）
     static CLF::CLFCapabilities::CLFFileServiceImpl fileService;
     return CLFToolExecutor(tools, policy, nullptr, stats, &fileService,
-                           &out, &interruptFlag, &labels, &thinkingSec);
+                           &out, &out, &interruptFlag, &labels, &thinkingSec);
 }
 
 } // anonymous namespace

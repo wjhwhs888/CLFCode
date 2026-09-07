@@ -224,13 +224,13 @@ WritePreview prepareWritePreview(CLF::CLFPluginApi::ICLFFileService* fileService
 }
 
 // ============================================================================
-// renderDiff — 将结构化 diff 逐行 emit 到 ICLFOutput（带样式）
+// renderDiff — 将结构化 diff 逐行 emit 到内容通道（带样式；C3 窄化）
 // ============================================================================
 
-void renderDiff(CLF::CLFTypes::ICLFOutput* output, const WritePreview& preview) {
+void renderDiff(CLF::CLFTypes::ICLFContentOutput* output, const WritePreview& preview) {
     const auto& diff  = preview.diffLines;
     const auto& stats = preview.diffStats;
-    using LS = CLF::CLFTypes::ICLFOutput::LineStyle;
+    using LS = CLF::CLFTypes::ICLFContentOutput::LineStyle;
 
     if (diff.empty() && !stats.truncated) return;
 
@@ -361,7 +361,8 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
                                  std::function<bool(const std::string&)> confirmCallback,
                                  ToolStats& stats,
                                  CLF::CLFPluginApi::ICLFFileService* fileService,
-                                 CLF::CLFTypes::ICLFOutput* output,
+                                 CLF::CLFTypes::ICLFContentOutput* contentOutput,
+                                 CLF::CLFTypes::ICLFProgressOutput* progressOutput,
                                  std::atomic<bool>* interruptFlag,
                                  const CLFTimerLabels* labels,
                                  std::atomic<int>* thinkingSec)
@@ -369,11 +370,12 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
     , m_securityPolicy(policy)
     , m_confirmCallback(std::move(confirmCallback))
     , m_stats(stats)
-    , m_fileService(fileService)
-    , m_output(output)
+    , m_contentOutput(contentOutput)
+    , m_progressOutput(progressOutput)
     , m_interruptFlag(interruptFlag)
     , m_labels(labels)
-    , m_thinkingSec(thinkingSec) {
+    , m_thinkingSec(thinkingSec)
+    , m_fileService(fileService) {
 }
 
 // ============================================================================
@@ -386,11 +388,11 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     results.reserve(calls.size());
 
     struct ProgressGuard {
-        CLF::CLFTypes::ICLFOutput* out;
+        CLF::CLFTypes::ICLFProgressOutput* out;
         bool committed = false;
         ~ProgressGuard() { if (!committed && out) out->finishProgress(""); }
         void commit(const std::string& s) { committed = true; if (out) out->finishProgress(s); }
-    } guard{m_output};
+    } guard{m_progressOutput};
 
     int searchCount   = m_stats.searchCount;
     int readCount     = m_stats.readCount;
@@ -402,13 +404,13 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         // 工具返回即重绘（原仅靠 turnTimer 1Hz 兜底，最长延迟 1 秒）。
         // RAII 保证 :376/:387 等 continue 提前退出分支也被覆盖
         struct RefreshGuard {
-            CLF::CLFTypes::ICLFOutput* out;
+            CLF::CLFTypes::ICLFProgressOutput* out;
             ~RefreshGuard() { if (out) out->requestRefresh(); }
-        } refreshGuard{m_output};
+        } refreshGuard{m_progressOutput};
 
         // 中断检查
         if (m_interruptFlag && m_interruptFlag->load()) {
-            if (m_output) m_output->emitContent("  ⎿ ⏹ 已中断\n");
+            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⏹ 已中断\n");
             break;
         }
 
@@ -428,7 +430,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
         if (it == m_tools.end()) {
             result.m_content = std::string("Tool not found: ") + call.m_name;
-            if (m_output) m_output->emitContent("  ⎿ ✗ unknown\n");
+            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ unknown\n");
             results.push_back(std::move(result));
             continue;
         }
@@ -436,8 +438,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         bool useProgressive = (m_labels && m_thinkingSec);
         // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
         // B1：名字匹配 → m_risk == Write（风险级即能力声明）
-        if (m_output && (!useProgressive || it->m_risk == CLFToolRisk::Write))
-            m_output->emitContent("\n" + header + "\n");
+        if (m_contentOutput && (!useProgressive || it->m_risk == CLFToolRisk::Write))
+            m_contentOutput->emitContent("\n" + header + "\n");
 
         // 统计（B1：名字匹配 → 能力标签；口径 B1-4：read 桶含 list_directory）
         if (it->m_isSearch) ++searchCount;
@@ -449,7 +451,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             result.m_content = std::string("[Blocked by security policy (mode: ")
                              + m_securityPolicy.getModeName()
                              + ")] 当前模式禁止执行该操作。";
-            if (m_output) m_output->emitContent("  ⎿ ✗ blocked\n");
+            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ blocked\n");
             results.push_back(std::move(result));
             continue;
         }
@@ -467,7 +469,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             }
             if (m_securityPolicy.isDangerousCommand(cmdText)) {
                 needConfirm = true;
-                if (m_output) m_output->emitContent("  ⎿ ⚠ 命中危险命令模式，需确认\n");
+                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ 命中危险命令模式，需确认\n");
             }
         }
 
@@ -483,7 +485,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                                [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
                 if (method == "POST") {
                     needConfirm = true;
-                    if (m_output) m_output->emitContent("  ⎿ ⚠ POST 请求有远端副作用，需确认\n");
+                    if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ POST 请求有远端副作用，需确认\n");
                 }
             } catch (...) {
                 // 参数解析失败：按默认 GET 处理，不额外升级
@@ -504,8 +506,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             // --- Step 1.5: valid 检查 ---
             if (!preview.valid) {
                 result.m_content = preview.errorMsg;
-                if (m_output) {
-                    m_output->emitContent("  ⎿ ✗ " + preview.errorMsg + "\n");
+                if (m_contentOutput) {
+                    m_contentOutput->emitContent("  ⎿ ✗ " + preview.errorMsg + "\n");
                 }
                 results.push_back(std::move(result));
                 continue;
@@ -515,8 +517,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             if (preview.diffStats.truncated && needConfirm) {
                 result.m_content = "File too large to preview diff. "
                                    "Use Auto mode.";
-                if (m_output) {
-                    m_output->emitContent("  ⎿ ✗ File too large to preview diff. "
+                if (m_contentOutput) {
+                    m_contentOutput->emitContent("  ⎿ ✗ File too large to preview diff. "
                                           "Use Auto mode.\n");
                 }
                 results.push_back(std::move(result));
@@ -524,10 +526,10 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             }
 
             // --- Step 3: 渲染 diff 预览 ---
-            if (m_output) {
-                renderDiff(m_output, preview);
+            if (m_contentOutput) {
+                renderDiff(m_contentOutput, preview);
                 // 保证刷新
-                m_output->emitContent("");
+                m_contentOutput->emitContent("");
             }
 
             // --- Step 4: 模式分流 ---
@@ -536,7 +538,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                                    + preview.filePath;
                 if (!m_confirmCallback(prompt)) {
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
-                    if (m_output) m_output->emitContent("  ⎿ ✗ denied\n");
+                    if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
                     results.push_back(std::move(result));
                     if (m_interruptFlag && m_interruptFlag->load()) break;
                     continue;
@@ -551,8 +553,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                     (preview.oldSnapshot.size != 0 && current.size != 0 &&
                      current.size != preview.oldSnapshot.size)) {
                     result.m_content = "File modified after preview. Please review again.";
-                    if (m_output) {
-                        m_output->emitContent(
+                    if (m_contentOutput) {
+                        m_contentOutput->emitContent(
                             "  ⎿ ✗ File modified after preview. Please review again.\n");
                     }
                     results.push_back(std::move(result));
@@ -566,7 +568,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                                    + "参数: " + call.m_arguments;
                 if (!m_confirmCallback(prompt)) {
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
-                    if (m_output) m_output->emitContent("  ⎿ ✗ denied\n");
+                    if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
                     results.push_back(std::move(result));
                     if (m_interruptFlag && m_interruptFlag->load()) break;
                     continue;
@@ -575,10 +577,10 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         }
 
         // P0-4: 执行中单行进度（动画帧由 Renderer 附加）——读类工具执行期可见
-        if (m_output && (m_labels && m_thinkingSec) && !isWriteTool) {
+        if (m_progressOutput && (m_labels && m_thinkingSec) && !isWriteTool) {
             std::string toolLine = "  ⎿ " + call.m_name
                                  + (keyParam.empty() ? "" : "(" + keyParam + ")");
-            m_output->showProgress({toolLine});
+            m_progressOutput->showProgress({toolLine});
         }
 
         // --- Step 6 & 7: 执行 handler + 显示结果 ---
@@ -601,37 +603,37 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
 
             // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
             // （useProgressive 沿用上方 :345 声明，同作用域不重复声明）
-            if (m_output && (!useProgressive || isWriteTool || !toolOk)) {
+            if (m_contentOutput && (!useProgressive || isWriteTool || !toolOk)) {
                 // 渐进模式下仅写类工具/失败走永久内容；读类工具成功仅 showProgress
                 if (isWriteTool && !preview.diffLines.empty()) {
                     const auto& ds = preview.diffStats;
                     if (ds.added + ds.removed > 0 && !ds.truncated) {
-                        m_output->emitContent(
+                        m_contentOutput->emitContent(
                             "  ✓ " + call.m_name + "(" + preview.filePath
                             + ") — +" + std::to_string(ds.added)
                             + " -" + std::to_string(ds.removed) + " lines"
                             + ", " + std::to_string(ds.hunks) + " hunk"
                             + (ds.hunks > 1 ? "s" : "") + "\n");
                     } else if (ds.truncated) {
-                        m_output->emitContent(
+                        m_contentOutput->emitContent(
                             "  ✓ " + call.m_name + "(" + preview.filePath
                             + ") — written (diff truncated)\n");
                     } else {
-                        m_output->emitContent(
+                        m_contentOutput->emitContent(
                             "  ✓ " + call.m_name + "(" + preview.filePath
                             + ") — written\n");
                     }
                 } else if (rd.ok && rd.text.size() <= 200) {
-                    m_output->emitContent("  ✓ " + call.m_name
+                    m_contentOutput->emitContent("  ✓ " + call.m_name
                         + (keyParam.empty() ? "" : "(" + keyParam + ")") + "\n");
                 } else if (rd.ok) {
-                    m_output->emitContent("  ✓ " + call.m_name
+                    m_contentOutput->emitContent("  ✓ " + call.m_name
                         + (keyParam.empty() ? "" : "(" + keyParam + ")")
                         + " — " + std::to_string(rd.lines) + " lines, "
                         + std::to_string(rd.chars) + " chars\n");
                 } else {
                     auto reason = rd.text.size() > 100 ? rd.text.substr(0, 100) + "…" : rd.text;
-                    m_output->emitContent("  ✗ " + call.m_name
+                    m_contentOutput->emitContent("  ✗ " + call.m_name
                         + (keyParam.empty() ? "" : "(" + keyParam + ")")
                         + " — " + reason + " (scroll for full detail)\n");
                 }
@@ -643,7 +645,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             if (toolResultText.size() > 100) toolResultText = toolResultText.substr(0, 100) + "…";
             CLFLogger::instance().error(
                 "[ToolExec] " + call.m_name + " failed: " + e.what());
-            if (m_output) m_output->emitContent("  ✗ " + call.m_name
+            if (m_contentOutput) m_contentOutput->emitContent("  ✗ " + call.m_name
                 + (keyParam.empty() ? "" : "(" + keyParam + ")")
                 + " — " + toolResultText + " (scroll for full detail)\n");
         }
@@ -662,7 +664,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     }
 
     // ---- 提交进度总结（P1-2: 增强——总工具数 + search 计数，数据为局部计数器） ----
-    if (m_output && m_labels && m_thinkingSec) {
+    if (m_progressOutput && m_labels && m_thinkingSec) {
         int elapsed = m_thinkingSec->load();
         std::string summary;
         summary += "● " + m_labels->thought + " for "

@@ -17,18 +17,24 @@
 #include "CLFCore/CLFSecurityPolicy.hpp"
 
 namespace CLF::CLFPluginApi { class ICLFFileService; }
+namespace CLF::CLFTypes {
+class ICLFContentOutput;
+class ICLFProgressOutput;
+}
 namespace CLF::CLFCore {
 
 struct ToolStats;
 
 class CLFToolExecutor {
 public:
+    // C3：依赖窄化——5 方法跨内容+进度两通道，收两窄指针替代宽 ICLFOutput
     CLFToolExecutor(std::vector<CLFTool>& tools,
                     CLFSecurityPolicy& policy,
                     std::function<bool(const std::string&)> confirmCallback,
                     ToolStats& stats,
                     CLF::CLFPluginApi::ICLFFileService* fileService,
-                    CLF::CLFTypes::ICLFOutput* output = nullptr,
+                    CLF::CLFTypes::ICLFContentOutput* contentOutput = nullptr,
+                    CLF::CLFTypes::ICLFProgressOutput* progressOutput = nullptr,
                     std::atomic<bool>* interruptFlag = nullptr,
                     const CLFTimerLabels* labels = nullptr,
                     std::atomic<int>* thinkingSec = nullptr);
@@ -42,7 +48,8 @@ private:
     CLFSecurityPolicy& m_securityPolicy;
     std::function<bool(const std::string&)> m_confirmCallback;
     ToolStats& m_stats;
-    CLF::CLFTypes::ICLFOutput* m_output;
+    CLF::CLFTypes::ICLFContentOutput*  m_contentOutput = nullptr;   // C3 窄指针
+    CLF::CLFTypes::ICLFProgressOutput* m_progressOutput = nullptr;  // C3 窄指针
     std::atomic<bool>* m_interruptFlag;
     const CLFTimerLabels* m_labels = nullptr;
     std::atomic<int>* m_thinkingSec = nullptr;

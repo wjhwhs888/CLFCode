@@ -17,14 +17,15 @@
 #include <chrono>
 
 namespace CLF::CLFNetwork { class ICLFHttpClient; }
-namespace CLF::CLFTypes { class ICLFOutput; }
+namespace CLF::CLFTypes { class ICLFProgressOutput; }
 
 namespace CLF::CLFNetwork {
 
 class CLFThinkingIndicator {
 public:
+    // C3：依赖窄化——仅用 setStatus，收 ICLFProgressOutput（ISP 最小集）
     CLFThinkingIndicator(CLF::CLFNetwork::ICLFHttpClient* http = nullptr,
-                         CLF::CLFTypes::ICLFOutput* output = nullptr);
+                         CLF::CLFTypes::ICLFProgressOutput* output = nullptr);
     ~CLFThinkingIndicator();
 
     // 清理状态行（幂等）
@@ -37,7 +38,7 @@ private:
     std::atomic<bool> m_done{false};
     // 当前未使用——保留是为了将来在此处接入超时自动 abort（构造签名亦保持稳定）
     CLF::CLFNetwork::ICLFHttpClient* m_http;
-    CLF::CLFTypes::ICLFOutput* m_output = nullptr;
+    CLF::CLFTypes::ICLFProgressOutput* m_output = nullptr;
     std::chrono::steady_clock::time_point m_start;
 };
 

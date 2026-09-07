@@ -29,7 +29,7 @@ constexpr const char* const kDefaultTips[] = {
 
 } // anonymous namespace
 
-CLFTipsBar::CLFTipsBar(CLF::CLFTypes::ICLFOutput* output,
+CLFTipsBar::CLFTipsBar(CLF::CLFTypes::ICLFProgressOutput* output,
                        int rotateIntervalSec,
                        int silenceThresholdSec,
                        std::string tipsPath,

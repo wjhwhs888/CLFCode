@@ -9,7 +9,7 @@
 namespace CLF::CLFNetwork {
 
 CLFThinkingIndicator::CLFThinkingIndicator(ICLFHttpClient* http,
-                                           CLF::CLFTypes::ICLFOutput* output)
+                                           CLF::CLFTypes::ICLFProgressOutput* output)
     : m_http(http)
     , m_output(output) {
     m_start = std::chrono::steady_clock::now();

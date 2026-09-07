@@ -9,7 +9,7 @@
 
 namespace CLF::CLFCore {
 
-CLFPasserby::CLFPasserby(CLF::CLFTypes::ICLFOutput* output,
+CLFPasserby::CLFPasserby(CLF::CLFTypes::ICLFContentOutput* output,
                          std::function<bool()> timeOk)
     : m_output(output)
     , m_timeOk(timeOk ? std::move(timeOk)

@@ -28,10 +28,11 @@ namespace CLF::CLFUI {
 
 class CLFTipsBar {
 public:
+    // C3：依赖窄化——仅用 activityCount，收 ICLFProgressOutput（ISP 最小集）
     // rotateIntervalSec / silenceThresholdSec 构造参数可注入（qa 用小值不等真实时间）
     // tipsPath 非空 = 指定数据文件（qa 注入临时文件/不存在路径测兜底）；空 = resolvePath 查找链
     // startTimer=false 供 qa 手动 tick()（避免后台定时器与断言竞态）
-    explicit CLFTipsBar(CLF::CLFTypes::ICLFOutput* output,
+    explicit CLFTipsBar(CLF::CLFTypes::ICLFProgressOutput* output,
                         int rotateIntervalSec   = 5,
                         int silenceThresholdSec = 300,
                         std::string tipsPath    = "",
@@ -59,7 +60,7 @@ private:
     // 缺失/读失败/空 → 内置兜底列表
     std::vector<std::string> loadEntries(const std::string& tipsPath) const;
 
-    CLF::CLFTypes::ICLFOutput* m_output;
+    CLF::CLFTypes::ICLFProgressOutput* m_output;
     std::vector<std::string>     m_entries;
     int                          m_rotateIntervalSec;
     int                          m_silenceThresholdSec;

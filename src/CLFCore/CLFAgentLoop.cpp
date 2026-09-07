@@ -331,7 +331,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
                 CLFToolExecutor executor(m_tools, m_securityPolicy,
                                          m_confirmCallback, m_lastToolStats,
-                                         m_fileService, m_output,
+                                         m_fileService, m_output, m_output,
                                          &m_interrupted, &m_labels, &thinkingSec);
                 auto results = executor.execute(parsed.m_toolCalls);
                 for (const auto& result : results) {

@@ -122,7 +122,7 @@ CLFToolExecutor makeWriteExecutor(std::vector<CLF::CLFCore::CLFTool>& tools,
     static std::atomic<bool> interruptFlag{false};
     static CLF::CLFCapabilities::CLFFileServiceImpl fileService;  // 无状态转调层
     return CLFToolExecutor(tools, policy, std::move(confirm), stats, &fileService,
-                           &out, &interruptFlag, &labels, nullptr);
+                           &out, &out, &interruptFlag, &labels, nullptr);
 }
 
 CLF::CLFCore::CLFTool makeWriteTool(const std::string& name, int& handlerCalls) {

@@ -8,14 +8,15 @@
 #include <functional>
 #include <string>
 
-namespace CLF::CLFTypes { class ICLFOutput; }
+namespace CLF::CLFTypes { class ICLFContentOutput; }
 
 namespace CLF::CLFCore {
 
 class CLFPasserby {
 public:
+    // C3：依赖窄化——仅用 emitStyledLine，收 ICLFContentOutput（ISP 最小集）
     // timeOk：时间条件检查（可注入以便测试；默认：深夜窗 22:00-06:00 或 10/20 全天）
-    explicit CLFPasserby(CLF::CLFTypes::ICLFOutput* output,
+    explicit CLFPasserby(CLF::CLFTypes::ICLFContentOutput* output,
                          std::function<bool()> timeOk = {});
     // 每轮 AI 对话结束后调用（含工具回合）；命中条件时输出一次并永久标记
     void onTurnFinished();
@@ -26,7 +27,7 @@ private:
     static bool defaultTimeOk();               // 默认时间条件
     void trigger();                            // 输出附加行并置标记
 
-    CLF::CLFTypes::ICLFOutput* m_output;
+    CLF::CLFTypes::ICLFContentOutput* m_output;
     std::function<bool()> m_timeOk;
     int m_turnCount = 0;
     bool m_triggered = false;
