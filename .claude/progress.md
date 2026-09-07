@@ -3,11 +3,12 @@
 ## 进行中
 
 ### ▶ 下次开工指引（2026-09-07 收尾时更新，从这里接着干）
-- **基线**：`27e1fde`（A 批 + B 批 8 批次 + C1/C2/C3 全部落地，ctest 26/26 + 冒烟 exit=0）
-- **下一步 = C 批第 4 项 C4（CLFTerminal 封装）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C4 执行：
-  状态收 private + submitConfirm/cancelConfirm 收敛确认协议。前置取证 C4-1：public 直写点清单一处不漏（grep Terminal 成员直写点 → 映射窄操作 appendLine/submitConfirm/cancelConfirm/setInterruptCb）；C4-2 确认协议收敛时序（确认全链路发起/等待/唤醒/取消/超时）；C4-3 冒烟加确认专项；C4-4 只封装不接口化（防范围蔓延）。A1 已拆 Repl → 直写点集中在 Repl/View/InputHandler
+- **基线**：`bb01fc4`（A 批 + B 批 8 批次 + C1/C2/C3/C4 全部落地，ctest 26/26 + 冒烟 exit=0）
+- **下一步 = C 批第 5 项 C5（CLFSystemPromptBuilder 拆分重建）**，按 `设计-阶段1-代码审查与模块重构.md` §五 C5 执行（P0-7/P1-14）：
+  拆 CLFSystemInfoProvider（detectOsInfo/detectShellInfo/captureGitStatus，Git TTL 缓存改实例成员）+ CLFSubprocessRunner（popen/_popen 封装——CommandExec 迁插件后 core 不可依赖之）+ CLFProjectRulesLoader（loadProjectRules + utf8SafeHead 安全截断）；消除 s_constitutionCache/s_gitCache 文件级非平凡静态对象（改 Builder 实例成员）；Builder 收窄：模板加载+组装+预算+变量替换（build() 流程不变）。依赖 A2 已就绪（replaceAll/时间戳/token 估算/截断直接消费）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
-- **C 批剩余**：C4（Terminal 封装）→ C5（Builder 重建，依赖 A2 已就绪）→ C6（ConfigLoader 表驱动）
+- **C 批剩余**：C5（Builder 重建）→ C6（ConfigLoader 表驱动）
+- **⚠ C4 遗留**：确认交互实机冒烟（确认/取消/Esc/Tab 切换/中断五路径）待用户验收（C4-3）
 - **阶段 1 出口后**：阶段 2 从 2.1 插件管理器开始（分册已论证定案，C1 接口化已为试点铺路）；阶段 3 仍标识性
 
 
@@ -47,7 +48,12 @@
   - ICLFOutput 收窄为**聚合接口**（仅继承四窄接口无新方法）——CLFTerminal 类声明零改动（聚合形式 = 接口层多继承，比 Terminal 多继承/组合持有更轻，C3-2 落定）
   - 签名窄化按使用清单：Passerby→Content / ThinkingIndicator→Progress / TipsBar→Progress（1 方法消费者示范）+ ToolExecutor→Content+Progress 两指针（5 方法，含 renderDiff/guard 重定向）。**保持宽（回流记录）**：AgentLoop（9 方法全通道编排）/ Repl（装配点）/ Commands（3 方法跨两通道留维护）
   - mock 分化：qa_CLFPasserby 17→4 方法、qa_CLFTipsBar 17→3 方法。踩坑：复合条件 `if (m_output && ...)` 残留（批量替换只命中 `if (m_output)` 整条件）——4 处逐行按通道重定向。ctest 26/26 + 冒烟 exit=0
-- **待办**：C 批剩余（C4 Terminal 封装 → C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
+- **【C4 ✅（2026-09-07 谷时段，bb01fc4）】CLFTerminal 状态封装（P1-3/P1-4 关闭）**：
+  - public 状态块全量收 private（C4-1 直写点清单一处不漏：Repl 2 处 / View 2 处 / InputHandler 9 处 / ConfirmBar 4 处全收敛）
+  - 新增窄操作：clearContent（启动重置）/ consumeRefreshPending（刷新消费）/ submitConfirm(accepted)（确认协议收敛，锁序 confirmMutex→mutex 嵌套与原内联一致 + cv 唤醒单点化）/ confirmSelection + cycleConfirmSelection / interruptFromUi（3 处中断收敛）
+  - ConfirmBar 渲染改走 ContentSnapshot（零直读）；C4-4 纪律遵守（纯封装零接口化）
+  - **⚠ 遗留（C4-3）**：确认交互实机冒烟（确认/取消/Esc/Tab 切换/中断五路径）待用户验收——ctest 无 Terminal 自动化
+- **待办**：C 批剩余（C5 Builder 拆分重建 → C6 ConfigLoader 表驱动）；阶段 3 分册仍标识性
 
 > **阶段划分（以"是否开始接入 dsh"为界）**：**A 阶段 = 本体自研**（CLFCode 自己的功能）✅ **全部完成（v0.5.0 发布中）** → 🚦**决策门**（唯一问题：subagent 值不值）→ **B 阶段 = dsh 对接**（8.5-12.5 天）。
 > A 阶段产出在 B 阶段**不会白做**——双后端并存，直连后端永远是降级兜底路径。
