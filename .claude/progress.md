@@ -2,10 +2,10 @@
 
 ## 进行中
 
-### ▶ 下次开工指引（2026-09-07 发布收尾时更新，从这里接着干）
-- **基线**：`v0.7.0` tag（阶段 1 全部批次落地 + 用户实机验收通过 + 设计文档归档；ctest 28/28 + 冒烟 exit=0）
-- **当前状态**：v0.7.0 已打 tag 推送，**发布由用户执行**（release.ps1，memory：release-workflow 三步对应）；用户将在其他机器实测新版本
-- **下一步 = 阶段 2 开工（等用户发布+实测反馈后）**：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（阶段 2 分册 §4.1 步骤 2 起——步骤 1 C1+ 已落地）；随后 2.2a tools.fileops.dll 试点（C1 接口化已铺路，core 零改动承诺待验证）
+### ▶ 下次开工指引（2026-09-07 会话收尾时更新，从这里接着干）
+- **基线**：`v0.7.0` tag（阶段 1 全部批次落地 + 用户实机验收通过 + 设计文档归档 + **已发布 ✅（2026-09-07 用户执行，其他机器实测中）**；ctest 28/28 + 冒烟 exit=0）
+- **当前状态**：v0.7.0 发布完毕，用户在实机测试新版本；阶段 2 待用户实测反馈后开工
+- **下一步 = 阶段 2 开工**：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（阶段 2 分册 §4.1 步骤 2 起——步骤 1 C1+ 已落地）；随后 2.2a tools.fileops.dll 试点（C1 接口化已铺路，core 零改动承诺待验证）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
 - **⚠ 遗留**：C2-3 接口化（ProtocolAdapter 等）缓做记录在案（C3 注记）；「首次运行崩溃修复」长期观察未闭环（progress 长期观察区）
 - **阶段 2 出口后**：试点 FileOps 迁 DLL（tools.fileops.dll）——C1 接口化后 core 零改动承诺待验证
