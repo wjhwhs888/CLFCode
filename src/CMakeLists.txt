@@ -119,7 +119,8 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFInputRender qa_CLFPasserby qa_CLFTodoPanel
                      qa_CLFTipsBar qa_CLFCapabilities
                      qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache
-                     qa_CLFContextWindow qa_CLFSystemComponents)
+                     qa_CLFContextWindow qa_CLFSystemComponents
+                     qa_CLFConfigLoader)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -243,6 +244,11 @@ add_test(NAME qa_CLFContextWindow COMMAND qa_CLFContextWindow)
 add_executable(qa_CLFSystemComponents test/qa_CLFSystemComponents.cpp)
 target_link_libraries(qa_CLFSystemComponents PRIVATE clf_core)
 add_test(NAME qa_CLFSystemComponents COMMAND qa_CLFSystemComponents)
+
+# 配置加载器表驱动回归（C6，2026-09-07）
+add_executable(qa_CLFConfigLoader test/qa_CLFConfigLoader.cpp)
+target_link_libraries(qa_CLFConfigLoader PRIVATE clf_core)
+add_test(NAME qa_CLFConfigLoader COMMAND qa_CLFConfigLoader)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

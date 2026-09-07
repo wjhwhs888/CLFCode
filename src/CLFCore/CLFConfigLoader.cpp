@@ -20,6 +20,114 @@ namespace fs = std::filesystem;
 
 namespace CLF::CLFCore {
 
+namespace {
+
+// ============================================================================
+// C6（2026-09-07）表驱动配置映射（P1-15）：{section, key, 类型, 目标槽} 静态表
+// 替代 30+ if(contains) 样板——新配置项 = CLFAgentConfig 加字段 + 下表加一行。
+// 成员指针为编译期常量（POD 平凡结构，无静态构造/析构问题）。
+// 类型枚举的读取语义（行为保真，逐条对照原内联代码）：
+//   String/Int/Float/Bool：is_<type> 过滤后赋值
+//   StringListAppend：数组逐项追加（stop——原语义不清空）
+//   StringListReplace：清空后逐项追加（command_allowlist——原语义 clear 先行）
+//   IntMap：对象逐键 is_number 过滤（model_max_tokens）
+// ============================================================================
+
+enum class ConfigFieldType { String, Int, Float, Bool, StringListAppend, StringListReplace, IntMap };
+
+struct ConfigField {
+    const char* section;
+    const char* key;
+    ConfigFieldType type;
+    // 目标槽（按 type 仅填一个；其余保持默认 nullptr）
+    std::string CLFAgentConfig::* strField = nullptr;
+    int    CLFAgentConfig::* intField = nullptr;
+    float  CLFAgentConfig::* floatField = nullptr;
+    bool   CLFAgentConfig::* boolField = nullptr;
+    std::vector<std::string> CLFAgentConfig::* listField = nullptr;
+    std::map<std::string, int> CLFAgentConfig::* mapField = nullptr;
+};
+
+constexpr ConfigField kConfigFields[] = {
+    // —— connection（连接认证）——
+    {"connection", "base_url", ConfigFieldType::String, &CLFAgentConfig::m_apiBaseUrl},
+    {"connection", "api_key",  ConfigFieldType::String, &CLFAgentConfig::m_apiKey},
+    // —— chat_completions（对齐 DeepSeek API 参数）——
+    {"chat_completions", "model",             ConfigFieldType::String, &CLFAgentConfig::m_modelName},
+    {"chat_completions", "sub_model",         ConfigFieldType::String, &CLFAgentConfig::m_subModel},
+    {"chat_completions", "temperature",       ConfigFieldType::Float, nullptr, nullptr, &CLFAgentConfig::m_temperature},
+    {"chat_completions", "max_tokens",        ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxTokens},
+    {"chat_completions", "top_p",             ConfigFieldType::Float, nullptr, nullptr, &CLFAgentConfig::m_topP},
+    {"chat_completions", "stream",            ConfigFieldType::Bool, nullptr, nullptr, nullptr, &CLFAgentConfig::m_stream},
+    {"chat_completions", "frequency_penalty", ConfigFieldType::Float, nullptr, nullptr, &CLFAgentConfig::m_frequencyPenalty},
+    {"chat_completions", "presence_penalty",  ConfigFieldType::Float, nullptr, nullptr, &CLFAgentConfig::m_presencePenalty},
+    {"chat_completions", "response_format",   ConfigFieldType::String, &CLFAgentConfig::m_responseFormat},
+    {"chat_completions", "stop",              ConfigFieldType::StringListAppend, nullptr, nullptr, nullptr, nullptr, &CLFAgentConfig::m_stop},
+    {"chat_completions", "thinking_level",    ConfigFieldType::String, &CLFAgentConfig::m_thinkingLevel},
+    // —— agent（Agent 行为参数）——
+    {"agent", "max_context_window",       ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxContextWindow},
+    {"agent", "max_tool_call_iterations", ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxToolCallIterations},
+    {"agent", "context_compression",      ConfigFieldType::Bool, nullptr, nullptr, nullptr, &CLFAgentConfig::m_contextCompression},
+    {"agent", "auto_summary_threshold",   ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_autoSummaryThreshold},
+    {"agent", "model_max_tokens",         ConfigFieldType::IntMap, nullptr, nullptr, nullptr, nullptr, nullptr, &CLFAgentConfig::m_modelMaxTokens},
+    {"agent", "max_response_delay_sec",   ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxResponseDelaySec},
+    {"agent", "interaction_language",     ConfigFieldType::String, &CLFAgentConfig::m_interactionLanguage},
+    {"agent", "security_mode",            ConfigFieldType::String, &CLFAgentConfig::m_securityMode},
+    {"agent", "allow_absolute_read",      ConfigFieldType::Bool, nullptr, nullptr, nullptr, &CLFAgentConfig::m_allowAbsoluteRead},
+    {"agent", "command_allowlist",        ConfigFieldType::StringListReplace, nullptr, nullptr, nullptr, nullptr, &CLFAgentConfig::m_commandAllowlist},
+    // —— logging（日志配置）——
+    {"logging", "level",   ConfigFieldType::String, &CLFAgentConfig::m_logLevel},
+    {"logging", "file",    ConfigFieldType::String, &CLFAgentConfig::m_logFile},
+    {"logging", "console", ConfigFieldType::Bool, nullptr, nullptr, nullptr, &CLFAgentConfig::m_logConsole},
+};
+
+// 表驱动应用：单循环替代 30+ if(contains)；类型过滤语义与原内联逐条保真
+void applyConfigFields(const json& cfg, CLFAgentConfig& outConfig) {
+    for (const auto& f : kConfigFields) {
+        auto secIt = cfg.find(f.section);
+        if (secIt == cfg.end() || !secIt->is_object()) continue;
+        auto valIt = secIt->find(f.key);
+        if (valIt == secIt->end()) continue;
+        const auto& v = *valIt;
+        switch (f.type) {
+        case ConfigFieldType::String:
+            if (v.is_string()) outConfig.*(f.strField) = v.get<std::string>();
+            break;
+        case ConfigFieldType::Int:
+            if (v.is_number()) outConfig.*(f.intField) = v.get<int>();
+            break;
+        case ConfigFieldType::Float:
+            if (v.is_number()) outConfig.*(f.floatField) = v.get<float>();
+            break;
+        case ConfigFieldType::Bool:
+            if (v.is_boolean()) outConfig.*(f.boolField) = v.get<bool>();
+            break;
+        case ConfigFieldType::StringListAppend:
+            if (v.is_array())
+                for (const auto& item : v)
+                    if (item.is_string())
+                        (outConfig.*(f.listField)).push_back(item.get<std::string>());
+            break;
+        case ConfigFieldType::StringListReplace: {
+            if (!v.is_array()) break;
+            auto& list = outConfig.*(f.listField);
+            list.clear();
+            for (const auto& item : v)
+                if (item.is_string()) list.push_back(item.get<std::string>());
+            break;
+        }
+        case ConfigFieldType::IntMap:
+            if (v.is_object())
+                for (auto it = v.begin(); it != v.end(); ++it)
+                    if (it.value().is_number())
+                        (outConfig.*(f.mapField))[it.key()] = it.value().get<int>();
+            break;
+        }
+    }
+}
+
+} // anonymous namespace
+
 std::string CLFConfigLoader::s_projectRoot;
 
 std::string CLFConfigLoader::findProjectRoot() {
@@ -86,121 +194,7 @@ bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig
 
     try {
         json cfg = json::parse(file);
-
-        // —— connection（连接认证）——
-        if (cfg.contains("connection")) {
-            const auto& conn = cfg["connection"];
-            if (conn.contains("base_url") && conn["base_url"].is_string()) {
-                outConfig.m_apiBaseUrl = conn["base_url"].get<std::string>();
-            }
-            if (conn.contains("api_key") && conn["api_key"].is_string()) {
-                outConfig.m_apiKey = conn["api_key"].get<std::string>();
-            }
-        }
-
-        // —— chat_completions（对齐 DeepSeek API 参数）——
-        if (cfg.contains("chat_completions")) {
-            const auto& cc = cfg["chat_completions"];
-            if (cc.contains("model") && cc["model"].is_string()) {
-                outConfig.m_modelName = cc["model"].get<std::string>();
-            }
-            if (cc.contains("sub_model") && cc["sub_model"].is_string()) {
-                outConfig.m_subModel = cc["sub_model"].get<std::string>();
-            }
-            if (cc.contains("temperature") && cc["temperature"].is_number()) {
-                outConfig.m_temperature = cc["temperature"].get<float>();
-            }
-            if (cc.contains("max_tokens") && cc["max_tokens"].is_number()) {
-                outConfig.m_maxTokens = cc["max_tokens"].get<int>();
-            }
-            if (cc.contains("top_p") && cc["top_p"].is_number()) {
-                outConfig.m_topP = cc["top_p"].get<float>();
-            }
-            if (cc.contains("stream") && cc["stream"].is_boolean()) {
-                outConfig.m_stream = cc["stream"].get<bool>();
-            }
-            if (cc.contains("frequency_penalty") && cc["frequency_penalty"].is_number()) {
-                outConfig.m_frequencyPenalty = cc["frequency_penalty"].get<float>();
-            }
-            if (cc.contains("presence_penalty") && cc["presence_penalty"].is_number()) {
-                outConfig.m_presencePenalty = cc["presence_penalty"].get<float>();
-            }
-            if (cc.contains("response_format") && cc["response_format"].is_string()) {
-                outConfig.m_responseFormat = cc["response_format"].get<std::string>();
-            }
-            if (cc.contains("stop") && cc["stop"].is_array()) {
-                for (const auto& s : cc["stop"]) {
-                    if (s.is_string()) {
-                        outConfig.m_stop.push_back(s.get<std::string>());
-                    }
-                }
-            }
-            if (cc.contains("thinking_level") && cc["thinking_level"].is_string()) {
-                outConfig.m_thinkingLevel = cc["thinking_level"].get<std::string>();
-            }
-        }
-
-        // —— agent（Agent 行为参数）——
-        if (cfg.contains("agent")) {
-            const auto& agent = cfg["agent"];
-            if (agent.contains("max_context_window") && agent["max_context_window"].is_number()) {
-                outConfig.m_maxContextWindow = agent["max_context_window"].get<int>();
-            }
-            if (agent.contains("max_tool_call_iterations") && agent["max_tool_call_iterations"].is_number()) {
-                outConfig.m_maxToolCallIterations = agent["max_tool_call_iterations"].get<int>();
-            }
-            if (agent.contains("context_compression") && agent["context_compression"].is_boolean()) {
-                outConfig.m_contextCompression = agent["context_compression"].get<bool>();
-            }
-            // S3-1: 自动摘要触发阈值（剩余窗口 < 阈值时触发）
-            if (agent.contains("auto_summary_threshold") && agent["auto_summary_threshold"].is_number()) {
-                outConfig.m_autoSummaryThreshold = agent["auto_summary_threshold"].get<int>();
-            }
-            // S3-2: 按模型名的 max_tokens 覆盖表（模型名 → 上限；用户显式声明，程序不猜）
-            if (agent.contains("model_max_tokens") && agent["model_max_tokens"].is_object()) {
-                for (auto it = agent["model_max_tokens"].begin();
-                     it != agent["model_max_tokens"].end(); ++it) {
-                    if (it.value().is_number()) {
-                        outConfig.m_modelMaxTokens[it.key()] = it.value().get<int>();
-                    }
-                }
-            }
-            if (agent.contains("max_response_delay_sec") && agent["max_response_delay_sec"].is_number()) {
-                outConfig.m_maxResponseDelaySec = agent["max_response_delay_sec"].get<int>();
-            }
-            if (agent.contains("interaction_language") && agent["interaction_language"].is_string()) {
-                outConfig.m_interactionLanguage = agent["interaction_language"].get<std::string>();
-            }
-            if (agent.contains("security_mode") && agent["security_mode"].is_string()) {
-                outConfig.m_securityMode = agent["security_mode"].get<std::string>();
-            }
-            // S2-1: read_file 是否允许越出工作区（逃生口，默认关）
-            if (agent.contains("allow_absolute_read") && agent["allow_absolute_read"].is_boolean()) {
-                outConfig.m_allowAbsoluteRead = agent["allow_absolute_read"].get<bool>();
-            }
-            // S2-2: 危险命令检测的前缀白名单
-            if (agent.contains("command_allowlist") && agent["command_allowlist"].is_array()) {
-                outConfig.m_commandAllowlist.clear();
-                for (const auto& item : agent["command_allowlist"]) {
-                    if (item.is_string()) outConfig.m_commandAllowlist.push_back(item.get<std::string>());
-                }
-            }
-        }
-
-        // —— logging（日志配置）——
-        if (cfg.contains("logging")) {
-            const auto& logging = cfg["logging"];
-            if (logging.contains("level") && logging["level"].is_string()) {
-                outConfig.m_logLevel = logging["level"].get<std::string>();
-            }
-            if (logging.contains("file") && logging["file"].is_string()) {
-                outConfig.m_logFile = logging["file"].get<std::string>();
-            }
-            if (logging.contains("console") && logging["console"].is_boolean()) {
-                outConfig.m_logConsole = logging["console"].get<bool>();
-            }
-        }
-
+        applyConfigFields(cfg, outConfig);   // C6：表驱动应用（26 字段）
         return true;
     } catch (const json::exception& e) {
         CLFLogger::instance().error(std::string("ConfigLoader JSON parse error: ") + e.what());
