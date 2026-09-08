@@ -120,7 +120,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFTipsBar qa_CLFCapabilities
                      qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache
                      qa_CLFContextWindow qa_CLFSystemComponents
-                     qa_CLFConfigLoader qa_CLFSessionUsage)
+                     qa_CLFConfigLoader qa_CLFSessionUsage qa_CLFTextUtil)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -254,6 +254,11 @@ add_test(NAME qa_CLFConfigLoader COMMAND qa_CLFConfigLoader)
 add_executable(qa_CLFSessionUsage test/qa_CLFSessionUsage.cpp)
 target_link_libraries(qa_CLFSessionUsage PRIVATE clf_types)
 add_test(NAME qa_CLFSessionUsage COMMAND qa_CLFSessionUsage)
+
+# 公共文本工具（ANSI 转义宽度感知，2026-09-08）
+add_executable(qa_CLFTextUtil test/qa_CLFTextUtil.cpp)
+target_link_libraries(qa_CLFTextUtil PRIVATE clf_types)
+add_test(NAME qa_CLFTextUtil COMMAND qa_CLFTextUtil)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

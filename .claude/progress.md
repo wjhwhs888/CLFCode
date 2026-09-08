@@ -2,6 +2,14 @@
 
 ## 进行中
 
+### 【ANSI 颜色从未生效根因修复 ✅（2026-09-08，ctest 30/30 + 冒烟 exit=0，待实机看颜色）】
+- **现象**：用户发现 ❯ 无青色、● CLFCode: 无青色——且问题"很久了"
+- **根因链（三层取证）**：① `CLFAnsi::s_enabled` 默认 false，`enable()` 靠 SetConsoleMode(VT_PROCESSING) 置位 ② `CLFTerminal::enableAnsi()`（唯一转发点）**声明后全仓零调用** → s_enabled 恒 false ③ cyan/bold/gray/red 包装恒返回原字符串（空操作）——**从第一天起内置颜色就没生效过**。FTXUI 装饰器颜色正常（状态点四态等）是因为 FTXUI 自己开 VT（WindowsEmulateVT100Terminal），与 CLFAnsi 无关
+- **修复**：CLFRepl::run() 开头调 `CLFTerminal::enableAnsi()`（UI 启动单点）；**配套修复**：CLFTextUtil displayWidth/substrByWidth **ANSI 转义感知**（skipAnsiEscape 匿名命名空间 helper）——enable 后转义真实进内容流，宽度计算不跳过会硬换行提前/选区坐标错位（既有潜伏小瑕疵转真问题）
+- **踩坑**：① 首版 skipAnsiEscape i 停在终止字节——displayWidth 的 for ++i 越过 OK 但 substrByWidth 的 while 无自增 → 终止字节被多计 1 宽（qa 当场抓住）→ i 统一推进到终止字节之后 + displayWidth 改 while 式 ② 测试期望两次写错（❯ 按项目规则计 2 宽；"\033[36x" 的 x 是合法终止字节，防御用例改无终止字节截断序列）
+- **测试**：新建 qa_CLFTextUtil 套件（6 用例：纯文本回归/SGR 跳过/嵌套转义形态/不完整转义防御/substrByWidth 转义含入/CJK 不劈半）——CLFTextUtil 首次独立套件；CMake 注册（clf_types + CLF_TEST_TARGETS）
+- CHANGELOG 未发布段已补（修复 + 优化两条）；待用户实机看颜色效果
+
 ### 【输入行视觉强化 ✅（2026-09-08，ctest 29/29 + 冒烟 exit=0，待实机看效果）】
 - **需求**：用户想更容易区分输入/输出——现状 "> " 前缀不明显，多轮长输出翻页易漏输入内容
 - **方案（用户三选一定案）**：青色加粗 `❯` 前缀（与 AI 侧"● CLFCode:"青色标签对称成视觉锚点）+ 时间戳转 gray 低调。备选：整行底色块 / 块状标签行

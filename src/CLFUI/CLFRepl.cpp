@@ -111,6 +111,11 @@ CLFRepl::~CLFRepl() = default;
 
 int CLFRepl::run() {
     try {
+        // ANSI 转义启用（UI 启动单点调用）：CLFAnsi::s_enabled 门控 cyan/bold/
+        // gray/red 包装——enable 缺失时包装为空操作（历史上 "● CLFCode:" 与
+        // "❯" 无色无加粗的根因：enableAnsi 声明后全仓零调用，2026-09-08 修复）
+        CLFTerminal::enableAnsi();
+
         // 启动临时文件清理
         try {
             for (auto& e : std::filesystem::directory_iterator(".")) {

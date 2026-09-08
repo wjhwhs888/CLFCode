@@ -23,6 +23,24 @@ size_t forwardToCharBoundary(const std::string& s, size_t pos) {
     return pos;
 }
 
+// ANSI 转义序列跳过（宽度计算用）：\033[ 起、参数/中间字节 0x20-0x3F、终止字节
+// 0x40-0x7E（SGR 序列 "\033[36m" 即 [ 后参数 36、终止 m）。转义不占显示宽——
+// 否则含颜色包装的行（"● CLFCode:"/"❯ 输入"）硬换行点提前、选区坐标错位。
+// 完整序列才跳过；不完整/伪造序列按普通字符处理。
+// 返回是否跳过；跳过时 i 已推进到终止字节之后（两个调用点均为 while 无自增循环）
+bool skipAnsiEscape(const std::string& s, size_t& i) {
+    if (s[i] != '\033' || i + 1 >= s.size() || s[i + 1] != '[') return false;
+    size_t j = i + 2;
+    while (j < s.size()
+        && static_cast<unsigned char>(s[j]) >= 0x20
+        && static_cast<unsigned char>(s[j]) <= 0x3F) ++j;
+    if (j >= s.size()
+        || static_cast<unsigned char>(s[j]) < 0x40
+        || static_cast<unsigned char>(s[j]) > 0x7E) return false;
+    i = j + 1;   // 推进到终止字节之后（含终止字节整体跳过）
+    return true;
+}
+
 } // anonymous namespace
 
 std::string CLFTextUtil::utf8SafeHead(const std::string& text, size_t maxBytes,
@@ -48,14 +66,18 @@ int CLFTextUtil::charWidth(unsigned char c) {
 
 int CLFTextUtil::displayWidth(const std::string& s) {
     int w = 0;
-    for (size_t i = 0; i < s.size(); ++i)
+    for (size_t i = 0; i < s.size();) {
+        if (skipAnsiEscape(s, i)) continue;   // ANSI 转义序列不占显示宽（i 已推进）
         w += charWidth(static_cast<unsigned char>(s[i]));
+        ++i;
+    }
     return w;
 }
 
 std::string CLFTextUtil::substrByWidth(const std::string& s, int maxW) {
     int w = 0;
     for (size_t i = 0; i < s.size();) {
+        if (skipAnsiEscape(s, i)) continue;   // ANSI 转义序列不占显示宽
         int cw = charWidth(static_cast<unsigned char>(s[i]));
         if (cw == 0) { ++i; continue; }           // UTF-8 续字节，不单独算
         if (w + cw > maxW) return s.substr(0, i);
