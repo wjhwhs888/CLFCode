@@ -2,6 +2,15 @@
 
 ## 进行中
 
+### 【缓存命中率显示 v2 需求变更落地 ✅（2026-09-08 下午，ctest 29/29 + 冒烟 exit=0）】
+- **用户需求变更**："底部常亮显示，不补在对话后面，统计这一轮会话的值，类似 dsh，作为当前会话的缓存命中率参数"
+- **v2 方案**：① 显示 = **modeLine 常亮参数行**（模型名│📁目录│🔒安全模式同列，安全模式后加"⚡缓存命中 X%"dim 段，无数据 emptyElement 零占用；ReplView 每帧渲染读 getSessionUsage()）② 口径 = **会话累计**（与 m_totalTokensUsed 同生命周期——全仓无 reset 点、/clear 不清；R3 gate 累计）
+- **v1 回退**：appendCacheHitLine helper + finishTurn/触顶两处调用删除；对话流零缓存文案（不污染上下文问题在 v2 架构下消失）
+- **类改造**：CLFTurnUsage → **CLFSessionUsage**（reset/displayLine 删除，percentText 替代；文件/测试/CMake 同步重命名）
+- **测试重写**：qa_CLFSessionUsage 新建(6)；qa_CLFAgentLoop T10d 系列改为会话累计断言（流式 100%/floor 98/零命中 gate/无 usage gate/两轮 Σ 75/跨回合不清零+对话流与请求 body 无缓存文案/触顶 wrapUp 不计入 75）；T10b 中断不累计补断言
+- **验证**：MSVC 构建 42/42；ctest 29/29 全绿；冒烟 exit=0。设计文档重写为 v2 终版（§九 变更历史）
+- **待办**：实机观测（底部常亮显示 + 随会话增长 + modeLine 宽度共存视觉）→ 设计文档归档
+
 ### 【缓存命中率显示 实施完成 ✅（2026-09-08，ctest 29/29 + 冒烟 exit=0）】
 - **生产代码**：CLFStreamAccumulator.hpp（+m_usageCacheHit/getter/feedUsage 双拼写解析/reset）；CLFProtocolAdapter.hpp/.cpp（CLFAssistantResponse 加字段 + 同步双拼写解析）；**CLFTurnUsage.hpp 新建**（CLFTypes/，header-only：reset/accumulate/displayLine，gate + floor 防虚报 + clamp 100%）；CLFAgentLoop.hpp/.cpp（成员 m_turnUsage + runTurn reset + 流式落地 + R3 gate 累计 + 私有 helper `appendCacheHitLine` 双通道发射 + finishTurn 与触顶路径两处调用）
 - **测试**：新建 qa_CLFTurnUsage（7 用例：reset/基本/100%/floor 99%/异常 clamp/gate/Σ 累计）+ qa_CLFStreamAccumulator +3（双拼写/缺失保持/reset）+ qa_CLFProtocolAdapter +2（双拼写/缺失）+ qa_CLFAgentLoop +7（T10d 系列：100% 流式/floor/零命中 gate/无 usage gate/回合累计 75%/非流式不污染上下文（mock 加 lastBodies 记录）/触顶路径）+ T10b 中断补断言。CMake：qa_CLFTurnUsage 目标（clf_types 链 + CLF_TEST_TARGETS 列表）

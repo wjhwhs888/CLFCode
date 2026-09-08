@@ -313,6 +313,17 @@ ftxui::Element CLFReplView::render() {
         return ftxui::separatorCharacter("│")
              | ftxui::color(ftxui::Color::GrayDark);
     };
+    // 会话缓存命中率（底部常亮参数行——与模型名/安全模式同列；渲染线程读，
+    // 回合线程累计，撕裂至多显示旧值一帧，与 m_totalTokensUsed 同模式）
+    // 无 usage 数据/零命中 → emptyElement 零占用（不宣称 0%）
+    const std::string cacheHitText = m_agent.getSessionUsage().percentText();
+    ftxui::Element cacheHitEl = ftxui::emptyElement();
+    if (!cacheHitText.empty()) {
+        cacheHitEl = ftxui::hbox({
+            sep(),
+            ftxui::text(" ⚡缓存命中 " + cacheHitText + "%") | ftxui::dim,
+        });
+    }
     auto modeLine = ftxui::hbox({
         ftxui::text("  ")
           | ftxui::color(ftxui::Color::RedLight),  // 缩进不算
@@ -328,6 +339,7 @@ ftxui::Element CLFReplView::render() {
         sep(),
         ftxui::text(" 🔒 " + m_dispatcher->modeName())
           | ftxui::color(modeColor()),
+        cacheHitEl,
         ftxui::text("  Shift+Tab 切换  ")
           | ftxui::dim,
         ftxui::filler(),

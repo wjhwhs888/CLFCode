@@ -102,7 +102,6 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     m_sessionFileCtx.setTurnStartMsgCount(m_context.getMessages().size());
     m_context.addMessage("user", userInput);
     m_lastToolStats = {};
-    m_turnUsage.reset();  // 回合缓存命中累计重置（缓存命中率显示）
     // P1-1: 状态点接线——Running 于 turn 开始
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
 
@@ -298,8 +297,9 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (parsed.m_usageTotal > 0) {
                 m_totalTokensUsed += parsed.m_usageTotal;
                 m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
-                // 缓存命中率显示：回合累计（主循环正常解析轮，R3 同规则）
-                m_turnUsage.accumulate(parsed.m_usagePrompt, parsed.m_usageCacheHit);
+                // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
+                // 同生命周期不重置，R3 同规则——仅正常解析路径累计）
+                m_sessionUsage.accumulate(parsed.m_usagePrompt, parsed.m_usageCacheHit);
             }
 
             // finish_reason 检查
@@ -439,9 +439,6 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         finalContent += kTurnCapNotice;
     }
     appendWorked(finalContent, turnStart);
-    // 缓存命中率显示：触顶独立收尾段同样发射（finalContent 本不进上下文——
-    // wrapUp.m_content 单独 addMessage，非流式追加零污染）
-    appendCacheHitLine(finalContent);
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     return m_config.m_stream ? std::string() : finalContent;
@@ -460,18 +457,6 @@ void CLFAgentLoop::appendWorked(std::string& finalContent,
     finalContent += worked;
     if (m_output && m_config.m_stream)
         m_output->emitContent(worked);  // stream 路径需显式 emit
-}
-
-// 缓存命中率显示（设计-缓存命中率显示 §3.3）：回合收尾统计行的双通道发射
-// 流式 emit 直发；非流式追加进 finalContent 尾部（须在 addMessage 之后调用）
-void CLFAgentLoop::appendCacheHitLine(std::string& finalContent) {
-    const std::string cacheLine = m_turnUsage.displayLine();
-    if (cacheLine.empty()) return;
-    if (m_config.m_stream) {
-        if (m_output) m_output->emitContent(cacheLine);
-    } else {
-        finalContent += cacheLine;
-    }
 }
 
 std::string CLFAgentLoop::finishTurn(
@@ -516,8 +501,6 @@ std::string CLFAgentLoop::finishTurn(
     CLFLogger::instance().info("[Turn] done, content="
         + std::to_string(finalContent.size()) + "chars, tools="
         + std::to_string(m_lastToolStats.totalCalls));
-    // 缓存命中率显示：addMessage 之后发射（非流式追加不进上下文）
-    appendCacheHitLine(finalContent);
     return m_config.m_stream ? std::string() : finalContent;
 }
 
