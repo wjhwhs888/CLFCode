@@ -69,6 +69,7 @@ target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ============================================================================
 add_library(clf_ui STATIC
     CLFUI/CLFAnsi.cpp
+    CLFUI/CLFAnsiParser.cpp
     CLFUI/CLFAsyncSubmit.cpp
     CLFUI/CLFClipboard.cpp
     CLFUI/CLFCommandDispatcher.cpp
@@ -120,7 +121,8 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFTipsBar qa_CLFCapabilities
                      qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache
                      qa_CLFContextWindow qa_CLFSystemComponents
-                     qa_CLFConfigLoader qa_CLFSessionUsage qa_CLFTextUtil)
+                     qa_CLFConfigLoader qa_CLFSessionUsage qa_CLFTextUtil
+                     qa_CLFAnsiParser)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -259,6 +261,11 @@ add_test(NAME qa_CLFSessionUsage COMMAND qa_CLFSessionUsage)
 add_executable(qa_CLFTextUtil test/qa_CLFTextUtil.cpp)
 target_link_libraries(qa_CLFTextUtil PRIVATE clf_types)
 add_test(NAME qa_CLFTextUtil COMMAND qa_CLFTextUtil)
+
+# SGR 转义渲染层解析（ANSI 颜色修复 v2，2026-09-08）
+add_executable(qa_CLFAnsiParser test/qa_CLFAnsiParser.cpp)
+target_link_libraries(qa_CLFAnsiParser PRIVATE clf_ui)
+add_test(NAME qa_CLFAnsiParser COMMAND qa_CLFAnsiParser)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

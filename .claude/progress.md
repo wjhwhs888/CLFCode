@@ -2,6 +2,13 @@
 
 ## 进行中
 
+### 【ANSI 颜色修复 v2：渲染层解析 ✅（2026-09-08，ctest 31/31 + 冒烟 exit=0，待实机看颜色）】
+- **用户实测反馈**：enable 修复后仍白色（❯/● CLFCode: 无色），且转圈动画（蓝）与成功绿 ● 正常——两路颜色机制差异暴露第二层根因
+- **第二层根因（FTXUI 源码取证）**：`ftxui::text()` 的 `Utf8ToGlyphs`（3rdparty/ftxui/src/ftxui/screen/string.cpp:1402-1405）**直接丢弃控制字符**（`if (IsControl(codepoint)) continue;`）——字符串内嵌 ANSI 转义在 FTXUI 下是死路（ESC 被吞、参数字节残留乱码）；转圈/绿 ● 正常因走 ftxui::color 装饰器
+- **修复 v2（改机制）**：**渲染层解析**——新建 `CLFAnsiParser`（CLFUI：SGR 状态机 parse→样式分段 + strip；支持 0/1/22/30-37/39/90-97，非 SGR 序列按普通字符保留不吞内容）；CLFReplView `buildStyledLine` 分段 → ftxui::color/bold 装饰器（与状态点/modeLine 同机制）；选区行先 strip 再三段高亮（字节偏移与显示宽对齐，拖选临时态无颜色）；enable 调用保留（s_enabled 门控转义生成）
+- **测试**：qa_CLFAnsiParser 新套件 8 用例（直通/单段青/两段嵌套/四段实际形态/red/不完整防御/空串/strip）。踩坑：空格在灰转义前累积 → 4 段非 3 段（测试期望修正，渲染无视觉差异）。ctest 31/31
+- CHANGELOG 未发布段"修复"条目更新；**待用户实机看颜色（这次与转圈同机制，应生效）**
+
 ### 【ANSI 颜色从未生效根因修复 ✅（2026-09-08，ctest 30/30 + 冒烟 exit=0，待实机看颜色）】
 - **现象**：用户发现 ❯ 无青色、● CLFCode: 无青色——且问题"很久了"
 - **根因链（三层取证）**：① `CLFAnsi::s_enabled` 默认 false，`enable()` 靠 SetConsoleMode(VT_PROCESSING) 置位 ② `CLFTerminal::enableAnsi()`（唯一转发点）**声明后全仓零调用** → s_enabled 恒 false ③ cyan/bold/gray/red 包装恒返回原字符串（空操作）——**从第一天起内置颜色就没生效过**。FTXUI 装饰器颜色正常（状态点四态等）是因为 FTXUI 自己开 VT（WindowsEmulateVT100Terminal），与 CLFAnsi 无关

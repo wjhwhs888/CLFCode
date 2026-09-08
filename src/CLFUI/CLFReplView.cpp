@@ -5,6 +5,7 @@
 #include "CLFUI/CLFReplView.hpp"
 
 #include "CLFUI/CLFRepl.hpp"
+#include "CLFUI/CLFAnsiParser.hpp"
 #include "CLFUI/CLFAsyncSubmit.hpp"
 #include "CLFUI/CLFCommandDispatcher.hpp"
 #include "CLFUI/CLFConfirmBar.hpp"
@@ -47,6 +48,29 @@ std::string& stripCprResidual(std::string& inputText) {
         }
     }
     return inputText;
+}
+
+// SGR 分段 → ftxui 元素（CLFAnsiParser 输出的 fg 码映射为装饰器）。
+// FTXUI text() 的 Utf8ToGlyphs 会丢弃控制字符（ESC），内嵌转义无法直达终端——
+// 渲染层解析转义 + 装饰器着色与状态点/modeLine 同机制（2026-09-08 修复 v2）
+ftxui::Element buildStyledLine(const std::string& line) {
+    const auto segs = CLFAnsiParser::parse(line);
+    if (segs.size() == 1 && segs[0].fg == -1 && !segs[0].bold)
+        return ftxui::text(segs[0].text);   // 无样式直通（内容流大路径）
+    ftxui::Elements els;
+    els.reserve(segs.size());
+    for (const auto& s : segs) {
+        auto el = ftxui::text(s.text);
+        switch (s.fg) {
+        case 31: el = el | ftxui::color(ftxui::Color::Red); break;
+        case 36: el = el | ftxui::color(ftxui::Color::Cyan); break;
+        case 90: el = el | ftxui::color(ftxui::Color::GrayDark); break;
+        default: break;
+        }
+        if (s.bold) el = el | ftxui::bold;
+        els.push_back(std::move(el));
+    }
+    return ftxui::hbox(std::move(els));
 }
 
 CLFReplView::CLFReplView(CLFRepl& repl, CLFTerminal* terminal, std::string& inputText,
@@ -226,16 +250,20 @@ ftxui::Element CLFReplView::render() {
         const std::string& rowText = m_lastRowTexts[i];
         auto sel = m_selection.rowSelection(static_cast<int>(i), rowText.size());
         if (!sel) {
-            allLines.push_back(decorate(m_lastRowStyles[i], ftxui::text(rowText)));
+            // 渲染层样式分段（SGR 转义 → ftxui 装饰器，修复 v2）
+            allLines.push_back(decorate(m_lastRowStyles[i], buildStyledLine(rowText)));
             continue;
         }
-        // 三段拆分：选中段加 bgcolor，行级样式（diff 色/dim）整行保留
+        // 三段拆分：选中段加 bgcolor，行级样式（diff 色/dim）整行保留。
+        // 选区行先剥转义（字节偏移与显示宽度对齐，高亮精确；拖选临时态
+        // 无颜色可接受——转义字节不参与切片）
+        const std::string clean = CLFAnsiParser::strip(rowText);
         size_t a = sel->first, b = sel->second;
         ftxui::Elements segs;
-        if (a > 0) segs.push_back(ftxui::text(rowText.substr(0, a)));
-        segs.push_back(ftxui::text(rowText.substr(a, b - a))
+        if (a > 0) segs.push_back(ftxui::text(clean.substr(0, a)));
+        segs.push_back(ftxui::text(clean.substr(a, b - a))
                        | ftxui::bgcolor(ftxui::Color::Grey30));
-        if (b < rowText.size()) segs.push_back(ftxui::text(rowText.substr(b)));
+        if (b < clean.size()) segs.push_back(ftxui::text(clean.substr(b)));
         allLines.push_back(decorate(m_lastRowStyles[i], ftxui::hbox(std::move(segs))));
     }
 
