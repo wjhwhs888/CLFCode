@@ -1077,22 +1077,22 @@ void App::Internal::Draw(Component component) {
 
   // Set cursor position for user using tools to insert CJK characters.
   {
-    const int dx = public_->dimx_ - 1 - public_->cursor_.x +
-                   int(public_->dimx_ != terminal.dimx);
-    const int dy = public_->dimy_ - 1 - public_->cursor_.y;
-
+    // CLFCode patch（2026-09-08）：相对移动 → CUP 绝对定位。原实现以
+    // \r + ESC[nA/nD 相对序列在"渲染终点=右下角"状态下往返移动真实光标，
+    // 依赖终端对 autowrap/pending-wrap 边界的处理与 conhost 一致。JediTerm
+    // 类终端执行偏差一行时，真实光标错位到输入框下一行，IME 组合窗口
+    // 随之显示在下一行（用户所见"输入框下面补出一个空行"）。CUP 绝对
+    // 定位无状态依赖，各终端实现一致；dimx!=terminal.dimx 的 +1 hack
+    // 随相对定位一并删除。
     set_cursor_position_.clear();
     reset_cursor_position_.clear();
 
-    if (dy != 0) {
-      set_cursor_position_ += "\x1B[" + std::to_string(dy) + "A";
-      reset_cursor_position_ += "\x1B[" + std::to_string(dy) + "B";
-    }
-
-    if (dx != 0) {
-      set_cursor_position_ += "\x1B[" + std::to_string(dx) + "D";
-      reset_cursor_position_ += "\x1B[" + std::to_string(dx) + "C";
-    }
+    set_cursor_position_ += "\x1B[" + std::to_string(public_->cursor_.y + 1) +
+                            ";" + std::to_string(public_->cursor_.x + 1) + "H";
+    // 帧头逆序列：回到渲染起点（右下角），供 Screen::ResetPosition 的
+    // \r + ESC[dimy-1 A 相对回 home（其"起点=右下角"假设不变）。
+    reset_cursor_position_ += "\x1B[" + std::to_string(public_->dimy_) + ";" +
+                              std::to_string(public_->dimx_) + "H";
 
     if (public_->cursor_.shape != Screen::Cursor::Hidden) {
       set_cursor_position_ += "\033[?25h";

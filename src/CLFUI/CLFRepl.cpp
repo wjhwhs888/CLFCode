@@ -127,8 +127,14 @@ int CLFRepl::run() {
         } catch (...) {}
 
         // ---- 初始化 FTXUI ----
+        // Fullscreen（alternate screen）——2026-09-08 从 FullscreenPrimaryScreen
+        // 切换：primary 模式下 FTXUI 每 500ms 发 CPR 光标查询（\033[6n），响应
+        // 与 IME 组合渲染在 ConPTY 流内交错，CLion(JediTerm) 下中文输入组合
+        // 期间每键抖动；alt screen 跳过 CPR 查询（app.cpp Draw 的
+        // !use_alternative_screen_ 条件），实测抖动消失（用户验证定案）。
+        // 行为变化：退出后屏幕恢复启动前内容（对话不在终端滚动历史）。
         auto* terminal = dynamic_cast<CLFTerminal*>(m_output);
-        auto  screen   = ftxui::ScreenInteractive::FullscreenPrimaryScreen();
+        auto  screen   = ftxui::ScreenInteractive::Fullscreen();
         if (terminal) {
             terminal->setScreen(&screen);
             terminal->clearContent();   // C4：启动重置窄操作

@@ -98,16 +98,31 @@ class InputBase : public ComponentBase, public InputOption {
   // Component implementation:
   Element OnRender() override {
     const bool is_focused = Focused();
+    // CLFCode patch（2026-09-08）：Blinking → 稳态形状。原 BlockBlinking 让
+    // App::Draw 每帧输出 "\033[?25h\033[5 q"（DECSCUSR 闪烁块），conhost 在
+    // 每次 ?25h 时重置光标 blink 相位——闪烁节奏被帧率绑架（打字每字符一帧、
+    // 定时器每秒 PostEvent），光标呈异常快闪；帧率低于 blink 周期时又几乎
+    // 不闪（JediTerm 类终端支持差异更大）。稳态块（\033[2 q）无相位可重置，
+    // 光标表现与终端帧率解耦，IME 组合窗口定位逻辑（?25h 与光标移动）不变。
     const auto focused = (!is_focused && !hovered_) ? focus
-                         : insert()                 ? focusCursorBarBlinking
-                                                    : focusCursorBlockBlinking;
+                         : insert()                 ? focusCursorBar
+                                                    : focusCursorBlock;
 
     auto transform_func =
         transform ? transform : InputOption::Default().transform;
 
     // placeholder.
     if (content->empty()) {
-      auto element = text(placeholder()) | focused | xflex | frame;
+      // CLFCode patch（2026-09-08）：focused 原装饰整个 placeholder 文本——
+      // 焦点 box 落在 placeholder 起点（"❯" 字符处），真实光标与 IME 组合
+      // 窗口（输入法激活、文本尚未上屏时输入框仍空）都被定位在 "❯" 上，
+      // 与每帧重绘的 placeholder 冲突产生残影抖动。焦点改放末尾空格：
+      // 光标/组合窗口定位到 placeholder 之后 = 用户输入首字符的预期位置。
+      auto element = hbox({
+                         text(placeholder()),
+                         text(" ") | focused,
+                     }) |
+                     xflex | frame;
 
       return transform_func({
                  std::move(element), hovered_, is_focused,

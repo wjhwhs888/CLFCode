@@ -2,6 +2,21 @@
 
 ## 进行中
 
+### 【插入批：终端光标闪烁 + CLion 中文输入抖动 ✅⏳（2026-09-08，不占正式进度）】
+- **用户报告**：① PowerShell 直接运行时光标闪烁频率特别快 ② CLion 内置终端运行时看不出光标闪烁；中文输入法打字每敲一个字母界面抖动 + 输入框下面自动补出一个空行（英文正常）
+- **现象 1 根因（VT 转储实证）**：FTXUI `App::Draw` 每帧输出 `?25l`（隐藏）→ 全帧重绘 → 移动真实光标到输入框 → `?25h` + `ESC[5 q`（DECSCUSR 闪烁竖线，Input 组件 insert 默认 true 走 Bar 分支）。conhost 每次 `?25h` 重置光标 blink 相位 → 闪烁节奏被帧率绑架（打字每字符一帧、turnTimer 每秒 PostEvent）→ 异常快闪。JediTerm 对 DECSCUSR 闪烁支持差异 → 看不出闪烁
+- **现象 1 修复 ✅**：patch 3rdparty input.cpp——`focusCursorBarBlinking/BlockBlinking` → 稳态 `Bar/Block`（DECSCUSR `[6 q`/`[2 q`），光标表现与帧率解耦；IME 组合窗口定位逻辑（?25h + 光标移动）不变。选 Bar 形状原因：块状光标与 FTXUI 反色块双重反转会互相抵消（光标不可见），竖线叠加在反色块上可见。MSVC 构建 16/16 + ctest 31/31 全绿
+- **用户实测反馈 1**：闪烁大幅缓和但仍有抖动——"打第一个字还未确认到输入框时，❯ 前面有 ❯ 残影疯狂抖动"（输入框空 = placeholder 状态时 IME 组合窗口渲染在 ❯ 上）
+- **事件日志取证（用户 CLion 终端执行）**：中文上屏正常（`Char '你' '是' '谁'` 逐个到达，onChar 全 0=PassThrough）；**组合期间零事件**（拼音字母不到达程序）；**无 Return 误入** → 候选根因 (a) pasteCoalescer 插入 \n **证伪**——"补空行"= 终端层 IME 组合窗口渲染错位，非程序状态
+- **根因 2（placeholder 光标错位）**：input.cpp placeholder 分支 `focused` 装饰整个 placeholder 文本 → 焦点 box 落在 "❯" 处 → 真实光标 + IME 组合窗口定位在 ❯ 上，与每帧重绘冲突（❯ 残影抖动，PowerShell 同样存在）
+- **根因 3（相对定位偏差）**：FTXUI 帧间光标往返全用相对移动（\r + ESC[nA/nB/nC/nD），依赖"右下角→home→右下角"状态链与 conhost 的 autowrap 行为一致；JediTerm 执行偏差一行 → 真实光标错位到输入框下一行 → IME 组合窗口显示在下一行（"补空行"）
+- **修复 2+3 ✅**：① input.cpp placeholder 分支——focused 移到 placeholder 末尾空格 cell（光标/组合窗口定位到 "❯ " 之后 = 输入首字符位置）② app.cpp Draw()——帧尾光标移动改 **CUP 绝对定位**（`ESC[y;xH`，帧尾→input 焦点、帧头逆序列→右下角 CUP，ResetPosition 的"起点=右下角"假设不变；dimx!=terminal.dimx 的 +1 hack 随相对定位删除）。VT 转储实证：帧尾 `[22;3H ?25h [6 q`（22 行 3 列 = placeholder 末尾）。ctest 31/31
+- **用户实机验证 2**：PowerShell 正常 ✅（❯ 残影消失 + 稳态光标）；CLion 仍有空行+抖动 → 加做 **alt-screen 实验版**（FullscreenPrimaryScreen → Fullscreen，一行改动）
+- **alt-screen 实验结果（用户定案）✅**：CLion 里**抖动消失**（界面稳定）、空白预留行仍存在（组合期间输入框下空行 + 内容下移、上屏恢复）——用户明确"可以接受"。机理取证：primary 下 FTXUI 每 500ms 发 CPR 光标查询（ThrottledRequest，app.cpp:182-212），响应与 IME 组合渲染在 ConPTY 流内交错 = 抖动源；alt screen 下 Draw 的 `!use_alternative_screen_` 条件跳过 CPR 查询 → 稳定。空白预留行 = conhost ConPTY 对 TUI 的 IME 组合渲染固有行为（所有 TUI 程序受影响，Claude Code 日语输入崩坏同源——Web 取证），程序侧无法控制
+- **收尾 ✅（2026-09-08）**：alt screen 转正式（CLFRepl.cpp 注释定案：Fullscreen + 行为变化说明"退出后屏幕恢复，对话不在滚动历史"）；CHANGELOG 未发布段落（修复 2 条 + 优化 1 条含已知残留与行为变化）；ctest 31/31 全绿。**⚠ 待用户最终验证 PowerShell 下 alt screen 表现**（IME 组合、光标、退出恢复、滚动历史缺失是否可接受）；残留：CLion 组合期空白预留行（终端链固有，记录为已知问题）
+- 本批 3rdparty patch 清单（随 CHANGELOG 记录）：① input.cpp 光标形状 Blinking→稳态 ② input.cpp placeholder 焦点位置 ③ app.cpp 帧尾光标 CUP 绝对定位
+- 验证手段（已备）：stdout 重定向跑 exe 捕获 VT 流（`printf 'h\x1b\x1b' | ./CLFCode.exe > dump`）——已实证每帧 ?25l/?25h/DECSCUSR/CUP 序列
+
 ### 【v0.7.2 收尾 ✅（2026-09-08，UI 配色/拖选批次全闭环，待用户发布）】
 - **批次内容**（v0.7.1 之后全部工作）：① 输入行视觉强化（❯ 深青锚点 + 内容浅青 + 时间戳灰三级层次 + 多行逐行着色 + resume 回显同步 + ● CLFCode: 整段青色）② **ANSI 颜色三层根因修复**（enable 零调用 → FTXUI 丢控制字符 → emitContent 剥转义；渲染层 CLFAnsiParser 分段着色 + SGR 白名单保留 + isSgrSequence）③ **拖选修复两轮**（v3.1 选区坐标 clean 空间收敛 + 双值语义修复自下而上首字符丢失 + S8 回归钉子）④ 协议多协议预留（阶段 2 §九）
 - **用户实机验收**：颜色显示正常（❯ 青/时间戳灰/banner 原设计色首次生效/● CLFCode 全青）、复制粘贴无乱码、自上而下正常；发现并修复：自下而上首字符丢失、多行输入仅首行着色
