@@ -2,6 +2,14 @@
 
 ## 进行中
 
+### 【v0.7.2 收尾 ✅（2026-09-08，UI 配色/拖选批次全闭环，待用户发布）】
+- **批次内容**（v0.7.1 之后全部工作）：① 输入行视觉强化（❯ 深青锚点 + 内容浅青 + 时间戳灰三级层次 + 多行逐行着色 + resume 回显同步 + ● CLFCode: 整段青色）② **ANSI 颜色三层根因修复**（enable 零调用 → FTXUI 丢控制字符 → emitContent 剥转义；渲染层 CLFAnsiParser 分段着色 + SGR 白名单保留 + isSgrSequence）③ **拖选修复两轮**（v3.1 选区坐标 clean 空间收敛 + 双值语义修复自下而上首字符丢失 + S8 回归钉子）④ 协议多协议预留（阶段 2 §九）
+- **用户实机验收**：颜色显示正常（❯ 青/时间戳灰/banner 原设计色首次生效/● CLFCode 全青）、复制粘贴无乱码、自上而下正常；发现并修复：自下而上首字符丢失、多行输入仅首行着色
+- **用户定案不动项**：progressSummary 行（● thought for…）着色保持现状（历史无颜色设计，有显示即可）
+- **测试基线**：ctest 31/31（新增 qa_CLFAnsiParser 9 用例 + qa_CLFTextUtil 6 用例 + qa_CLFSessionUsage 6 用例）+ 冒烟 exit=0
+- **收尾**：CHANGELOG v0.7.2 段落（修复 2 + 优化 1）；VERSION bump v0.7.2；tag v0.7.2 已打待用户发布
+- **用户工作流提示**：用户后续用 release 模式测试（Debug exe 被运行占用会 LNK1168 阻断构建）
+
 ### 【ANSI 颜色修复 v3：emitContent 剥离根因 ✅（2026-09-08，qa 31/31 过；主程序 exe 待用户关闭占用后链接+冒烟）】
 - **用户排除 exe 版本假设**：删除 debug/release + cmake 缓存全量重编译运行——问题依旧；日志确认 18:35 启动过（doc/log/clf_agent.log）
 - **第三层根因（决定性）**：`CLFTerminal::emitContent`（CLFTerminal.cpp:108-125）**在内容存储时就剥离一切 ANSI 转义**（m_inAnsiSeq 状态机：\033 起、字母止全丢）——v1 的 enable 让转义生成后**在此被剥**（v1 无效）；v2 的渲染层解析器拿到的行**转义早已被剥**（v2 空转）。转圈/绿● 正常因不经 CLFTerminal 内容流。三层根因链闭合：① enable 零调用 ② FTXUI 丢控制字符 ③ emitContent 剥转义
@@ -65,9 +73,9 @@
 - **pro 终检 ✅（2026-09-08）**：**发现并修正文档错误断言**——初稿"触顶路径共用 finishTurn 三出口"系错误（:384-440 触顶是独立收尾段，不走 finishTurn）→ 修正：触顶路径单独接线（:437 后），双通道逻辑抽 AgentLoop 私有 helper `appendCacheHitLine`（finishTurn 与触顶两处各一行调用）；触顶回合缓存收益是长回合最有价值观测场景，与 worked 行一致性对齐；触顶 finalContent 本不进上下文（:419 仅 wrapUp 单独 addMessage）零污染。测试 +1 触顶用例（共 +18）
 - **进入实施**：设计定稿，按 §四 步骤 1-5 实施
 
-### ▶ 下次开工指引（2026-09-08 缓存命中率批次收尾时更新，从这里接着干）
-- **基线**：`v0.7.1` tag（缓存命中率显示批次——底部常亮参数行 + 会话累计，用户实机验收通过；tag 已打待用户发布；ctest 29/29 + 冒烟 exit=0）
-- **当前状态**：v0.7.1 收尾完毕待发布（用户执行）；阶段 2 待用户发布反馈后开工
+### ▶ 下次开工指引（2026-09-08 v0.7.2 收尾时更新，从这里接着干）
+- **基线**：`v0.7.2` tag（UI 配色 + 拖选批次——ANSI 三层根因修复 + 输入行视觉强化 + 拖选双值语义；用户实机验收通过；tag 已打待用户发布；ctest 31/31 + 冒烟 exit=0）
+- **当前状态**：v0.7.2 收尾完毕待发布（用户执行）；阶段 2 待用户发布反馈后开工
 - **下一步 = 阶段 2 开工**：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（阶段 2 分册 §4.1 步骤 2 起——步骤 1 C1+ 已落地）；随后 2.2a tools.fileops.dll 试点（C1 接口化已铺路，core 零改动承诺待验证）
 - **阶段 2 新增约束**：协议适配器多协议**预留不实施**（§九 预留 + §七⑩——不埋雷硬约束：clf_plugin_api 不暴露协议细节、术语分离、接口不按 OpenAI 字段设计）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
