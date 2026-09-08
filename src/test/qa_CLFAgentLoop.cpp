@@ -537,6 +537,26 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(agent->getSessionUsage().percentText().empty());
     };
 
+    "T10d 第三方 provider（usage 有但无缓存字段）不显示——区别于真实零命中"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        // 模拟 OpenAI 兼容第三方：usage 三字段齐全，但无任何缓存命中字段
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 90, "completion_tokens": 10, "total_tokens": 100}
+        })");
+
+        agent->runTurn("hello");
+        // 无法统计 ≠ 零命中：不显示（不误导为 0%）
+        expect(agent->getSessionUsage().percentText().empty());
+    };
+
     "T10d 跨回合会话累计（工具循环两轮 Σ）"_test = [] {
         auto mock = std::make_shared<MockHttpClient>();
         auto agent = makeAgent(mock);

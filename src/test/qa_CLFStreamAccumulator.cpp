@@ -45,15 +45,18 @@ suite qa_CLFStreamAccumulator = [] {
         expect(acc.getUsageCacheHit() == 80);
     };
 
-    "T10c2 无 cache 字段保持原值 + reset 归零"_test = [] {
+    "T10c2 无 cache 字段保持原值 + 标志保持 + reset 归零"_test = [] {
         CLF::CLFCore::CLFStreamAccumulator acc;
         acc.feedUsage(json::parse(R"({"prompt_tokens":100,"total_tokens":110,"prompt_cache_hit_tokens":80})"));
         expect(acc.getUsageCacheHit() == 80);
+        expect(acc.getHasCacheField());
         // 无 cache 字段的 usage chunk 不得清零已累积值（缺失保持原值哲学）
         acc.feedUsage(json::parse(R"({"prompt_tokens":50,"total_tokens":60})"));
         expect(acc.getUsageCacheHit() == 80);
+        expect(acc.getHasCacheField());  // 标志同样保持（一旦见过缓存字段即有效）
         acc.reset();
         expect(acc.getUsageCacheHit() == 0);
+        expect(!acc.getHasCacheField());
     };
 
     "text_delta"_test = [] {

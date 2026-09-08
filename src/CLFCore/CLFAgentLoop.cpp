@@ -256,6 +256,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 parsed.m_usageCompletion = acc.getUsageCompletion();
                 parsed.m_usageTotal      = acc.getUsageTotal();
                 parsed.m_usageCacheHit   = acc.getUsageCacheHit();
+                parsed.m_hasCacheField   = acc.getHasCacheField();
 
             } else {
                 // ====== 同步路径 ======
@@ -298,8 +299,11 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 m_totalTokensUsed += parsed.m_usageTotal;
                 m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
                 // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
-                // 同生命周期不重置，R3 同规则——仅正常解析路径累计）
-                m_sessionUsage.accumulate(parsed.m_usagePrompt, parsed.m_usageCacheHit);
+                // 同生命周期不重置，R3 同规则——仅正常解析路径累计）。
+                // 仅响应携带缓存字段才累计——第三方 provider 无此字段时
+                // 不显示（"无法统计"），区别于 DeepSeek 真实零命中（显示 0%）
+                if (parsed.m_hasCacheField)
+                    m_sessionUsage.accumulate(parsed.m_usagePrompt, parsed.m_usageCacheHit);
             }
 
             // finish_reason 检查

@@ -29,6 +29,7 @@ struct CLFAssistantResponse {
     int                      m_usageCompletion = 0;
     int                      m_usageTotal      = 0;
     int                      m_usageCacheHit   = 0;  // 缓存命中 token（双拼写归一，默认 0 = 未返回）
+    bool                     m_hasCacheField   = false;  // 响应是否携带缓存命中字段（区分"零命中"与"无法统计"——第三方 provider 常无此字段）
 };
 
 class CLFProtocolAdapter {
