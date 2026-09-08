@@ -12,6 +12,7 @@
 - **用户实机验收 ✅（2026-09-08）**：第一轮"查看项目进度"显示 60%，连续对话（脚本测试 AI 强度）后升至 92%——"目前看合理，而且效率挺高"
 - **v2.1 用户微调 ✅（2026-09-08）**：① 位置移到 📁工作目录后、🔒安全模式前 ② 真实零命中显示 "0%"（无 usage 数据仍不显示——统计未发生不估猜）；gate 改 prompt>0；测试同步（qa_CLFSessionUsage 零命中断言 "0"、T10d-3 改 "0"）
 - **v2.2 灵魂拷问修复 ✅（2026-09-08，用户提问："换大模型后缓存命中率还有效吗"）**：发现缺陷——第三方 provider（usage 有、缓存字段无）会误显示 0%（"无法统计"≠"零命中"）。修根：解析层加 `m_hasCacheField` 标志（CLFAssistantResponse + StreamAccumulator 两处解析置位 + reset 归零 + 流式落地拷贝）；AgentLoop 累计 gate 改 `if (parsed.m_hasCacheField)`。测试 +4（qa_CLFProtocolAdapter 第三方标志 false 用例 + 两用例标志断言；qa_CLFStreamAccumulator 标志保持/归零；qa_CLFAgentLoop 第三方不显示用例）。设计文档 §3.5 固化 Provider 兼容矩阵（DeepSeek 全系 ✅ / OpenAI 官方 ✅ / 中转站 ⚠️ 同步有效流式无 usage / Anthropic ❌ 协议层整体不兼容 / OpenAI 兼容第三方 ➖ 不显示）。ctest 29/29 + 冒烟 exit=0
+- **协议适配器多协议预留 ✅ 记录（2026-09-08，用户定调："预留设计，适配器插件未设计，后续按需开发对应接口插件协议"）**：写入阶段 2 设计文档 §九（新增节）+ §七 开放项表加 ⑩ 行。要点：现状取证（单协议硬编码/isUsageStreamSupported host 白名单/AgentLoop 持具体类值成员）；未来接入形态（优先阶段 3 插件形态，兜底 core 内 ICLFProtocolAdapter 接口化——C2-3 缓做评估在多协议时代需重估）；协议选择机制预留（host 扩表/provider 配置字段）；缓存字段归一预留（hasCacheField 语义沿用）；**阶段 2 不埋雷硬约束**（clf_plugin_api 头不暴露协议细节/工具 handler 与协议适配器术语分离/接口不按 OpenAI 字段设计/单协议行为不变）
 - **待办**：设计文档归档（设计/归档/）；用户后续自行观察长上下文压缩/截断兜底/clear 等场景命中率（已定：不计入进度）
 
 ### 【缓存命中率显示 实施完成 ✅（2026-09-08，ctest 29/29 + 冒烟 exit=0）】
