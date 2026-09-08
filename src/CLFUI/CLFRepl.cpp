@@ -254,8 +254,11 @@ void CLFRepl::submit(const std::string& input) {
             std::string tsDate = CLF::CLFCore::localDateStamp();
             bool withDate = (tsDate != m_lastTsDate);
             m_lastTsDate = tsDate;
-            m_output->emitContent("> " + CLFTerminal::bold(input)
-                                  + "  " + CLF::CLFCore::localTimeStamp(withDate) + "\n");
+            // 输入行视觉锚点：青色加粗 ❯ 前缀（与 AI 侧 "● CLFCode:" 青色标签对称，
+            // 多轮长输出翻页扫视时一眼定位输入内容）；时间戳灰色低调
+            m_output->emitContent(CLFTerminal::cyan(CLFTerminal::bold("❯ "))
+                                  + CLFTerminal::bold(input)
+                                  + "  " + CLFTerminal::gray(CLF::CLFCore::localTimeStamp(withDate)) + "\n");
         }
     } catch (const std::exception& e) {
         CLFLogger::instance().warn(std::string("[Submit] echo failed: ") + e.what());

@@ -2,6 +2,13 @@
 
 ## 进行中
 
+### 【输入行视觉强化 ✅（2026-09-08，ctest 29/29 + 冒烟 exit=0，待实机看效果）】
+- **需求**：用户想更容易区分输入/输出——现状 "> " 前缀不明显，多轮长输出翻页易漏输入内容
+- **方案（用户三选一定案）**：青色加粗 `❯` 前缀（与 AI 侧"● CLFCode:"青色标签对称成视觉锚点）+ 时间戳转 gray 低调。备选：整行底色块 / 块状标签行
+- **实施**：CLFRepl.cpp 实时回显（cyan(bold("❯ ")) + bold(input) + gray(时间戳)）+ CLFCommands.cpp resume 回显同步同款（补 CLFTerminal.hpp include）。取证：既有"● CLFCode:"青色标签同模式（CLFAnsi 转义直塞 emitContent 由终端解释）→ 零新风险；qa 无 "> " 文案断言
+- **已知小瑕疵（既有，不修）**：displayWidth 不跳过 ANSI 转义——含转义行宽度虚高导致硬换行点略提前（"● CLFCode:"行既有同问题）；潜在优化：displayWidth 转义感知
+- CHANGELOG 未发布段已补；待用户实机看效果后随下一版发布
+
 ### 【缓存命中率显示 v2 需求变更落地 ✅（2026-09-08 下午，ctest 29/29 + 冒烟 exit=0）】
 - **用户需求变更**："底部常亮显示，不补在对话后面，统计这一轮会话的值，类似 dsh，作为当前会话的缓存命中率参数"
 - **v2 方案**：① 显示 = **modeLine 常亮参数行**（模型名│📁目录│🔒安全模式同列，安全模式后加"⚡缓存命中 X%"dim 段，无数据 emptyElement 零占用；ReplView 每帧渲染读 getSessionUsage()）② 口径 = **会话累计**（与 m_totalTokensUsed 同生命周期——全仓无 reset 点、/clear 不清；R3 gate 累计）

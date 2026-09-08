@@ -2,6 +2,7 @@
 // 每个命令一个独立函数，通过 registerBuiltinCommands() 批量注册
 
 #include "CLFUI/CLFCommandDispatcher.hpp"
+#include "CLFUI/CLFTerminal.hpp"   // 输入回显视觉锚点（cyan/bold/gray）
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
@@ -263,7 +264,9 @@ bool cmdResume(const std::string&, const std::string& args,
                 for (const auto& l : echoLines) {
                     switch (l.m_kind) {
                     case CLFSessionEchoLine::Kind::User:
-                        appendLines("> " + l.m_content);
+                        // 与实时回显同款视觉锚点（青色加粗 ❯）——resume 后视觉一致
+                        appendLines(CLFTerminal::cyan(CLFTerminal::bold("❯ "))
+                                    + CLFTerminal::bold(l.m_content));
                         ++userCount;
                         break;
                     case CLFSessionEchoLine::Kind::Assistant:
