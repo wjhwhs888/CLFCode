@@ -7,6 +7,7 @@
 //   本文件瘦壳 = run 编排 + 组件装配 + 生命周期收尾（A1-5 取证划界）
 
 #include "CLFUI/CLFRepl.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // splitLines（多行输入逐行着色）
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFUI/CLFAsyncSubmit.hpp"
 #include "CLFUI/CLFClipboard.hpp"
@@ -261,8 +262,16 @@ void CLFRepl::submit(const std::string& input) {
             m_lastTsDate = tsDate;
             // 输入行视觉锚点：❯ 深青加粗锚点 + 内容浅青 + 时间戳灰（强-中-弱三级
             // 层次；多轮长输出翻页扫视时一眼定位输入内容）
+            // 多行输入逐行独立着色：SGR 转义不跨行（渲染层逐行解析），单对包装
+            // 只有首行生效（2026-09-08 用户实测反馈）
+            std::string coloredInput;
+            const auto inputLines = CLF::CLFCore::CLFTextUtil::splitLines(input, true);
+            for (size_t i = 0; i < inputLines.size(); ++i) {
+                coloredInput += CLFTerminal::cyanLight(inputLines[i]);
+                if (i + 1 < inputLines.size()) coloredInput += "\n";
+            }
             m_output->emitContent(CLFTerminal::cyan(CLFTerminal::bold("❯ "))
-                                  + CLFTerminal::cyanLight(input)
+                                  + coloredInput
                                   + "  " + CLFTerminal::gray(CLF::CLFCore::localTimeStamp(withDate)) + "\n");
         }
     } catch (const std::exception& e) {
