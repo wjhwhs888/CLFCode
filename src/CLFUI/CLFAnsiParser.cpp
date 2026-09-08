@@ -105,7 +105,7 @@ std::string CLFAnsiParser::strip(const std::string& line) {
 }
 
 bool CLFAnsiParser::isSgrSequence(const std::string& seq) {
-    if (seq.size() < 4 || seq[0] != '\033' || seq[1] != '[') return false;
+    if (seq.size() < 3 || seq[0] != '\033' || seq[1] != '[') return false;   // 最小 \033[m
     if (seq.back() != 'm') return false;
     for (size_t k = 2; k + 1 < seq.size(); ++k) {
         const char c = seq[k];
