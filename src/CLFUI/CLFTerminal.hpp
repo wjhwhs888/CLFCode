@@ -119,7 +119,7 @@ private:
     std::vector<std::string> m_contentBuffer;
     std::vector<uint8_t> m_lineStyles;
     std::string  m_pendingLine;
-    bool         m_inAnsiSeq = false;
+    std::string  m_ansiBuf;   // 转义序列缓冲（跨 emitContent 调用——流式 chunk 边界安全）
     // Markdown 表格缓冲：连续以 | 开头的行暂存，遇非表行时对齐后一次性输出
     std::vector<std::string> m_tableBuffer;
     // 思考缓冲（与 content 分离，Ctrl+T 折叠/展开）

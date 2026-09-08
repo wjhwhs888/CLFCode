@@ -1,6 +1,7 @@
 // CLFTerminal.cpp — ICLFOutput 实现 (FTXUI 驱动)
 #include "CLFUI/CLFTerminal.hpp"
 #include "CLFUI/CLFAnsi.hpp"
+#include "CLFUI/CLFAnsiParser.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"
 
 #ifdef _WIN32
@@ -116,12 +117,22 @@ void CLFTerminal::emitContent(const std::string& text) {
                     std::chrono::steady_clock::now() - m_thinkingStart).count());
         }
         for (char c : text) {
-            if (m_inAnsiSeq) {
-                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
-                    m_inAnsiSeq = false;
+            // 转义过滤（2026-09-08 修复 v3）：原逻辑剥离一切 ANSI 序列——
+            // CLFAnsi 生成的样式转义也被剥，内容流永远无色。改为 SGR 白名单：
+            // 受控 SGR（\033[...m）保留进内容流（渲染层 CLFAnsiParser 分段着色），
+            // 其他序列（OSC 标题/光标定位等，模型输出可能携带）仍剥离。
+            // 缓冲跨调用保持（m_ansiBuf 成员）：流式 chunk 边界切在转义中间时
+            // 序列仍能完整拼合判定。
+            if (!m_ansiBuf.empty()) {
+                m_ansiBuf += c;
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c < 0x20) {
+                    if (CLFAnsiParser::isSgrSequence(m_ansiBuf))
+                        m_pendingLine += m_ansiBuf;
+                    m_ansiBuf.clear();
+                }
                 continue;
             }
-            if (c == '\033') { m_inAnsiSeq = true; continue; }
+            if (c == '\033') { m_ansiBuf += c; continue; }
             if (c == '\r') continue;
             if (c == '\n') {
                 // 行完成 → 检查是否属于表格块

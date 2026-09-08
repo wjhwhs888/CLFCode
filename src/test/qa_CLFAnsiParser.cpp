@@ -79,6 +79,18 @@ suite qa_CLFAnsiParser = [] {
         // 不完整序列不剥离（与 parse 同防御）
         expect(CLFAnsiParser::strip("a\033[36b") == "a\033[36b");
     };
+
+    "isSgrSequence 判定（CLFTerminal 内容流过滤白名单）"_test = [] {
+        expect(CLFAnsiParser::isSgrSequence("\033[36m"));
+        expect(CLFAnsiParser::isSgrSequence("\033[0m"));
+        expect(CLFAnsiParser::isSgrSequence("\033[1;36m"));
+        expect(CLFAnsiParser::isSgrSequence("\033[m"));   // 空参 = 0
+        expect(!CLFAnsiParser::isSgrSequence("\033]0;title\007"));  // OSC 标题
+        expect(!CLFAnsiParser::isSgrSequence("\033[2J"));  // 清屏 CSI 非 m 终止
+        expect(!CLFAnsiParser::isSgrSequence("\033[36"));  // 截断
+        expect(!CLFAnsiParser::isSgrSequence("abc"));
+        expect(!CLFAnsiParser::isSgrSequence(""));
+    };
 };
 
 int main() {}

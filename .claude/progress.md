@@ -2,6 +2,13 @@
 
 ## 进行中
 
+### 【ANSI 颜色修复 v3：emitContent 剥离根因 ✅（2026-09-08，qa 31/31 过；主程序 exe 待用户关闭占用后链接+冒烟）】
+- **用户排除 exe 版本假设**：删除 debug/release + cmake 缓存全量重编译运行——问题依旧；日志确认 18:35 启动过（doc/log/clf_agent.log）
+- **第三层根因（决定性）**：`CLFTerminal::emitContent`（CLFTerminal.cpp:108-125）**在内容存储时就剥离一切 ANSI 转义**（m_inAnsiSeq 状态机：\033 起、字母止全丢）——v1 的 enable 让转义生成后**在此被剥**（v1 无效）；v2 的渲染层解析器拿到的行**转义早已被剥**（v2 空转）。转圈/绿● 正常因不经 CLFTerminal 内容流。三层根因链闭合：① enable 零调用 ② FTXUI 丢控制字符 ③ emitContent 剥转义
+- **修复 v3**：① CLFTerminal 剥离状态机 → **SGR 白名单保留**（m_ansiBuf 成员缓冲跨调用——流式 chunk 边界安全；`CLFAnsiParser::isSgrSequence` 判定 \033[...m；OSC 标题/光标定位等仍剥，模型输出防御保持）② CLFAnsiParser 加公共 `isSgrSequence` ③ 渲染层 v2 机制不变（buildStyledLine 分段着色）
+- **测试**：qa_CLFAnsiParser +isSgrSequence 用例（SGR 正例/OSC/清屏 CSI/截断/空）。qa 31/31 过；**⚠ 主程序 CLFCode.exe 被用户运行占用 LNK1168 未链接——待用户关闭后构建+冒烟再提交**
+- 教训（记死）：三处转义相关逻辑（CLFAnsi 门控/FTXUI 丢弃/emitContent 剥离）各挡一层——排查时必须全链路每环节确认数据形态，不能只看一端
+
 ### 【ANSI 颜色修复 v2：渲染层解析 ✅（2026-09-08，ctest 31/31 + 冒烟 exit=0，待实机看颜色）】
 - **用户实测反馈**：enable 修复后仍白色（❯/● CLFCode: 无色），且转圈动画（蓝）与成功绿 ● 正常——两路颜色机制差异暴露第二层根因
 - **第二层根因（FTXUI 源码取证）**：`ftxui::text()` 的 `Utf8ToGlyphs`（3rdparty/ftxui/src/ftxui/screen/string.cpp:1402-1405）**直接丢弃控制字符**（`if (IsControl(codepoint)) continue;`）——字符串内嵌 ANSI 转义在 FTXUI 下是死路（ESC 被吞、参数字节残留乱码）；转圈/绿 ● 正常因走 ftxui::color 装饰器

@@ -104,4 +104,14 @@ std::string CLFAnsiParser::strip(const std::string& line) {
     return out;
 }
 
+bool CLFAnsiParser::isSgrSequence(const std::string& seq) {
+    if (seq.size() < 4 || seq[0] != '\033' || seq[1] != '[') return false;
+    if (seq.back() != 'm') return false;
+    for (size_t k = 2; k + 1 < seq.size(); ++k) {
+        const char c = seq[k];
+        if (!((c >= '0' && c <= '9') || c == ';')) return false;
+    }
+    return true;
+}
+
 } // namespace CLF::CLFUI

@@ -28,6 +28,11 @@ public:
 
     // 移除全部 SGR 转义，返回纯文本（选区高亮用——字节偏移与显示宽度对齐）
     static std::string strip(const std::string& line);
+
+    // 判断完整序列是否为受控 SGR（\033[参数m；参数 = 数字/分号，可空）。
+    // CLFTerminal 内容流过滤用：SGR 保留（渲染层着色），其他序列
+    // （OSC 标题/光标定位等，模型输出可能携带）剥离
+    static bool isSgrSequence(const std::string& seq);
 };
 
 } // namespace CLF::CLFUI
