@@ -28,6 +28,7 @@ struct CLFAssistantResponse {
     int                      m_usagePrompt     = 0;
     int                      m_usageCompletion = 0;
     int                      m_usageTotal      = 0;
+    int                      m_usageCacheHit   = 0;  // 缓存命中 token（双拼写归一，默认 0 = 未返回）
 };
 
 class CLFProtocolAdapter {

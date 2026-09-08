@@ -2,6 +2,12 @@
 
 ## 进行中
 
+### 【缓存命中率显示 实施完成 ✅（2026-09-08，ctest 29/29 + 冒烟 exit=0）】
+- **生产代码**：CLFStreamAccumulator.hpp（+m_usageCacheHit/getter/feedUsage 双拼写解析/reset）；CLFProtocolAdapter.hpp/.cpp（CLFAssistantResponse 加字段 + 同步双拼写解析）；**CLFTurnUsage.hpp 新建**（CLFTypes/，header-only：reset/accumulate/displayLine，gate + floor 防虚报 + clamp 100%）；CLFAgentLoop.hpp/.cpp（成员 m_turnUsage + runTurn reset + 流式落地 + R3 gate 累计 + 私有 helper `appendCacheHitLine` 双通道发射 + finishTurn 与触顶路径两处调用）
+- **测试**：新建 qa_CLFTurnUsage（7 用例：reset/基本/100%/floor 99%/异常 clamp/gate/Σ 累计）+ qa_CLFStreamAccumulator +3（双拼写/缺失保持/reset）+ qa_CLFProtocolAdapter +2（双拼写/缺失）+ qa_CLFAgentLoop +7（T10d 系列：100% 流式/floor/零命中 gate/无 usage gate/回合累计 75%/非流式不污染上下文（mock 加 lastBodies 记录）/触顶路径）+ T10b 中断补断言。CMake：qa_CLFTurnUsage 目标（clf_types 链 + CLF_TEST_TARGETS 列表）
+- **验证**：MSVC 构建 47/47（警告均既有）；ctest 29/29 全绿（含新套件）；主程序 --version 冒烟 exit=0
+- **待办**：实机观测（真实 DeepSeek 连续同前缀请求第二轮收尾"✳ 缓存命中 X%"，非验收阻塞）→ 设计文档归档（设计/归档/）+ CHANGELOG 未发布段落已补
+
 ### 【缓存命中率显示 设计定稿 ✅（2026-09-08，待排期实施）】
 - **设计文档**：`设计/设计-缓存命中率显示.md`（写到具体实现步骤级别，5 步 + 测试计划）
 - **用户裁决 5 项**：MVP 回合显示（无 /context 累计）、新显示区域、jsonl 不进、中性文案"缓存命中 X%"、分母待 pro 确认

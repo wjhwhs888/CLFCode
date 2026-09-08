@@ -39,6 +39,33 @@ const boost::ut::suite<"CLFProtocolAdapter"> tests = [] {
             }]
         })");
         expect(parsed.m_usageTotal == 0);
+        expect(parsed.m_usageCacheHit == 0);
+    };
+
+    "T10c2 缓存命中-DeepSeek 原生拼写"_test = [] {
+        CLFProtocolAdapter adapter;
+        auto parsed = adapter.parseAssistantResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                      "prompt_cache_hit_tokens": 80}
+        })");
+        expect(parsed.m_usageCacheHit == 80);
+    };
+
+    "T10c2 缓存命中-OpenAI 兼容拼写（双拼写）"_test = [] {
+        CLFProtocolAdapter adapter;
+        auto parsed = adapter.parseAssistantResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                      "prompt_tokens_details": {"cached_tokens": 80}}
+        })");
+        expect(parsed.m_usageCacheHit == 80);
     };
 
     "T10 流式请求携带 stream_options.include_usage"_test = [] {

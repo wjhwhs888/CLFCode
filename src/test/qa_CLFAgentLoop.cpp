@@ -47,8 +47,9 @@ public:
     int syncCallCount() const { return m_syncCalls; }
     int streamCallCount() const { return m_streamCalls; }
 
-    CLFHttpResponse postJson(const std::string&, const std::string&) override {
+    CLFHttpResponse postJson(const std::string&, const std::string& body) override {
         ++m_syncCalls;
+        lastBodies.push_back(body);  // T10d 不污染上下文断言
         // 预设不足必须抛异常，不能只 expect 后继续：boost::ut 的 expect 只记录
         // 失败、不终止执行，继续对空 deque 调 front()/pop_front() 是 UB——
         // MSVC Debug 的 _STL_VERIFY 会弹断言对话框，无人值守下进程永久挂起
@@ -63,9 +64,10 @@ public:
     }
 
     CLFHttpResponse postJsonStream(
-        const std::string&, const std::string&,
+        const std::string&, const std::string& body,
         std::function<void(const std::string&)> onLine) override {
         ++m_streamCalls;
+        lastBodies.push_back(body);  // T10d 不污染上下文断言
         if (m_streamResponses.empty()) {  // 同 postJson：空队列 front() 是 UB
             expect(false) << "MockHttpClient: stream response queue exhausted";
             throw std::runtime_error("MockHttpClient: stream response queue exhausted");
@@ -81,6 +83,9 @@ public:
         }
         return {200, "", ""};
     }
+
+    // 请求体记录（T10d 不污染上下文断言）
+    std::vector<std::string> lastBodies;
 
     // T6a 中断注入钩子
     int hookAfterLine = -1;
@@ -460,6 +465,180 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(agent->getTotalTokensUsed() == 100);
     };
 
+    "T10d 缓存命中 100%（流式回合收尾行）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock, "edit", 8, /*stream=*/true);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
+            "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":90,\"completion_tokens\":10,"
+                "\"total_tokens\":100,\"prompt_cache_hit_tokens\":90}}",
+            "data: [DONE]"
+        });
+
+        agent->runTurn("hello");
+        bool hasCacheLine = false;
+        for (const auto& c : out.contents)
+            if (c.find("缓存命中 100%") != std::string::npos) hasCacheLine = true;
+        expect(hasCacheLine);
+    };
+
+    "T10d 缓存命中 floor 防虚报（hit=prompt-1）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 90, "completion_tokens": 10, "total_tokens": 100,
+                      "prompt_cache_hit_tokens": 89}
+        })");
+
+        std::string result = agent->runTurn("hello");
+        expect(result.find("缓存命中 98%") != std::string::npos);  // 89*100/90=98.88 → floor 98
+    };
+
+    "T10d 零命中不显示（不宣称 0%）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "hi"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 90, "completion_tokens": 10, "total_tokens": 100,
+                      "prompt_cache_hit_tokens": 0}
+        })");
+
+        std::string result = agent->runTurn("hello");
+        expect(result.find("缓存命中") == std::string::npos);
+    };
+
+    "T10d 无 usage 不显示（流式）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock, "edit", 8, /*stream=*/true);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
+            "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}",
+            "data: [DONE]"
+        });
+
+        agent->runTurn("hello");
+        for (const auto& c : out.contents)
+            expect(c.find("缓存命中") == std::string::npos);
+    };
+
+    "T10d 回合累计口径（工具循环两轮 Σ 后显示一次）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "",
+                            "tool_calls": [{"id":"c1","type":"function",
+                                "function":{"name":"echo","arguments":"{\"msg\":\"a\"}"}}]},
+                "finish_reason": "tool_calls"
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                      "prompt_cache_hit_tokens": 50}
+        })");
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "done"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                      "prompt_cache_hit_tokens": 100}
+        })");
+
+        std::string result = agent->runTurn("hello");
+        // Σ: prompt 200 / hit 150 → floor 75%
+        expect(result.find("缓存命中 75%") != std::string::npos);
+    };
+
+    "T10d 非流式：缓存行进返回尾但不污染下一轮请求"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "first"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 90, "completion_tokens": 10, "total_tokens": 100,
+                      "prompt_cache_hit_tokens": 90}
+        })");
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "second"},
+                "finish_reason": "stop"
+            }]
+        })");
+
+        std::string first = agent->runTurn("one");
+        expect(first.find("缓存命中 100%") != std::string::npos);
+
+        std::string second = agent->runTurn("two");
+        expect(second.find("second") != std::string::npos);
+        expect(second.find("缓存命中") == std::string::npos);  // 第二轮无 usage → 不显示
+        // 第二轮请求 body（含第一轮 assistant 消息）不得含缓存文案——
+        // 缓存行在 addMessage 之后追加，不污染上下文
+        expect(mock->lastBodies.size() >= 2);
+        expect(mock->lastBodies[1].find("缓存命中") == std::string::npos);
+    };
+
+    "T10d 触顶路径回合收尾行（独立收尾段接线）"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        auto agent = makeAgent(mock, "edit", /*maxIters=*/2);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        // iter1/iter2 均返回 tool_calls → 循环耗尽触顶（wrapUp 不计入累计）
+        for (int i = 0; i < 2; ++i) {
+            mock->pushResponse(R"({
+                "choices": [{
+                    "message": {"role": "assistant", "content": "",
+                                "tool_calls": [{"id":"c1","type":"function",
+                                    "function":{"name":"echo","arguments":"{\"msg\":\"a\"}"}}]},
+                    "finish_reason": "tool_calls"
+                }],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                          "prompt_cache_hit_tokens": 100}
+            })");
+        }
+        // 触顶 wrapUp 同步请求响应
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant", "content": "wrapped"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+                      "prompt_cache_hit_tokens": 100}
+        })");
+
+        std::string result = agent->runTurn("hello");
+        expect(result.find("wrapped") != std::string::npos);
+        // 触顶累计 = 主循环两轮 Σ：prompt 200 / hit 200 → 100%
+        expect(result.find("缓存命中 100%") != std::string::npos);
+    };
+
     "T10b 中断于流式中：usage 未到达不累计（R3）"_test = [] {
         auto mock = std::make_shared<MockHttpClient>();
         CLFAgentConfig config;
@@ -479,6 +658,9 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         std::string result = agent->runTurn("hi");
         expect(result == "[Interrupted]");
         expect(agent->getTotalTokensUsed() == 0);  // 落定规则：中断不累计
+        // T10d: 中断回合早 return，无收尾行
+        for (const auto& c : out.contents)
+            expect(c.find("缓存命中") == std::string::npos);
     };
 
     "T7 /resume 回显走折叠块：历史不进滚动区（P2-1）"_test = [] {

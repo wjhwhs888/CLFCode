@@ -149,6 +149,13 @@ CLFAssistantResponse CLFProtocolAdapter::parseAssistantResponse(
         result.m_usagePrompt     = u.value("prompt_tokens", 0);
         result.m_usageCompletion = u.value("completion_tokens", 0);
         result.m_usageTotal      = u.value("total_tokens", 0);
+        // 缓存命中 token：OpenAI 兼容拼写优先，DeepSeek 原生拼写兜底（dsh translate.ts 同构）
+        if (u.contains("prompt_tokens_details") && u["prompt_tokens_details"].is_object()
+            && u["prompt_tokens_details"].contains("cached_tokens")
+            && u["prompt_tokens_details"]["cached_tokens"].is_number())
+            result.m_usageCacheHit = u["prompt_tokens_details"]["cached_tokens"].get<int>();
+        else if (u.contains("prompt_cache_hit_tokens") && u["prompt_cache_hit_tokens"].is_number())
+            result.m_usageCacheHit = u["prompt_cache_hit_tokens"].get<int>();
     }
 
     return result;

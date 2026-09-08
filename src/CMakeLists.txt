@@ -120,7 +120,7 @@ set(CLF_TEST_TARGETS qa_CLFContext qa_CLFProtocolAdapter qa_CLFSecurityPolicy
                      qa_CLFTipsBar qa_CLFCapabilities
                      qa_CLFTodoStore qa_CLFSessionFileCtx qa_CLFSummaryCache
                      qa_CLFContextWindow qa_CLFSystemComponents
-                     qa_CLFConfigLoader)
+                     qa_CLFConfigLoader qa_CLFTurnUsage)
 
 add_executable(qa_CLFContext test/qa_CLFContext.cpp)
 target_link_libraries(qa_CLFContext PRIVATE clf_core clf_ui)
@@ -249,6 +249,11 @@ add_test(NAME qa_CLFSystemComponents COMMAND qa_CLFSystemComponents)
 add_executable(qa_CLFConfigLoader test/qa_CLFConfigLoader.cpp)
 target_link_libraries(qa_CLFConfigLoader PRIVATE clf_core)
 add_test(NAME qa_CLFConfigLoader COMMAND qa_CLFConfigLoader)
+
+# 回合 usage 统计（缓存命中率显示，2026-09-08）
+add_executable(qa_CLFTurnUsage test/qa_CLFTurnUsage.cpp)
+target_link_libraries(qa_CLFTurnUsage PRIVATE clf_types)
+add_test(NAME qa_CLFTurnUsage COMMAND qa_CLFTurnUsage)
 
 foreach(target IN LISTS CLF_TEST_TARGETS)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)

@@ -27,6 +27,35 @@ suite qa_CLFStreamAccumulator = [] {
         expect(acc.getUsageTotal() == 0);
     };
 
+    "T10c2 缓存命中-DeepSeek 原生拼写"_test = [] {
+        CLF::CLFCore::CLFStreamAccumulator acc;
+        acc.feedUsage(json::parse(R"({
+            "prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+            "prompt_cache_hit_tokens": 80
+        })"));
+        expect(acc.getUsageCacheHit() == 80);
+    };
+
+    "T10c2 缓存命中-OpenAI 兼容拼写（无原生字段）"_test = [] {
+        CLF::CLFCore::CLFStreamAccumulator acc;
+        acc.feedUsage(json::parse(R"({
+            "prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110,
+            "prompt_tokens_details": {"cached_tokens": 80}
+        })"));
+        expect(acc.getUsageCacheHit() == 80);
+    };
+
+    "T10c2 无 cache 字段保持原值 + reset 归零"_test = [] {
+        CLF::CLFCore::CLFStreamAccumulator acc;
+        acc.feedUsage(json::parse(R"({"prompt_tokens":100,"total_tokens":110,"prompt_cache_hit_tokens":80})"));
+        expect(acc.getUsageCacheHit() == 80);
+        // 无 cache 字段的 usage chunk 不得清零已累积值（缺失保持原值哲学）
+        acc.feedUsage(json::parse(R"({"prompt_tokens":50,"total_tokens":60})"));
+        expect(acc.getUsageCacheHit() == 80);
+        acc.reset();
+        expect(acc.getUsageCacheHit() == 0);
+    };
+
     "text_delta"_test = [] {
         CLF::CLFCore::CLFStreamAccumulator acc;
         auto chunk = acc.feedDelta(json::parse(R"({"content":"Hello"})"));

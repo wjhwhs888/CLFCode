@@ -47,6 +47,7 @@ public:
     int getUsagePrompt() const { return m_usagePrompt; }
     int getUsageCompletion() const { return m_usageCompletion; }
     int getUsageTotal() const { return m_usageTotal; }
+    int getUsageCacheHit() const { return m_usageCacheHit; }
 
     void reset();
 
@@ -63,6 +64,7 @@ private:
     int m_usagePrompt = 0;      // P2-4
     int m_usageCompletion = 0;  // P2-4
     int m_usageTotal = 0;       // P2-4
+    int m_usageCacheHit = 0;    // 缓存命中 token（双拼写归一）
 
     struct Part {
         std::string id;
@@ -139,6 +141,13 @@ inline void CLFStreamAccumulator::feedUsage(const nlohmann::json& usage) {
         m_usageCompletion = usage["completion_tokens"].get<int>();
     if (usage.contains("total_tokens") && usage["total_tokens"].is_number())
         m_usageTotal = usage["total_tokens"].get<int>();
+    // 缓存命中 token：OpenAI 兼容拼写优先，DeepSeek 原生拼写兜底（dsh translate.ts 同构）
+    if (usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object()
+        && usage["prompt_tokens_details"].contains("cached_tokens")
+        && usage["prompt_tokens_details"]["cached_tokens"].is_number())
+        m_usageCacheHit = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
+    else if (usage.contains("prompt_cache_hit_tokens") && usage["prompt_cache_hit_tokens"].is_number())
+        m_usageCacheHit = usage["prompt_cache_hit_tokens"].get<int>();
 }
 
 inline void CLFStreamAccumulator::markDone() {
@@ -162,6 +171,7 @@ inline void CLFStreamAccumulator::reset() {
     m_usagePrompt = 0;
     m_usageCompletion = 0;
     m_usageTotal = 0;
+    m_usageCacheHit = 0;
 }
 
 inline void CLFStreamAccumulator::finalizeToolCalls() {

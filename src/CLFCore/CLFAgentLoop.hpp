@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "CLFTypes/CLFTypes.hpp"
+#include "CLFTypes/CLFTurnUsage.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFContext.hpp"
 #include "CLFCore/CLFContextWindow.hpp"
@@ -200,6 +201,10 @@ private:
     void appendWorked(std::string& finalContent,
                       std::chrono::steady_clock::time_point turnStart);
 
+    // 缓存命中率显示（设计-缓存命中率显示 §3.3）：回合收尾统计行的双通道发射
+    // 流式 emit 直发；非流式追加进 finalContent 尾部（须在 addMessage 之后调用）
+    void appendCacheHitLine(std::string& finalContent);
+
     // 构建 Builder Context（injectSystemPrompt + rebuildSystemMessage 共用）
     CLFSystemPromptBuilder::Context buildSystemPromptContext() const;
 
@@ -228,6 +233,7 @@ private:
     void appendSummaryLineNow();
     ToolStats                         m_lastToolStats;
     long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
+    CLF::CLFTypes::CLFTurnUsage       m_turnUsage;  // 回合 usage 统计（缓存命中率显示）
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
     std::atomic<bool>                 m_interrupted{false};
     size_t                           m_lastReasoningSize = 0;  // appendThinking 增量追踪
