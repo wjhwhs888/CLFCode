@@ -53,10 +53,10 @@ std::string& stripCprResidual(std::string& inputText) {
 // SGR 分段 → ftxui 元素（CLFAnsiParser 输出的 fg 码映射为装饰器）。
 // FTXUI text() 的 Utf8ToGlyphs 会丢弃控制字符（ESC），内嵌转义无法直达终端——
 // 渲染层解析转义 + 装饰器着色与状态点/modeLine 同机制（2026-09-08 修复 v2）
-ftxui::Element buildStyledLine(const std::string& line) {
-    const auto segs = CLFAnsiParser::parse(line);
-    if (segs.size() == 1 && segs[0].fg == -1 && !segs[0].bold)
-        return ftxui::text(segs[0].text);   // 无样式直通（内容流大路径）
+// v3.1：分段由 addRow 统一产出（segs 平行存储），本函数只做映射
+ftxui::Element buildStyledLine(const std::string& plain,
+                               const std::vector<CLFAnsiSegment>& segs) {
+    if (segs.empty()) return ftxui::text(plain);   // 无样式直通（内容流大路径）
     ftxui::Elements els;
     els.reserve(segs.size());
     for (const auto& s : segs) {
@@ -100,6 +100,7 @@ ftxui::Element CLFReplView::render() {
     auto& m_lastRowMap = m_repl.m_lastRowMap;
     auto& m_lastRowTexts = m_repl.m_lastRowTexts;
     auto& m_lastRowStyles = m_repl.m_lastRowStyles;
+    auto& m_lastRowSegments = m_repl.m_lastRowSegments;
     auto& m_showThinking = m_repl.m_showThinking;
     auto& m_foldJustToggled = m_repl.m_foldJustToggled;
     auto& m_needRestoreInput = m_repl.m_needRestoreInput;
@@ -140,11 +141,23 @@ ftxui::Element CLFReplView::render() {
     m_lastRowMap.clear();
     m_lastRowTexts.clear();
     m_lastRowStyles.clear();
+    m_lastRowSegments.clear();
     auto addRow = [&](std::string text, RowKind kind, size_t lineIdx,
                       size_t partIdx, int style) {
+        // ANSI 修复 v3.1：行文本在入口统一剥转义（选区坐标/渲染/复制收敛至
+        // clean 空间——含转义字节曾致拖选起始错位）；样式分段平行存储供渲染
+        std::vector<CLFAnsiSegment> segs;
+        if (text.find('\033') != std::string::npos) {
+            segs = CLFAnsiParser::parse(text);
+            std::string clean;
+            clean.reserve(text.size());
+            for (const auto& s : segs) clean += s.text;
+            text = std::move(clean);
+        }
         m_lastRowMap.push_back(RowInfo{kind, lineIdx, partIdx});
         m_lastRowTexts.push_back(std::move(text));
         m_lastRowStyles.push_back(style);
+        m_lastRowSegments.push_back(std::move(segs));
     };
 
     const bool hasStyles = (snap.lineStyles.size() == snap.lines.size());
@@ -247,23 +260,22 @@ ftxui::Element CLFReplView::render() {
         return el;
     };
     for (size_t i = 0; i < m_lastRowTexts.size(); ++i) {
-        const std::string& rowText = m_lastRowTexts[i];
+        const std::string& rowText = m_lastRowTexts[i];   // clean 文本（addRow 已剥转义）
         auto sel = m_selection.rowSelection(static_cast<int>(i), rowText.size());
         if (!sel) {
-            // 渲染层样式分段（SGR 转义 → ftxui 装饰器，修复 v2）
-            allLines.push_back(decorate(m_lastRowStyles[i], buildStyledLine(rowText)));
+            // 渲染层样式分段（SGR 转义 → ftxui 装饰器，修复 v2/v3.1）
+            allLines.push_back(decorate(m_lastRowStyles[i],
+                                        buildStyledLine(rowText, m_lastRowSegments[i])));
             continue;
         }
         // 三段拆分：选中段加 bgcolor，行级样式（diff 色/dim）整行保留。
-        // 选区行先剥转义（字节偏移与显示宽度对齐，高亮精确；拖选临时态
-        // 无颜色可接受——转义字节不参与切片）
-        const std::string clean = CLFAnsiParser::strip(rowText);
+        // rowText 已是 clean——sel 字节偏移与文本空间一致（拖选临时态无颜色）
         size_t a = sel->first, b = sel->second;
         ftxui::Elements segs;
-        if (a > 0) segs.push_back(ftxui::text(clean.substr(0, a)));
-        segs.push_back(ftxui::text(clean.substr(a, b - a))
+        if (a > 0) segs.push_back(ftxui::text(rowText.substr(0, a)));
+        segs.push_back(ftxui::text(rowText.substr(a, b - a))
                        | ftxui::bgcolor(ftxui::Color::Grey30));
-        if (b < clean.size()) segs.push_back(ftxui::text(clean.substr(b)));
+        if (b < rowText.size()) segs.push_back(ftxui::text(rowText.substr(b)));
         allLines.push_back(decorate(m_lastRowStyles[i], ftxui::hbox(std::move(segs))));
     }
 

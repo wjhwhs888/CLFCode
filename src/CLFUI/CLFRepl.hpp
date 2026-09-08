@@ -14,6 +14,7 @@
 #include <thread>
 #include <vector>
 
+#include "CLFUI/CLFAnsiParser.hpp"  // m_lastRowSegments 完整类型（渲染样式分段）
 #include "CLFUI/CLFSelectionModel.hpp"
 #include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
 #include "CLFUI/CLFTipsBar.hpp"    // A5：Tips 行（unique_ptr 成员）
@@ -89,8 +90,10 @@ private:
     CLFSelectionModel m_selection;
     CLFTerminal::ContentSnapshot m_lastSnapshot;
     std::vector<RowInfo>     m_lastRowMap;
-    std::vector<std::string> m_lastRowTexts;
+    std::vector<std::string> m_lastRowTexts;   // clean 文本（转义已剥——选区坐标/复制空间）
     std::vector<int>         m_lastRowStyles;  // 0=无 1=绿 2=红 3=dim
+    // 渲染样式分段（与 m_lastRowTexts 平行；空 = 无样式直通）
+    std::vector<std::vector<CLFAnsiSegment>> m_lastRowSegments;
 };
 
 } // namespace CLF::CLFUI
