@@ -14,6 +14,7 @@
 - **用户实机验证 2**：PowerShell 正常 ✅（❯ 残影消失 + 稳态光标）；CLion 仍有空行+抖动 → 加做 **alt-screen 实验版**（FullscreenPrimaryScreen → Fullscreen，一行改动）
 - **alt-screen 实验结果（用户定案）✅**：CLion 里**抖动消失**（界面稳定）、空白预留行仍存在（组合期间输入框下空行 + 内容下移、上屏恢复）——用户明确"可以接受"。机理取证：primary 下 FTXUI 每 500ms 发 CPR 光标查询（ThrottledRequest，app.cpp:182-212），响应与 IME 组合渲染在 ConPTY 流内交错 = 抖动源；alt screen 下 Draw 的 `!use_alternative_screen_` 条件跳过 CPR 查询 → 稳定。空白预留行 = conhost ConPTY 对 TUI 的 IME 组合渲染固有行为（所有 TUI 程序受影响，Claude Code 日语输入崩坏同源——Web 取证），程序侧无法控制
 - **收尾 ✅（2026-09-08）**：alt screen 转正式（CLFRepl.cpp 注释定案：Fullscreen + 行为变化说明"退出后屏幕恢复，对话不在滚动历史"）；CHANGELOG 未发布段落（修复 2 条 + 优化 1 条含已知残留与行为变化）；ctest 31/31 全绿。**⚠ 待用户最终验证 PowerShell 下 alt screen 表现**（IME 组合、光标、退出恢复、滚动历史缺失是否可接受）；残留：CLion 组合期空白预留行（终端链固有，记录为已知问题）
+- **发布 ✅（2026-09-08）**：用户最终验证通过（PowerShell alt screen 表现正常、行为变化接受）；CHANGELOG 转 v0.7.3 正式段落；VERSION bump v0.7.3；commit f49465b（6 文件，不含鸿蒙文档删除——用户独立操作未混入）；tag v0.7.3 已打推送 Gitee；**待用户执行发布**（Release 编译 + release.ps1 打包 + Gitee release 上传 zip）
 - 本批 3rdparty patch 清单（随 CHANGELOG 记录）：① input.cpp 光标形状 Blinking→稳态 ② input.cpp placeholder 焦点位置 ③ app.cpp 帧尾光标 CUP 绝对定位
 - 验证手段（已备）：stdout 重定向跑 exe 捕获 VT 流（`printf 'h\x1b\x1b' | ./CLFCode.exe > dump`）——已实证每帧 ?25l/?25h/DECSCUSR/CUP 序列
 
