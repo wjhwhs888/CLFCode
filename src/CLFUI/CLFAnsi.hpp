@@ -19,6 +19,7 @@ public:
 
     // 颜色
     static std::string cyan(const std::string& s);
+    static std::string cyanLight(const std::string& s);  // 亮青（96）——输入内容三级层次用
     static std::string red(const std::string& s);
     static std::string gray(const std::string& s);
     static std::string bold(const std::string& s);

@@ -154,6 +154,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
                     // 非空选区 → 复制 + 清除；单击/拖回起点（空选区）→ 仅清除
                     if (auto hit = m_view.hitTest(m.x, m.y))
                         m_selection.extendTo(std::get<0>(*hit),
+                                             std::get<1>(*hit),
                                              std::get<2>(*hit));
                     if (!m_selection.empty()) {
                         auto r = m_selection.range();
@@ -171,6 +172,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
                 // Pressed / Moved → 扩展选区（游标含入鼠标所在字符）
                 if (auto hit = m_view.hitTest(m.x, m.y))
                     m_selection.extendTo(std::get<0>(*hit),
+                                         std::get<1>(*hit),
                                          std::get<2>(*hit));
                 return true;
             }
@@ -184,7 +186,8 @@ bool CLFInputHandler::handle(ftxui::Event e) {
         if (m.button == ftxui::Mouse::Left && m.motion == ftxui::Mouse::Pressed) {
             // 内容区按下 → 进入选区（锚点=字符起始）；非内容区（输入框等）放行给 Input
             if (auto hit = m_view.hitTest(m.x, m.y)) {
-                m_selection.startAt(std::get<0>(*hit), std::get<1>(*hit));
+                m_selection.startAt(std::get<0>(*hit), std::get<1>(*hit),
+                                    std::get<2>(*hit));
                 return true;
             }
             return false;

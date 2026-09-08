@@ -86,18 +86,18 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
 
     "S2 反向选区（右下→左上）自动交换"_test = [] {
         CLFSelectionModel m;
-        m.startAt(10, 5);
-        m.extendTo(2, 3);
+        m.startAt(10, 5, 6);
+        m.extendTo(2, 3, 4);
         auto r = m.range();
-        expect(r.fromRow == 2 && r.fromByte == 3);
-        expect(r.toRow == 10 && r.toByte == 5);
+        expect(r.fromRow == 2 && r.fromByte == 3);   // cursor 行取起始（含落点字符）
+        expect(r.toRow == 10 && r.toByte == 6);      // anchor 行取含入结束
         // 同行反向
         CLFSelectionModel m2;
-        m2.startAt(4, 9);
-        m2.extendTo(4, 2);
+        m2.startAt(4, 9, 10);
+        m2.extendTo(4, 2, 3);
         auto r2 = m2.range();
         expect(r2.fromRow == 4 && r2.fromByte == 2);
-        expect(r2.toRow == 4 && r2.toByte == 9);
+        expect(r2.toRow == 4 && r2.toByte == 10);
     };
 
     // ========== S3: 提取换行规则（核心） ==========
@@ -111,10 +111,10 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         // 逻辑行 1 单 part
         addRow(map, texts, RowKind::Content, 1, 0, "123");
         CLFSelectionModel m;
-        m.startAt(0, 1);
-        m.extendTo(2, 2);
+        m.startAt(0, 1, 2);
+        m.extendTo(2, 2, 3);
         auto r = m.range();
-        expect(CLFSelectionModel::extract(r, map, texts) == "bcdef\n12");
+        expect(CLFSelectionModel::extract(r, map, texts) == "bcdef\n123");
     };
 
     "S3b 反向选区提取与全行选区"_test = [] {
@@ -123,8 +123,8 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         addRow(map, texts, RowKind::Content, 0, 0, "line0");
         addRow(map, texts, RowKind::Content, 1, 0, "line1");
         CLFSelectionModel m;
-        m.startAt(1, 5);
-        m.extendTo(0, 0);
+        m.startAt(1, 5, 5);
+        m.extendTo(0, 0, 1);
         expect(CLFSelectionModel::extract(m.range(), map, texts) == "line0\nline1");
     };
 
@@ -141,8 +141,8 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         addRow(map, texts, RowKind::FoldSummary,  0, 0, "  ▸ 恢复回显摘要");
         addRow(map, texts, RowKind::FoldLine,     0, 0, "  fold-A");
         CLFSelectionModel m;
-        m.startAt(0, 0);
-        m.extendTo(6, 20);
+        m.startAt(0, 0, 1);
+        m.extendTo(6, 20, 21);
         auto out = CLFSelectionModel::extract(m.range(), map, texts);
         expect(out == "reply\npending...\n  Thought for 3s · ... (ctrl+t 展开)\n"
                       "  thought-A\n  thought-B\n  ▸ 恢复回显摘要\n  fold-A");
@@ -152,9 +152,9 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
 
     "S5a 空选区提取空串；单击（anchor==cursor）判定 empty"_test = [] {
         CLFSelectionModel m;
-        m.startAt(3, 4);
-        expect(m.empty());  // 单击即 anchor==cursor
-        m.extendTo(3, 4);
+        m.startAt(3, 4, 5);
+        expect(m.empty());  // 单击即 anchor==cursor（同起始偏移）
+        m.extendTo(3, 4, 5);
         expect(m.empty());
         std::vector<RowInfo> map{{RowKind::Content, 0, 0}};
         std::vector<std::string> texts{"abc"};
@@ -172,8 +172,8 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         addRow(map, texts, RowKind::ScrollHint, 0, 0, "  ↑ 10 lines above");
         addRow(map, texts, RowKind::Content,    1, 0, "B");
         CLFSelectionModel m;
-        m.startAt(0, 0);
-        m.extendTo(2, 1);
+        m.startAt(0, 0, 1);
+        m.extendTo(2, 1, 2);
         expect(CLFSelectionModel::extract(m.range(), map, texts) == "A\nB");
         // rowSelection 是纯区间计算（中间行=整行）；ScrollHint 跳过由 extract 的 kind 判断承担
         auto mid = m.rowSelection(1, 10);
@@ -186,11 +186,11 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         CLFSelectionModel m;
         expect(!m.active());
         expect(m.rowSelection(0, 5) == std::nullopt);
-        m.startAt(0, 1);
-        m.extendTo(0, 4);
+        m.startAt(0, 1, 2);
+        m.extendTo(0, 4, 5);
         expect(m.active());
         auto sel = m.rowSelection(0, 10);
-        expect(sel && sel->first == 1 && sel->second == 4);
+        expect(sel && sel->first == 1 && sel->second == 5);
         m.clear();
         expect(!m.active());
         expect(m.range().fromRow == -1);
@@ -205,6 +205,26 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         expect(Sel::colToByteEnd(s, 1) == 4);  // 落在 '你' 首列 → 含入整字
         expect(Sel::colToByteEnd(s, 4) == 5);  // 落在 'b' 上 → 含入
         expect(Sel::colToByteEnd(s, 99) == 5); // 超列 → 行尾
+    };
+
+    // ========== S8: 自下而上首字符含入（v3.1 实测 bug 回归钉子） ==========
+
+    "S8 自下而上拖到首行第一字符格：首字符不丢失"_test = [] {
+        // 模拟实测 bug：anchor 在下方行，cursor 拖到顶部行第一字符格
+        // （colToByte=0 起始 / colToByteEnd=1 含入）
+        CLFSelectionModel m;
+        m.startAt(1, 5, 6);
+        m.extendTo(0, 0, 1);
+        auto r = m.range();
+        // 修复前单值时代 fromByte=1（含入偏移当起点）→ 首字符丢失
+        expect(r.fromRow == 0 && r.fromByte == 0);
+        expect(r.toRow == 1 && r.toByte == 6);
+        // 提取验证：行 0 "head" + 行 1 "tail" → 自下而上全选
+        std::vector<RowInfo> map;
+        std::vector<std::string> texts;
+        addRow(map, texts, RowKind::Content, 0, 0, "head");
+        addRow(map, texts, RowKind::Content, 1, 0, "tail");
+        expect(CLFSelectionModel::extract(r, map, texts) == "head\ntail");
     };
 };
 

@@ -65,6 +65,7 @@ ftxui::Element buildStyledLine(const std::string& plain,
         case 31: el = el | ftxui::color(ftxui::Color::Red); break;
         case 36: el = el | ftxui::color(ftxui::Color::Cyan); break;
         case 90: el = el | ftxui::color(ftxui::Color::GrayDark); break;
+        case 96: el = el | ftxui::color(ftxui::Color::CyanLight); break;
         default: break;
         }
         if (s.bold) el = el | ftxui::bold;

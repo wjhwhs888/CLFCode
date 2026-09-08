@@ -259,10 +259,10 @@ void CLFRepl::submit(const std::string& input) {
             std::string tsDate = CLF::CLFCore::localDateStamp();
             bool withDate = (tsDate != m_lastTsDate);
             m_lastTsDate = tsDate;
-            // 输入行视觉锚点：青色加粗 ❯ 前缀（与 AI 侧 "● CLFCode:" 青色标签对称，
-            // 多轮长输出翻页扫视时一眼定位输入内容）；时间戳灰色低调
+            // 输入行视觉锚点：❯ 深青加粗锚点 + 内容浅青 + 时间戳灰（强-中-弱三级
+            // 层次；多轮长输出翻页扫视时一眼定位输入内容）
             m_output->emitContent(CLFTerminal::cyan(CLFTerminal::bold("❯ "))
-                                  + CLFTerminal::bold(input)
+                                  + CLFTerminal::cyanLight(input)
                                   + "  " + CLFTerminal::gray(CLF::CLFCore::localTimeStamp(withDate)) + "\n");
         }
     } catch (const std::exception& e) {
@@ -287,7 +287,7 @@ void CLFRepl::submit(const std::string& input) {
 
     // AI 对话处理
     try {
-        if (m_output) m_output->emitContent("\n● " + CLFTerminal::cyan("CLFCode") + ":\n ");
+        if (m_output) m_output->emitContent("\n" + CLFTerminal::cyan("● CLFCode:") + "\n ");
     } catch (...) {}
 
     // B2：轮初会话准备收编 core（beginTurnSession 含清面板条件判定 + 懒创建，

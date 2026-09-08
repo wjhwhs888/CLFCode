@@ -29,6 +29,7 @@ public:
     // === 静态工具 (委托 CLFAnsi) ===
     static void enableAnsi();
     static std::string cyan(const std::string& s);
+    static std::string cyanLight(const std::string& s);
     static std::string red(const std::string& s);
     static std::string gray(const std::string& s);
     static std::string bold(const std::string& s);

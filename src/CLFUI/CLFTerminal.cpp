@@ -29,6 +29,7 @@ std::string firstLineCapped(const std::string& text, size_t maxBytes) {
 
 void CLFTerminal::enableAnsi() { CLFAnsi::enable(); }
 std::string CLFTerminal::cyan(const std::string& s)  { return CLFAnsi::cyan(s); }
+std::string CLFTerminal::cyanLight(const std::string& s) { return CLFAnsi::cyanLight(s); }
 std::string CLFTerminal::red(const std::string& s)   { return CLFAnsi::red(s); }
 std::string CLFTerminal::gray(const std::string& s)  { return CLFAnsi::gray(s); }
 std::string CLFTerminal::bold(const std::string& s)  { return CLFAnsi::bold(s); }

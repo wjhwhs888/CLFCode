@@ -44,8 +44,13 @@ public:
     // ---- 选区状态 ----
     struct Range { int fromRow = -1, fromByte = 0, toRow = -1, toByte = 0; };
 
-    void startAt(int row, int byteOff);        // 鼠标按下进入选区
-    void extendTo(int row, int byteOff);       // 拖拽扩展；未激活时等价 startAt
+    // v3.1 双值语义：每端存字符起始（colToByte，选区起点用）与含入结束
+    // （colToByteEnd，选区终点用）——range() 按方向取正确端：
+    //   自上而下 from=anchor 起始 / to=cursor 含入
+    //   自下而上 from=cursor 起始 / to=anchor 含入
+    // （单值时代自下而上把 cursor 的含入偏移当起点 → 首行首字符丢失，实测 bug）
+    void startAt(int row, int byteStart, int byteEnd);   // 鼠标按下进入选区
+    void extendTo(int row, int byteStart, int byteEnd);  // 拖拽扩展；未激活时等价 startAt
     void clear();
     bool active() const { return m_active; }
     bool empty() const;                       // anchor == cursor（单击无拖动判定）
@@ -62,8 +67,8 @@ public:
                                const std::vector<std::string>& rowTexts);
 
 private:
-    int  m_anchorRow = -1, m_anchorByte = 0;
-    int  m_cursorRow = -1, m_cursorByte = 0;
+    int  m_anchorRow = -1, m_anchorByteS = 0, m_anchorByteE = 0;
+    int  m_cursorRow = -1, m_cursorByteS = 0, m_cursorByteE = 0;
     bool m_active = false;
 };
 

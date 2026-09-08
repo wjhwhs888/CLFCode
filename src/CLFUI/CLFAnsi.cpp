@@ -30,6 +30,7 @@ void CLFAnsi::enable() {
 }
 
 std::string CLFAnsi::cyan(const std::string& s) { return s_enabled ? "\033[36m" + s + "\033[0m" : s; }
+std::string CLFAnsi::cyanLight(const std::string& s) { return s_enabled ? "\033[96m" + s + "\033[0m" : s; }
 std::string CLFAnsi::red(const std::string& s)  { return s_enabled ? "\033[31m" + s + "\033[0m" : s; }
 std::string CLFAnsi::gray(const std::string& s) { return s_enabled ? "\033[90m" + s + "\033[0m" : s; }
 std::string CLFAnsi::bold(const std::string& s) { return s_enabled ? "\033[1m" + s + "\033[0m" : s; }
