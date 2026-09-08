@@ -2,6 +2,21 @@
 
 ## 进行中
 
+### 【缓存命中率显示 设计定稿 ✅（2026-09-08，待排期实施）】
+- **设计文档**：`设计/设计-缓存命中率显示.md`（写到具体实现步骤级别，5 步 + 测试计划）
+- **用户裁决 5 项**：MVP 回合显示（无 /context 累计）、新显示区域、jsonl 不进、中性文案"缓存命中 X%"、分母待 pro 确认
+- **pro 取证裁决 2 项**：① 分母口径——dsh 上游取证（`llm-deepseek/types.ts:164`：`prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens`，**含命中部分**，分母用 prompt_tokens）② 新显示区域落点——**回合收尾统计行**（finishTurn 内 ✻ worked 行之后；流式 emitContent 直发 / 非流式进返回值尾部且必须在 `addMessage` 之后——不污染模型上下文）
+- **回合口径 pro 定案**：回合累计 ΣcacheHit/Σprompt（runTurn 入口 reset，R3 gate 内累计，多工具回合覆盖全部 API 调用）
+- **关键取证**：全链路行号实读（StreamAccumulator:133-142 / ProtocolAdapter:146-152 / AgentLoop 落地:254-257 + R3:294-299 + finishTurn:458-501 / Repl 非流式通道:290-293）；qa mock 设施已核（MockHttpClient sync/stream 双队列 + MockOutput contents，T10 系列可扩展）
+- **双拼写归一**（dsh translate.ts:56 同构）：`prompt_tokens_details.cached_tokens` 优先，`prompt_cache_hit_tokens` 兜底
+- **防虚报**：cacheHit>=prompt → 100%，否则 floor 永不四舍五入；gate prompt>0 且 cacheHit>0 才显示（零命中不宣称 0%）
+- **不动项**：ToolExecutor:691 progressSummary 行（tok 是会话累计语义，不动）、ToolStats、jsonl 格式、/context、配置零新增
+- **实施范围**：CLFStreamAccumulator.hpp + CLFProtocolAdapter.hpp/.cpp + CLFAgentLoop.hpp/.cpp + 测试三套件扩展（+11 用例）
+- **SOLID 复查 ✅（2026-09-08 用户要求，文档 §八 已附复查表）**：① 影响面小（捕获层纯增量）② **修订——累计+文案抽独立类 `CLFTurnUsage`**（初稿放 AgentLoop 与 C2 拆角色方向/P1-1 god 类治理背道而驰；CLFTypes/CLFTurnUsage.hpp 新文件，header-only 零 CMake 源改动；捕获层刻意留原类——CCP 同簇）③ 插件化零冲突（阶段 2 §七定案② core 不迁 DLL；④"适配器并入工具域"指工具 handler 非 CLFProtocolAdapter；CLFAssistantResponse 不跨 clf_plugin_api 边界）④ 新发现边界：触顶收尾请求（wrapUp）不走 R3 累计点（既有行为）→ 回合累计=主循环各轮，不修正。测试计划改四套件：新建 qa_CLFTurnUsage（6 用例，须入 CLF_TEST_TARGETS）+ 扩展三套件
+- **flash 设计审查 ✅ 采纳（4 处全合理）**：① 文案 MVP 形态注记（UI 变化时抽离显示层）② **口径注记（实质发现）**——DeepSeek 每轮 prompt_tokens 含共享历史非增量，Σ 求和分母重复计权重叠历史 = 回合平均口径（≠ dsh 单轮命中率）；末轮命中率留扩展路径（CLFTurnUsage 增方法即可）③ 既有行为注记（worked 入上下文，缓存行 addMessage 后追加避让）④ 同步落地补句（pro 复核精确化：:291 直接赋值 → 无需额外行）。另修小节引用笔误 2 处
+- **pro 终检 ✅（2026-09-08）**：**发现并修正文档错误断言**——初稿"触顶路径共用 finishTurn 三出口"系错误（:384-440 触顶是独立收尾段，不走 finishTurn）→ 修正：触顶路径单独接线（:437 后），双通道逻辑抽 AgentLoop 私有 helper `appendCacheHitLine`（finishTurn 与触顶两处各一行调用）；触顶回合缓存收益是长回合最有价值观测场景，与 worked 行一致性对齐；触顶 finalContent 本不进上下文（:419 仅 wrapUp 单独 addMessage）零污染。测试 +1 触顶用例（共 +18）
+- **进入实施**：设计定稿，按 §四 步骤 1-5 实施
+
 ### ▶ 下次开工指引（2026-09-07 会话收尾时更新，从这里接着干）
 - **基线**：`v0.7.0` tag（阶段 1 全部批次落地 + 用户实机验收通过 + 设计文档归档 + **已发布 ✅（2026-09-07 用户执行，其他机器实测中）**；ctest 28/28 + 冒烟 exit=0）
 - **当前状态**：v0.7.0 发布完毕，用户在实机测试新版本；阶段 2 待用户实测反馈后开工
