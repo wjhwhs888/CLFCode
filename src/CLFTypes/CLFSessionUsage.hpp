@@ -22,10 +22,11 @@ public:
     }
 
     // 命中率百分比文本（底部常亮参数行显示）
-    // gate：prompt>0 且 cacheHit>0 才返回非空（无 usage 数据/零命中不显示，不宣称 0%）
+    // gate：prompt>0 才返回非空（无 usage 数据不显示——统计未发生，不估猜）；
+    // 真实零命中（cacheHit=0）显示 "0"——统计在工作只是没命中
     // 防虚报：cacheHit>=prompt → 100，否则 floor 永不四舍五入
     std::string percentText() const {
-        if (m_promptTokens <= 0 || m_cacheHitTokens <= 0) return {};
+        if (m_promptTokens <= 0) return {};
         const int percent = m_cacheHitTokens >= m_promptTokens
                           ? 100
                           : m_cacheHitTokens * 100 / m_promptTokens;

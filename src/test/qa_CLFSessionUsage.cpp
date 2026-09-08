@@ -32,14 +32,14 @@ suite qa_CLFSessionUsage = [] {
         expect(u.percentText() == "100");
     };
 
-    "gate：零命中 / 零 prompt 不显示"_test = [] {
+    "gate：真实零命中显示 0 / 零 prompt（无 usage 数据）不显示"_test = [] {
         CLFSessionUsage zeroHit;
         zeroHit.accumulate(100, 0);
-        expect(zeroHit.percentText().empty());
+        expect(zeroHit.percentText() == "0");  // 统计在工作只是没命中 → 显示 0%
 
         CLFSessionUsage zeroPrompt;
         zeroPrompt.accumulate(0, 0);
-        expect(zeroPrompt.percentText().empty());
+        expect(zeroPrompt.percentText().empty());  // 无 usage 数据 → 不估猜
     };
 
     "多笔累计 Σ 口径"_test = [] {

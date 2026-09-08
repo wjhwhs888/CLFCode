@@ -502,7 +502,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(agent->getSessionUsage().percentText() == "98");  // 89*100/90=98.88 → floor 98
     };
 
-    "T10d 零命中不显示（不宣称 0%）"_test = [] {
+    "T10d 真实零命中显示 0%"_test = [] {
         auto mock = std::make_shared<MockHttpClient>();
         auto agent = makeAgent(mock);
         MockOutput out;
@@ -518,7 +518,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         })");
 
         agent->runTurn("hello");
-        expect(agent->getSessionUsage().percentText().empty());
+        expect(agent->getSessionUsage().percentText() == "0");
     };
 
     "T10d 无 usage 不显示（流式）"_test = [] {

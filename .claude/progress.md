@@ -9,7 +9,9 @@
 - **类改造**：CLFTurnUsage → **CLFSessionUsage**（reset/displayLine 删除，percentText 替代；文件/测试/CMake 同步重命名）
 - **测试重写**：qa_CLFSessionUsage 新建(6)；qa_CLFAgentLoop T10d 系列改为会话累计断言（流式 100%/floor 98/零命中 gate/无 usage gate/两轮 Σ 75/跨回合不清零+对话流与请求 body 无缓存文案/触顶 wrapUp 不计入 75）；T10b 中断不累计补断言
 - **验证**：MSVC 构建 42/42；ctest 29/29 全绿；冒烟 exit=0。设计文档重写为 v2 终版（§九 变更历史）
-- **待办**：实机观测（底部常亮显示 + 随会话增长 + modeLine 宽度共存视觉）→ 设计文档归档
+- **用户实机验收 ✅（2026-09-08）**：第一轮"查看项目进度"显示 60%，连续对话（脚本测试 AI 强度）后升至 92%——"目前看合理，而且效率挺高"
+- **v2.1 用户微调 ✅（2026-09-08）**：① 位置移到 📁工作目录后、🔒安全模式前 ② 真实零命中显示 "0%"（无 usage 数据仍不显示——统计未发生不估猜）；gate 改 prompt>0；测试同步（qa_CLFSessionUsage 零命中断言 "0"、T10d-3 改 "0"）
+- **待办**：设计文档归档（设计/归档/）；用户后续自行观察长上下文压缩/截断兜底/clear 等场景命中率（已定：不计入进度）
 
 ### 【缓存命中率显示 实施完成 ✅（2026-09-08，ctest 29/29 + 冒烟 exit=0）】
 - **生产代码**：CLFStreamAccumulator.hpp（+m_usageCacheHit/getter/feedUsage 双拼写解析/reset）；CLFProtocolAdapter.hpp/.cpp（CLFAssistantResponse 加字段 + 同步双拼写解析）；**CLFTurnUsage.hpp 新建**（CLFTypes/，header-only：reset/accumulate/displayLine，gate + floor 防虚报 + clamp 100%）；CLFAgentLoop.hpp/.cpp（成员 m_turnUsage + runTurn reset + 流式落地 + R3 gate 累计 + 私有 helper `appendCacheHitLine` 双通道发射 + finishTurn 与触顶路径两处调用）

@@ -336,10 +336,10 @@ ftxui::Element CLFReplView::render() {
         ftxui::text(" 📁 " + std::filesystem::u8path(
             CLFConfigLoader::getWorkingDir()).filename().u8string())
           | ftxui::color(ftxui::Color::GreenLight),
+        cacheHitEl,
         sep(),
         ftxui::text(" 🔒 " + m_dispatcher->modeName())
           | ftxui::color(modeColor()),
-        cacheHitEl,
         ftxui::text("  Shift+Tab 切换  ")
           | ftxui::dim,
         ftxui::filler(),
