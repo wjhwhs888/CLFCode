@@ -2,6 +2,15 @@
 
 ## 进行中
 
+### 【插入批：转圈动画卡顿问题调查 ⏳（2026-09-09，不占正式进度，待用户回来讨论）】
+- **用户报告**：v0.7.3（f49465b）后，执行命令后的转圈 + Working 前的转圈"不是以前丝滑显示，而是卡顿"——用户暂离，先把调查结论落文档，回来一起讨论
+- **调查结论（详见 `分析/分析-转圈动画卡顿问题.md`）**：
+  - 转圈渲染逻辑本身**零改动**——`CLFReplView.cpp:296` kSpinFrames 自 A1 拆分（d6cc79b）创建后未动；两处转圈（进度块末行 :307 / Running 状态点 :320）共用 frame 变量
+  - 昨天 f49465b 动了渲染管线底层 3 处（嫌疑）：① `CLFRepl.cpp:137` FullscreenPrimaryScreen→Fullscreen（alt screen，最大嫌疑）② app.cpp 帧尾光标 CUP 绝对定位（无条件两条 CUP）③ input.cpp 光标 Blinking→稳态（与转圈无直接关系）
+  - **机制**：转圈纯事件驱动（帧=nowMs/100%10，仅重绘时计算）——流式/工具输出期帧率高丝滑；静止期唯一兜底 = Timer #2 1Hz（CLFAgentLoop.cpp:120-121）→ 1fps 秒跳一帧 = 卡顿。FTXUI 动画/事件链路与 alt screen 无关（app.cpp:1418-1425/1534-1537/931-945 实读）
+- **嫌疑排序**：① alt screen 切换（ConPTY/JediTerm 渲染路径变化）② CUP 每帧输出 ③ 观察场景事件流变稀（待排除）④ 渲染负载渐进（可能性低）
+- **待办（用户回来后）**：V1 A/B 验证（CLFRepl.cpp:137 临时切回 FullscreenPrimaryScreen，同场景看转圈是否恢复丝滑）→ 若证 alt screen：候选修根 D1（Running 期高频 PostEvent 驱动）/ D2（回 primary + 单独关 CPR 查询）/ D3（接受 1fps）；V2 取证工具（CLF_DEBUG_EVENTS + VT 转储）已备
+
 ### 【插入批：终端光标闪烁 + CLion 中文输入抖动 ✅⏳（2026-09-08，不占正式进度）】
 - **用户报告**：① PowerShell 直接运行时光标闪烁频率特别快 ② CLion 内置终端运行时看不出光标闪烁；中文输入法打字每敲一个字母界面抖动 + 输入框下面自动补出一个空行（英文正常）
 - **现象 1 根因（VT 转储实证）**：FTXUI `App::Draw` 每帧输出 `?25l`（隐藏）→ 全帧重绘 → 移动真实光标到输入框 → `?25h` + `ESC[5 q`（DECSCUSR 闪烁竖线，Input 组件 insert 默认 true 走 Bar 分支）。conhost 每次 `?25h` 重置光标 blink 相位 → 闪烁节奏被帧率绑架（打字每字符一帧、turnTimer 每秒 PostEvent）→ 异常快闪。JediTerm 对 DECSCUSR 闪烁支持差异 → 看不出闪烁
