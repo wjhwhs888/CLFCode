@@ -127,14 +127,22 @@ int CLFRepl::run() {
         } catch (...) {}
 
         // ---- 初始化 FTXUI ----
-        // Fullscreen（alternate screen）——2026-09-08 从 FullscreenPrimaryScreen
-        // 切换：primary 模式下 FTXUI 每 500ms 发 CPR 光标查询（\033[6n），响应
-        // 与 IME 组合渲染在 ConPTY 流内交错，CLion(JediTerm) 下中文输入组合
-        // 期间每键抖动；alt screen 跳过 CPR 查询（app.cpp Draw 的
-        // !use_alternative_screen_ 条件），实测抖动消失（用户验证定案）。
-        // 行为变化：退出后屏幕恢复启动前内容（对话不在终端滚动历史）。
         auto* terminal = dynamic_cast<CLFTerminal*>(m_output);
-        auto  screen   = ftxui::ScreenInteractive::Fullscreen();
+        // 屏幕模式定案（2026-09-09）：primary 屏幕 + 关闭 CPR 周期查询。
+        // ① 转圈卡顿根因（v0.7.3 回归）：切 alt screen（Fullscreen）后 ConPTY/
+        //    JediTerm 渲染路径差异致转圈掉帧——A/B 实证回 primary 转圈恢复丝滑。
+        // ② 中文输入抖动根因（v0.7.3 原问题）：primary 下 FTXUI 每帧发 CPR
+        //    查询（\033[6n），响应与 IME 组合渲染在 ConPTY 流内交错致每键抖动；
+        //    alt screen 只是"附带跳过"CPR（Draw 的 !use_alternative_screen_ 条件），
+        //    本版改为精准关闭 TrackCursorPosition(false)（3rdparty 新增开关，
+        //    机理同 f49465b 实证）；首帧与 resize 保留 force 校准（app.cpp）。
+        // ③ 附带收益：退出后对话保留在终端滚动历史（alt screen 行为变化撤销）。
+        // ④ 转圈动画驱动：Timer 50ms（CLFAgentLoop，D4 定案）。
+        // ⑤ 已知局限（用户定案"接受"）：CLion(JediTerm) 拖选鼠标 y 含内部
+        //    行号计数偏移（每次启动增长，程序侧不可测）——可用
+        //    CLF_MOUSE_OFFSET_Y 环境变量手动校准（CLFReplView hitTest）。
+        auto  screen   = ftxui::ScreenInteractive::FullscreenPrimaryScreen();
+        screen.TrackCursorPosition(false);
         if (terminal) {
             terminal->setScreen(&screen);
             terminal->clearContent();   // C4：启动重置窄操作

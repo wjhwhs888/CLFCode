@@ -101,6 +101,13 @@ struct App::Internal {
 
   bool track_mouse_ = true;
 
+  // CLFCode patch（2026-09-09）：CPR 周期查询开关。primary 模式每帧（节流 500ms）
+  // 发 \033[6n 查询，响应与 IME 组合渲染在 ConPTY 流内交错导致中文输入抖动
+  // （f49465b 以切 alt screen 附带跳过；D2 改为精准关闭——保留 primary 渲染
+  // 路径修复转圈卡顿，同时维持 IME 稳定。关闭后鼠标坐标转换用 cursor_x_/
+  // cursor_y_ 初始值 1（frame 假定屏幕原点），与 alt screen 行为一致）。
+  bool track_cursor_position_ = true;
+
   std::string set_cursor_position_;
   std::string reset_cursor_position_;
 
@@ -111,6 +118,11 @@ struct App::Internal {
 
   int cursor_x_ = 1;
   int cursor_y_ = 1;
+
+  // CLFCode patch（2026-09-09）：渲染定稿光标 frame 内坐标（Draw 帧尾 CUP
+  // 目标；Screen::Clear 会重置 cursor_，故在 Clear 前捕获供宿主校准用）
+  int last_frame_cursor_x_ = 0;
+  int last_frame_cursor_y_ = 0;
 
   std::uint64_t frame_count_ = 0;
   bool mouse_captured = false;
@@ -1063,8 +1075,15 @@ void App::Internal::Draw(Component component) {
   // Periodically request the terminal emulator the frame position relative to
   // the screen. This is useful for converting mouse position reported in
   // screen's coordinates to frame's coordinates.
-  if (!use_alternative_screen_ && is_stdout_a_tty_) {
-    RequestCursorPosition(previous_frame_resized_);
+  // CLFCode patch（2026-09-09）：TrackCursorPosition(false) 时保留首帧与 resize
+  // 校准——frame 原点在启动与 resize 时确定、此后不变，无需周期查询；周期
+  // CPR 是 CLion 中文输入抖动源（f49465b 实证），关掉后首帧/resize 的 force
+  // 查询仍保证鼠标坐标转换准确（查询串位于帧头、光标在 home，响应即 frame
+  // 原点屏幕坐标）。
+  if (!use_alternative_screen_ && is_stdout_a_tty_ &&
+      (track_cursor_position_ || previous_frame_resized_ ||
+       frame_count_ == 0)) {
+    RequestCursorPosition(previous_frame_resized_ || frame_count_ == 0);
   }
   previous_frame_resized_ = resized;
 
@@ -1089,6 +1108,12 @@ void App::Internal::Draw(Component component) {
 
     set_cursor_position_ += "\x1B[" + std::to_string(public_->cursor_.y + 1) +
                             ";" + std::to_string(public_->cursor_.x + 1) + "H";
+    // CLFCode patch（2026-09-09）：捕获渲染定稿的光标 frame 内坐标。Screen::
+    // Clear() 紧随其后把 cursor_ 重置到右下角，事件处理期（hitTest 等）读
+    // cursor() 拿不到真实光标目标；此值 = 帧尾 CUP 的目标 = 真实光标在
+    // frame 内的位置，供宿主的 Windows 自校准（缓冲光标 − 此值 = frame 原点）。
+    last_frame_cursor_x_ = public_->cursor_.x;
+    last_frame_cursor_y_ = public_->cursor_.y;
     // 帧头逆序列：回到渲染起点（右下角），供 Screen::ResetPosition 的
     // \r + ESC[dimy-1 A 相对回 home（其"起点=右下角"假设不变）。
     reset_cursor_position_ += "\x1B[" + std::to_string(public_->dimy_) + ";" +
@@ -1493,6 +1518,26 @@ App App::TerminalOutput() {
 
 void App::TrackMouse(bool enable) {
   internal_->track_mouse_ = enable;
+}
+
+void App::TrackCursorPosition(bool enable) {
+  internal_->track_cursor_position_ = enable;
+}
+
+int App::CursorOffsetX() const {
+  return internal_->cursor_x_;
+}
+
+int App::CursorOffsetY() const {
+  return internal_->cursor_y_;
+}
+
+int App::LastFrameCursorX() const {
+  return internal_->last_frame_cursor_x_;
+}
+
+int App::LastFrameCursorY() const {
+  return internal_->last_frame_cursor_y_;
 }
 
 void App::HandlePipedInput(bool enable) {

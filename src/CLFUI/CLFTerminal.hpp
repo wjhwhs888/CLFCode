@@ -24,6 +24,8 @@ public:
 
     // === FTXUI 入口 ===
     void setScreen(ftxui::ScreenInteractive* screen) { m_screen = screen; }
+    // 拖选坐标自校准用（hitTest 读 frame 原点与 cursor 偏移）
+    ftxui::ScreenInteractive* screen() const { return m_screen; }
     void requestRefresh() override;  // ⑧ ICLFOutput：PostEvent(Custom)，m_screen 为空时安全跳过
 
     // === 静态工具 (委托 CLFAnsi) ===

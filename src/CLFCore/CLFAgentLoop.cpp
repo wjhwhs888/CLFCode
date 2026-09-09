@@ -105,19 +105,27 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     // P1-1: 状态点接线——Running 于 turn 开始
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
 
-    // Timer #2：StatusLine 持续计时
+    // Timer #2：StatusLine 持续计时 + 转圈动画驱动（50ms = 20Hz）
     // 用 CLFPeriodicTimer（条件变量唤醒）而非 sleep 轮询：后者 join 时平均要
     // 空等 ~0.8s，每个 runTurn 白白多花近一秒。异常兜底已在定时器内部
     // （B1 教训：线程体逸出异常会 std::terminate，静默退出码 3）。
+    // F13 升级（2026-09-09 D4 定案）：1Hz → 20Hz。CPR 查询关闭后
+    // （TrackCursorPosition(false) 修 CLion 中文输入抖动），转圈动画失去
+    // 事件源——静止期仅 1Hz 兜底致秒跳一帧卡顿。50ms 驱动让转圈
+    // （100ms/帧）恢复流畅，仅 turn 生命周期内驱动（回合结束即停，
+    // 不违背"流静止则动画静止"——静止的是对话流，转圈仍可见）。
     auto turnStart = std::chrono::steady_clock::now();
-    CLF::CLFTypes::CLFPeriodicTimer turnTimer(std::chrono::seconds(1), [this, turnStart]() {
+    int lastShownSec = -1;  // 声明先于 turnTimer（析构逆序：定时器先停）
+    CLF::CLFTypes::CLFPeriodicTimer turnTimer(std::chrono::milliseconds(50), [this, turnStart, &lastShownSec]() {
         if (!m_output) return;
         auto s = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - turnStart).count();
-        // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）
-        if (s >= 15)
+        // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）；50ms 周期下
+        // 按秒去重——同一秒只 setStatusTextOnly 一次
+        if (s >= 15 && s != lastShownSec) {
+            lastShownSec = s;
             m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
-        // F13: 1Hz 驱动——工具执行期无流式事件，靠此修复界面冻结 + 动画最低帧率
+        }
         m_output->requestRefresh();
     });
     struct TurnGuard {

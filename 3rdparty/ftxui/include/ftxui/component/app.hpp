@@ -80,6 +80,35 @@ class FTXUI_EXPORT(COMPONENT) App : public Screen {
   /// @note This must be called before calling `App::Loop`.
   void TrackMouse(bool enable = true);
 
+  /// @brief Enable or disable the periodic cursor position request (CPR).
+  /// @param enable Whether to periodically query the terminal cursor position.
+  /// @note Cursor position tracking is enabled by default.
+  /// @note Disabling it skips the "\033[6n" queries issued after each frame.
+  ///       Mouse coordinate conversion then relies on cursor_x_/cursor_y_
+  ///       initial values (frame assumed at screen origin).
+  /// @note This must be called before calling `App::Loop`.
+  void TrackCursorPosition(bool enable = true);
+
+  /// @brief Current cursor position offset applied to mouse events.
+  /// Mouse event coordinates are converted to frame coordinates by
+  /// subtracting this offset. Starts at (1,1); updated by CPR replies.
+  /// @return The x offset applied to mouse events.
+  /// @note CLFCode patch（2026-09-09）：暴露给宿主做 Windows 自校准
+  /// （GetConsoleScreenBufferInfo 实测 frame 原点，抵消此偏移）。
+  int CursorOffsetX() const;
+  /// @brief See CursorOffsetX().
+  /// @return The y offset applied to mouse events.
+  int CursorOffsetY() const;
+
+  /// @brief Cursor position inside the frame as set by the last rendered
+  /// frame (the CUP target emitted at the end of Draw, before Screen::Clear
+  /// resets the cursor to the bottom-right corner).
+  /// @note CLFCode patch（2026-09-09）：供宿主做 Windows 自校准——
+  /// 缓冲光标坐标 − 此值 = frame 原点。
+  int LastFrameCursorX() const;
+  /// @brief See LastFrameCursorX().
+  int LastFrameCursorY() const;
+
   /// @brief Enable or disable automatic piped input handling.
   /// When enabled, FTXUI will detect piped input and redirect stdin from
   /// /dev/tty for keyboard input, allowing applications to read piped data
@@ -173,6 +202,12 @@ class FTXUI_EXPORT(COMPONENT) App : public Screen {
   /// @brief Return the names of the terminal capabilities.
   std::vector<std::string> TerminalCapabilityNames() const;
 
+  /// @brief Force a cursor position request (CPR, "\033[6n").
+  /// @param force Send immediately, bypassing the throttled request logic.
+  /// @note CLFCode patch（2026-09-09）：private → public，供宿主在启动稳定后
+  /// 补发一次校准查询（JediTerm 首帧零响应、稳定后或有响应的取证假设）。
+  void RequestCursorPosition(bool force = false);
+
  private:
   void ExitNow();
   void Install();
@@ -190,8 +225,6 @@ class FTXUI_EXPORT(COMPONENT) App : public Screen {
   bool HandleSelection(bool handled, Event event);
   void Draw(Component component);
   std::string ResetCursorPosition();
-
-  void RequestCursorPosition(bool force = false);
 
   void TerminalSend(std::string_view);
   void TerminalFlush();

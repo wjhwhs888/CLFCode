@@ -2,14 +2,14 @@
 
 ## 进行中
 
-### 【插入批：转圈动画卡顿问题调查 ⏳（2026-09-09，不占正式进度，待用户回来讨论）】
-- **用户报告**：v0.7.3（f49465b）后，执行命令后的转圈 + Working 前的转圈"不是以前丝滑显示，而是卡顿"——用户暂离，先把调查结论落文档，回来一起讨论
-- **调查结论（详见 `分析/分析-转圈动画卡顿问题.md`）**：
-  - 转圈渲染逻辑本身**零改动**——`CLFReplView.cpp:296` kSpinFrames 自 A1 拆分（d6cc79b）创建后未动；两处转圈（进度块末行 :307 / Running 状态点 :320）共用 frame 变量
-  - 昨天 f49465b 动了渲染管线底层 3 处（嫌疑）：① `CLFRepl.cpp:137` FullscreenPrimaryScreen→Fullscreen（alt screen，最大嫌疑）② app.cpp 帧尾光标 CUP 绝对定位（无条件两条 CUP）③ input.cpp 光标 Blinking→稳态（与转圈无直接关系）
-  - **机制**：转圈纯事件驱动（帧=nowMs/100%10，仅重绘时计算）——流式/工具输出期帧率高丝滑；静止期唯一兜底 = Timer #2 1Hz（CLFAgentLoop.cpp:120-121）→ 1fps 秒跳一帧 = 卡顿。FTXUI 动画/事件链路与 alt screen 无关（app.cpp:1418-1425/1534-1537/931-945 实读）
-- **嫌疑排序**：① alt screen 切换（ConPTY/JediTerm 渲染路径变化）② CUP 每帧输出 ③ 观察场景事件流变稀（待排除）④ 渲染负载渐进（可能性低）
-- **待办（用户回来后）**：V1 A/B 验证（CLFRepl.cpp:137 临时切回 FullscreenPrimaryScreen，同场景看转圈是否恢复丝滑）→ 若证 alt screen：候选修根 D1（Running 期高频 PostEvent 驱动）/ D2（回 primary + 单独关 CPR 查询）/ D3（接受 1fps）；V2 取证工具（CLF_DEBUG_EVENTS + VT 转储）已备
+### 【插入批：转圈卡顿 + 拖选校准修复 ✅（2026-09-09，不占正式进度，待收尾提交）】
+- **转圈卡顿根因链（完整闭环）**：v0.7.3 卡顿非 alt screen 渲染路径，而是 **CPR 周期查询被 alt screen 附带关闭** → 转圈动画失去驱动源（转圈纯事件驱动，静止期唯一兜底 1Hz Timer → 秒跳一帧）。A/B 实证四组：primary+CPR 开=丝滑 / alt+CPR 关=卡顿 / primary+CPR 开=丝滑 / primary+CPR 关=卡顿
+- **转圈修复（D4 定案）**：① 回 primary 屏幕（`FullscreenPrimaryScreen`，恢复滚动历史）② CPR 周期查询精准关闭（`TrackCursorPosition(false)`，3rdparty 新增开关——IME 抖动修复保持）③ **Timer 50ms（20Hz）显式动画驱动**（CLFAgentLoop runTurn 周期 1s→50ms + setStatusTextOnly 按秒去重）——不再依赖 CPR 意外心跳
+- **拖选校准（外部终端）**：CPR 响应校准不可靠 → **Windows 自校准**：`GetConsoleScreenBufferInfo` 光标 − LastFrameCursor（3rdparty 新增 getter，Draw 帧尾 CUP 目标捕获）= frame 原点；hitTest 修正公式 `x + CursorOffsetX − origin` 与 CPR 校准幂等。首帧+resize force CPR 保留（app.cpp 条件补 frame_count==0/resized）
+- **CLion(JediTerm) 拖选偏移（用户定案"接受局限"）**：取证链——查询发出零响应（CPR 无响应，首帧与稳定后均实测）→ SGR 鼠标 y 含 JediTerm 内部行号计数偏移（4~6+，每次启动 +2 增长；`\033[3J` 清屏不清计数、ConPTY 缓冲=视口、程序侧不可测）→ **默认补偿 5（用户实测定案：CLion 拖选对齐）** + `CLF_MOUSE_OFFSET_Y` 环境变量精确校准 + 仅 `TERMINAL_EMULATOR=JetBrains-JediTerm` 探测命中才补偿（外部终端零影响）。已知局限：滚动视口后需回底部
+- **3rdparty patch 清单（随 v0.7.4）**：① app.cpp TrackCursorPosition 开关 + 首帧/resize force CPR 条件 ② app.cpp LastFrameCursor 捕获 + getter ③ app.hpp CursorOffsetX/Y + LastFrameCursorX/Y + RequestCursorPosition public 化 ④（沿用 f49465b 的 CUP 定位/光标稳态/placeholder 三 patch）
+- **验证基线**：MSVC 构建全过 + ctest 31/31 + 冒烟 exit=0；用户实测——外部终端转圈丝滑/拖选精确/中文输入正常；CLion 转圈正常/中文输入不抖/拖选错位最小化
+- **收尾待办**：用户最终验证 → CHANGELOG v0.7.4 段落 + VERSION bump 已写 → 分析文档补最终结论 → tag + 推送 → 用户发布
 
 ### 【插入批：终端光标闪烁 + CLion 中文输入抖动 ✅⏳（2026-09-08，不占正式进度）】
 - **用户报告**：① PowerShell 直接运行时光标闪烁频率特别快 ② CLion 内置终端运行时看不出光标闪烁；中文输入法打字每敲一个字母界面抖动 + 输入框下面自动补出一个空行（英文正常）

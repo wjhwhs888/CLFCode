@@ -16,7 +16,13 @@
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：utf8SafeHead
 
+#include <cstdlib>
 #include <filesystem>
+
+#ifdef _WIN32
+// 拖选坐标自校准（GetConsoleScreenBufferInfo：CLion 的 ConPTY 不响应 CPR）
+#include <windows.h>
+#endif
 
 namespace CLF::CLFUI {
 using CLF::CLFCore::CLFTextUtil;   // A2
@@ -433,6 +439,51 @@ std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {
     auto& scrollView = m_scrollView;
     auto& dbgEvt = m_dbgEvt;
     auto& escDbg = m_escDbg;
+
+#ifdef _WIN32
+    // 拖选坐标自校准（2026-09-09）：CLion(JediTerm) 的 ConPTY 不响应 CPR
+    // 查询（取证实证：查询发出、零响应），FTXUI 鼠标偏移恒为初始值 (1,1)，
+    // frame 原点非屏幕原点时拖选错位。
+    // 自校准：GetConsoleScreenBufferInfo 的光标 − 渲染定稿光标 frame 内
+    // 坐标（LastFrameCursor，帧尾 CUP 目标）= frame 原点。组件层坐标已减
+    // 过 cursor 偏移（x = raw − CursorOffsetX），加回同一偏移再减原点——
+    // 两项抵消，结果恒为 raw − origin，与 CPR 校准与否无关（外部终端
+    // CPR 正常时同样正确，公式幂等）。
+    // CLion(JediTerm) 已知局限（2026-09-09 用户定案"接受局限"）：其 SGR
+    // 鼠标 y 含内部行号计数偏移（实测 4~6+，每次启动增长——\033[3J 清屏
+    // 不清计数、CPR 无响应、ConPTY 缓冲=视口，程序侧不可测）。默认补偿 5
+    // （用户实测定案：CLion 拖选对齐）；CLF_MOUSE_OFFSET_Y
+    // 环境变量可精确覆盖微调（当前偏移值 = 差几行就设几）。外部终端
+    // 无此偏移——仅 TERMINAL_EMULATOR=JetBrains-JediTerm 时补偿。
+    static const bool kIsJediTerm = [] {
+        const char* emu = std::getenv("TERMINAL_EMULATOR");
+        return emu && std::string(emu).find("JediTerm") != std::string::npos;
+    }();
+    static const int kScrollbackRows = [] {
+        const char* off = std::getenv("CLF_MOUSE_OFFSET_Y");
+        if (off && *off) {
+            try { return std::stoi(off); } catch (...) {}
+        }
+        return 5;
+    }();
+    if (m_terminal) {
+        if (auto* scr = m_terminal->screen()) {
+            HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+            CONSOLE_SCREEN_BUFFER_INFO csbi{};
+            if (hOut != INVALID_HANDLE_VALUE
+                && GetConsoleScreenBufferInfo(hOut, &csbi)) {
+                int originX = static_cast<int>(csbi.dwCursorPosition.X)
+                            - scr->LastFrameCursorX();
+                int originY = static_cast<int>(csbi.dwCursorPosition.Y)
+                            - scr->LastFrameCursorY();
+                if (kIsJediTerm)
+                    originY += kScrollbackRows;   // 默认 4，CLF_MOUSE_OFFSET_Y 可覆盖
+                x += scr->CursorOffsetX() - originX;
+                y += scr->CursorOffsetY() - originY;
+            }
+        }
+    }
+#endif
 
     if (m_lastRowMap.empty()) return std::nullopt;
     auto [vs, ve] = scrollView.visibleRange();
