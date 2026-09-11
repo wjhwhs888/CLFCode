@@ -2,6 +2,27 @@
 
 ## 进行中
 
+### 【阶段 2 / 2.1 插件 ABI 与管理器骨架设计 ✅ 已验收定案（2026-09-10 flash 编写 / 09-11 用户拍板），待开工落码】
+- **背景**：DeepSeek 官方公告（2026-09-10）——V4.1 Flash 发布、**V4 Pro 9/14 12:00 下线**（请求全部路由到 V4.1 Flash）。阶段 2 文档 §3.1②/§4.1/§八 三处排期写的是"由 pro 细化签名 / pro 执行 / 谷价时段路由 pro"——**排期落空**，改由 4.1 Flash 承接（用户 2026-09-10 拍板"可以，标明是给阶段2使用的"）
+- **产出**：`.claude/plans/设计/设计-阶段2-2.1-插件ABI与管理器骨架.md`（8 节：ABI 头完整代码草案 / 回流修正 4 项 / 管理器骨架 / CMake 插件模板 / 实施步骤 8 步 / 测试计划 12 用例 / 待裁决 4 项 / 上游差异回写清单）
+- **关键取证（决定设计难度的发现）**：9 个待迁工具 handler 依赖面极干净——`CLFBuiltinTools.cpp:439-441`（按值捕获单 bool，注释"无生命周期约束"）、`:458/:506/:582/:593` 等零捕获静态函数；唯一捕获 `agent` 的 todo_write/compress_context 本就留 core（§3.6 定案）→ **跨边界 CLFToolCallbacks 可极简（onResult + onError）**；宿主侧唯一调用点 `CLFToolExecutor.cpp:593` 一句同步赋值 → 适配成本近零
+- **补齐上游留白（直接进入实施）**：CLFService 基类 / CLFServiceEntry 服务表 / CLFToolCallbacks / CLFToolFlags 位集 / CLFLogLevelCode（static_assert 对齐 CLFDiffOpCode 先例）/ CLF_PLUGIN_API_VERSION 精确匹配 / **禁 RTTI**（services() 显式服务表替代 dynamic_cast——跨编译器可靠性）/ 插件完整实现样板 / 加载状态机 / 卸载顺序陷阱（Destroy 必先于 FreeLibrary）
+- **裁决 4 项 ✅ 已定案（2026-09-11 用户拍板全采纳）**：① `ICLFFileService` 加 CLFService 基类（仅 CLFFileService.hpp 1 文件 ≤3 行）② 插件配置 TOML→JSON（零新依赖）③ `requires()` 填服务名（SDP）④ 插件目录 `bin/$<CONFIG>/plugins/`
+- **评审补强 ✅（2026-09-11，pro 评审 + 已写入正文）**：4 项裁决均建议采纳（§七 评审注记）；6 个补充设计点入正文——导出宏 `CLF_PLUGIN_EXPORT`（双编译链对称，§1.2/§1.5）、`clf_plugin_api` INTERFACE target（§4.0）、多提供方歧义规则（扫描序首个，§3.2）、reload 失败语义（§3.3）、config() 按 key 缓存 map（§3.4）、变体插件定名 badinit/badabi（§4.2）+ typo 修复（bin/Day→bin/Debug）
+- **二轮现状全量核实 ✅（2026-09-11）**：9 项代码断言逐条实证通过（ToolExecutor:593 / BuiltinTools:439-441 / CLFTypes:124 / 枚举序 0-3 / GetModuleFileNameW:141 等行号分毫不差）；实质修正 1 处——修正①影响面精确化为"仅 CLFFileService.hpp 1 文件"（Impl 单继承链间接继承基类，声明无需改；qa 零影响）；§4.0 CMake 变量对齐项目惯例
+- **三轮 flash 审查 + 四轮 pro 拍板 ✅（2026-09-11）**：flash 7 项修订全部采纳（getService 去 pluginId 单参服务名 / 多继承 CLFService 子对象约束 / 文件名字典序排序 / 插件禁文件级非平凡静态对象 / 服务指针禁跨 unload 缓存 / SEH 加固可选 / P13-P16 测试 + 变体插件清单）；pro 补齐 3 处一致性（§3.3 查询多提供方语义、§3.4 m_configCache 改 map、§1.2 example 宏）+ 宿主长期持有指针与热卸载交互列入 2.2a 评估
+- **后续**：按 §五 步骤 1-8 落码 → 2.2a FileOps DLL 试点（上游 §4.1 步骤 3）
+
+### 【模型名同步小批 ⏳ 待用户定夺（2026-09-10 发现，未开工）】
+- **背景**：V4.1 Flash 发布后新调用名 `deepseek-flash`（用户已手动改 `config/agent_settings.json`，未提交）
+- **待改（纯文档，零代码风险）**：`config/README.md:41-42/98/111-112`（默认值、"Pro 正式版发布后建议切回"已失效、示例）、`doc/api_interface.md:25-26`
+- **附带发现（待定夺 a/b/c）**：`thinking_level` 是**死配置**——`CLFTypes.hpp:93` 定义 + `CLFConfigLoader.cpp:66` 映射，但 `CLFProtocolAdapter::buildChatRequest`（:37-89）从未发送它。选项：(a) 接线实现 (b) 标注预留未实现 (c) 删除
+  - **设计文档已出 + 评审补强 ✅（2026-09-11）**：`设计/设计-thinking配置接线与死配置治理.md`（方案 A/B/C/D 分步可独立排期）。补充取证实锤：① buildChatRequest 生产调用点仅 2 处（主循环 :162 + wrapUp :419），摘要独立构造 body（CLFSessionSummarizer.cpp:97-101，其 temperature=0.0 同样落在官方"thinking 模式无效"规则内——确定性意图落空）② **dsh 官方实现把 reasoning_content 回传当规则实现**（serialize.ts:233 + spec 名 "official passback rule"）→ 方案 C 从"待验证"升级为"直接实现"③ 默认值 "max" 接线后全员成本上升 → 待定案（建议空串/`high`）④ V4 Pro 9/14 下线 → sub_model 原意图失去承担者，b) 删除权重上升
+  - **二轮现状全量核实 ✅（2026-09-11）**：全部行号断言实证通过（m_thinkingLevel 三处、§2.1 表 11 行、字段全集、serializeMessage :184-218、CLFMessage 无 reasoning 等）。新发现入正文：① **README:61 对 thinking_level 的描述本身就是错误文档**（值域含不存在的 `off` 档 + "仅 pro 支持"——双重误导，用户最初追问的源头）② **README:42/:73 写明 sub_model 意图 = 轻量任务 + 摘要压缩**，而 S3-1 摘要已用主模型实现（Summarizer.cpp:98）——意图从未被采用，删除论据进一步补强
+  - **三轮 flash 审查 + 四轮 pro 拍板 ✅（2026-09-11）**：flash 5 项修改全部采纳（top_p clamp WARN / 空占位规则 / 实施顺序 A→B→C→D / V4 Pro 下线新闻核实 / 主模型 flash 生命周期待查）；**默认值定案 = 空串**（不干预服务端默认，跟随官方演进）；pro 补齐 2 处一致性（空占位边界：仅 thinking 开启需要 + serializeMessage 感知开关的实现注意；§七 风险表"先验证"残留修正）
+  - **✅ 五轮用户拍板定案（2026-09-11）**：实施顺序 A（含 A3 开关同批）→ B → C（独立批次）→ D 随批；默认值空串；A4 保留 `thinking_level` 主键不加别名；**sub_model 选 c) 保留并标注"预留，未接线"**（用户判断后续可能有用）；剩余 P2-8 项随批顺手处理。附带待查：主模型 `deepseek-v4-flash` 生命周期（是否同批下线 → 配置需改 `v4.1-flash`）。设计文档已定案（§八 定案记录）
+- **好消息**：生产代码零硬编码模型名（全仓 `deepseek-v4-*` 仅在文档/配置/测试字面量）
+
 ### 【插入批：转圈卡顿 + 拖选校准修复 ✅（2026-09-09，不占正式进度，待收尾提交）】
 - **转圈卡顿根因链（完整闭环）**：v0.7.3 卡顿非 alt screen 渲染路径，而是 **CPR 周期查询被 alt screen 附带关闭** → 转圈动画失去驱动源（转圈纯事件驱动，静止期唯一兜底 1Hz Timer → 秒跳一帧）。A/B 实证四组：primary+CPR 开=丝滑 / alt+CPR 关=卡顿 / primary+CPR 开=丝滑 / primary+CPR 关=卡顿
 - **转圈修复（D4 定案）**：① 回 primary 屏幕（`FullscreenPrimaryScreen`，恢复滚动历史）② CPR 周期查询精准关闭（`TrackCursorPosition(false)`，3rdparty 新增开关——IME 抖动修复保持）③ **Timer 50ms（20Hz）显式动画驱动**（CLFAgentLoop runTurn 周期 1s→50ms + setStatusTextOnly 按秒去重）——不再依赖 CPR 意外心跳
@@ -98,10 +119,12 @@
 - **pro 终检 ✅（2026-09-08）**：**发现并修正文档错误断言**——初稿"触顶路径共用 finishTurn 三出口"系错误（:384-440 触顶是独立收尾段，不走 finishTurn）→ 修正：触顶路径单独接线（:437 后），双通道逻辑抽 AgentLoop 私有 helper `appendCacheHitLine`（finishTurn 与触顶两处各一行调用）；触顶回合缓存收益是长回合最有价值观测场景，与 worked 行一致性对齐；触顶 finalContent 本不进上下文（:419 仅 wrapUp 单独 addMessage）零污染。测试 +1 触顶用例（共 +18）
 - **进入实施**：设计定稿，按 §四 步骤 1-5 实施
 
-### ▶ 下次开工指引（2026-09-08 v0.7.2 收尾时更新，从这里接着干）
-- **基线**：`v0.7.2` tag（UI 配色 + 拖选批次——ANSI 三层根因修复 + 输入行视觉强化 + 拖选双值语义；用户实机验收通过；tag 已打待用户发布；ctest 31/31 + 冒烟 exit=0）
-- **当前状态**：v0.7.2 收尾完毕待发布（用户执行）；阶段 2 待用户发布反馈后开工
-- **下一步 = 阶段 2 开工**：2.1 CLFPluginManager 骨架 + clf_plugin_api 头扩展（CLFPlugin/CLFHostApi/CLFToolMetaPOD/CLFToolCallbacks）+ CMake DLL target 模板（阶段 2 分册 §4.1 步骤 2 起——步骤 1 C1+ 已落地）；随后 2.2a tools.fileops.dll 试点（C1 接口化已铺路，core 零改动承诺待验证）
+### ▶ 下次开工指引（2026-09-11 设计定案时更新，从这里接着干）
+- **基线**：`v0.7.4`（转圈卡顿根因修复 + 拖选自校准 + CLion 终端适配；tag 已打待用户发布；ctest 31/31 + 冒烟 exit=0）
+- **当前状态**：两份设计文档已验收定案——阶段 2 的 2.1（插件 ABI 与管理器骨架）+ thinking 配置接线治理；sub_model 定案保留标注
+- **下一步（两线可选，按排期）**：
+  - **线 1 = 阶段 2 开工**：2.1 CLFPluginManager 骨架落码（`设计-阶段2-2.1` 已定案，§五 步骤 1-8，含 clf_plugin_api 头扩展 + CMake 模板 + qa 16 用例）；随后 2.2a tools.fileops.dll 试点（C1 接口化已铺路，core 零改动承诺待验证）
+  - **线 2 = thinking 治理批**：按 A（接线+值域+开关 A3）→ B（参数条件下发）→ C（reasoning 回传，独立批次）→ D 随批（`设计-thinking配置接线` §八 定案记录）
 - **阶段 2 新增约束**：协议适配器多协议**预留不实施**（§九 预留 + §七⑩——不埋雷硬约束：clf_plugin_api 不暴露协议细节、术语分离、接口不按 OpenAI 字段设计）
 - **构建环境**（memory：msvc-manual-env）：export INCLUDE/LIB（MSVC 14.51.36231 + D:/Windows Kits/10/Include/10.0.26100.0 系列）；ninja = `D:/Program Files/JetBrains/CLion 2026.1.1/bin/ninja/win/x64/ninja.exe`；构建目录 cmake-build-debug
 - **⚠ 遗留**：C2-3 接口化（ProtocolAdapter 等）缓做记录在案（C3 注记；多协议时代需重估——阶段 2 §九）；「首次运行崩溃修复」长期观察未闭环（progress 长期观察区）
