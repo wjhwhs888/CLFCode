@@ -4,8 +4,8 @@
         "api_key": ""
     },
     "chat_completions": {
-        "model": "deepseek-v4-flash",
-        "sub_model": "deepseek-v4-pro",
+        "model": "deepseek-flash",
+        "sub_model": "deepseek-flash",
         "max_tokens": 65536,
         "temperature": 0.0,
         "top_p": 1.0,
