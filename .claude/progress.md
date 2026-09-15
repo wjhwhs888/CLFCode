@@ -119,6 +119,14 @@
 - **pro 终检 ✅（2026-09-08）**：**发现并修正文档错误断言**——初稿"触顶路径共用 finishTurn 三出口"系错误（:384-440 触顶是独立收尾段，不走 finishTurn）→ 修正：触顶路径单独接线（:437 后），双通道逻辑抽 AgentLoop 私有 helper `appendCacheHitLine`（finishTurn 与触顶两处各一行调用）；触顶回合缓存收益是长回合最有价值观测场景，与 worked 行一致性对齐；触顶 finalContent 本不进上下文（:419 仅 wrapUp 单独 addMessage）零污染。测试 +1 触顶用例（共 +18）
 - **进入实施**：设计定稿，按 §四 步骤 1-5 实施
 
+### 【插入批：测试注册 CMake 模块化重构 ✅（2026-09-15，已提交推送；归档待用户指示）】
+- **设计文档**：`设计/设计-测试注册CMake模块化重构.md`（用户新增，定稿待实施）。实施前逐条取证通过：31 测试等价表与 `src/CMakeLists.txt:111-272` 行号分毫不差；构建目录 CTestTestfile 无 WORKING_DIRECTORY 实证（默认 = `${CMAKE_BINARY_DIR}/src`）；`CLF_TEST_TARGETS` 全仓仅一处定义使用、无 CI 配置、release.ps1 只建 CLFCode target
+- **实施三改**：① 顶层 `CMakeLists.txt`——`option(CLF_BUILD_TESTS ... ON)` + `enable_testing()` 收进条件 ② `src/CMakeLists.txt`——测试段 162 行删除（272→110 行）+ 末尾 `if(CLF_BUILD_TESTS) add_subdirectory(test) endif()` ③ 新建 `src/test/CMakeLists.txt`（`clf_add_test` 函数一行一测 + 31 行注册 + `WORKING_DIRECTORY` 显式固定回 `cmake-build-debug/src`——消除注册位置迁移引起的唯一行为差异点）
+- **验证全过**：ctest -N = 31（名字零变化）→ 31/31 全绿 6.68s（基线 6.53s）→ 工作目录抽查 = `cmake-build-debug/src` → **OFF 独立目录构建**（136 target 主程序正常 + `qa_` 零 target + Total Tests: 0）→ `--version` exit=0；临时目录 `cmake-build-off` 已清理
+- **新增经验（memory 已更新 msvc-manual-env）**：全新目录 configure 需显式传 4 个工具链路径（cl/ninja/rc/mt），缺一依次报 `CMAKE_CXX_COMPILER not set` → `unable to find Ninja` → `RC Pass 1 no such file`；已有 cache 目录重 configure 只需手动 env 三件套
+- **待办**：~~commit~~ ✅（2026-09-15 已提交推送，不打标签——v0.7.5 版本号已留 CHANGELOG 首位 + VERSION，tag/发布由用户后续执行）→ 设计文档归档 `设计/归档/`（待用户指示）
+- **附注**：OFF 构建与主构建共用 `bin/Debug` 输出目录（项目固有），CLFCode.exe 被同内容覆盖，零影响；阶段 2 插件测试（clf_plugin_teststub 等）届时归 `src/test/CMakeLists.txt` 管理（设计 §九.1）
+
 ### ▶ 下次开工指引（2026-09-11 设计定案时更新，从这里接着干）
 - **基线**：`v0.7.4`（转圈卡顿根因修复 + 拖选自校准 + CLion 终端适配；tag 已打待用户发布；ctest 31/31 + 冒烟 exit=0）
 - **当前状态**：两份设计文档已验收定案——阶段 2 的 2.1（插件 ABI 与管理器骨架）+ thinking 配置接线治理；sub_model 定案保留标注

@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(CLFCode VERSION 0.1.0 LANGUAGES CXX)
 
-# 测试支持（顶层启用，src/ 下 add_test 注册）
-enable_testing()
+# 测试支持（顶层启用 + 开关；src/CMakeLists.txt 末尾 add_subdirectory(test) 注册）
+# 默认 ON 保持 CLion/日常体验不变；发布/纯程序构建可 -DCLF_BUILD_TESTS=OFF
+option(CLF_BUILD_TESTS "构建并注册单元测试（qa_*，Boost.UT，C++20）" ON)
+if(CLF_BUILD_TESTS)
+    enable_testing()
+endif()
 
 # FTXUI — C++ 声明式终端 UI 库 (MIT, 零外部依赖, v7.0.0)
 # 源码位于 3rdparty/ftxui/, 随项目版本控制
