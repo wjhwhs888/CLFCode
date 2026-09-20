@@ -31,6 +31,12 @@ class CLFTerminal;
 class CLFAsyncSubmit;
 class CLFPasteCoalescer;
 
+// 拖选自动滚动定时事件（2026-09-20 记事本式边缘滚动——50ms tick；
+// 每次构造 Special 而非静态常量：qa 静态初始化期执行教训，构造开销可忽略）
+inline ftxui::Event dragTickEvent() {
+    return ftxui::Event::Special("\x1B[DT");
+}
+
 class CLFInputHandler {
 public:
     CLFInputHandler(CLFRepl& repl, CLFTerminal* terminal, CLFReplView& view,
@@ -55,6 +61,13 @@ private:
     CLFPasteCoalescer& m_pasteCoalescer;
     std::function<void(const std::string&)> m_dbgEvt;
     std::function<std::string(const std::string&)> m_escDbg;
+
+    // 拖选自动滚动状态（2026-09-20 记事本式边缘滚动）：最后鼠标位置
+    // （出终端窗口后事件停更、位置保持贴顶值 → 定时 tick 持续滚动）；
+    // m_dragMoved 防误滚——单击第一行（Pressed 后无 Moved）不触发上滚
+    int  m_dragLastX = -1;
+    int  m_dragLastY = -1;
+    bool m_dragMoved = false;
 };
 
 } // namespace CLF::CLFUI

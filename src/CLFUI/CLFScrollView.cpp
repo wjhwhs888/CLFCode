@@ -57,23 +57,30 @@ ftxui::Elements CLFScrollView::renderWindow(const ftxui::Elements& allLines) {
     return visible;
 }
 
+void CLFScrollView::stepScroll(bool up) {
+    if (up) {
+        m_scrollOffset += 3;
+        m_autoScroll = false;
+    } else {
+        m_scrollOffset -= 3;
+        if (m_scrollOffset <= 0) {
+            m_scrollOffset = 0;
+            m_autoScroll = true;
+        }
+    }
+    recalcWindow();
+}
+
 bool CLFScrollView::handleEvent(ftxui::Event e) {
     // 鼠标滚轮（滚动后立即重算可见区间——拖选期间随后的 hitTest 需要新值）
     if (e.is_mouse()) {
         auto& mouse = e.mouse();
         if (mouse.button == ftxui::Mouse::WheelUp) {
-            m_scrollOffset += 3;
-            m_autoScroll = false;
-            recalcWindow();
+            stepScroll(true);
             return true;
         }
         if (mouse.button == ftxui::Mouse::WheelDown) {
-            m_scrollOffset -= 3;
-            if (m_scrollOffset <= 0) {
-                m_scrollOffset = 0;
-                m_autoScroll = true;
-            }
-            recalcWindow();
+            stepScroll(false);
             return true;
         }
     }

@@ -440,6 +440,30 @@ std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {
     auto& dbgEvt = m_dbgEvt;
     auto& escDbg = m_escDbg;
 
+    calibratePoint(x, y);   // 自校准 + JediTerm 补偿（详见 calibratePoint）
+
+    if (m_lastRowMap.empty()) return std::nullopt;
+    auto [vs, ve] = scrollView.visibleRange();
+    if (ve <= vs) return std::nullopt;
+    int gRow = vs + y - scrollView.topHintCount();
+    if (gRow < vs) gRow = vs;  // 顶提示行 → 首行
+    if (gRow >= ve || gRow >= static_cast<int>(m_lastRowTexts.size()))
+        return std::nullopt;   // 内容区以下 → 放行
+    const std::string& rowText = m_lastRowTexts[gRow];
+    size_t bStart = CLFSelectionModel::colToByte(rowText, x);
+    size_t bEnd   = CLFSelectionModel::colToByteEnd(rowText, x);
+    if (dbgEvt)
+        dbgEvt("  hit vs=" + std::to_string(vs) + " ve=" + std::to_string(ve)
+               + " hints=" + std::to_string(scrollView.topHintCount())
+               + " -> row=" + std::to_string(gRow)
+               + " b0=" + std::to_string(bStart)
+               + " b1=" + std::to_string(bEnd)
+               + " text='" + escDbg(rowText) + "'");
+    return std::make_tuple(gRow, static_cast<int>(bStart),
+                           static_cast<int>(bEnd));
+}
+
+void CLFReplView::calibratePoint(int& x, int& y) const {
 #ifdef _WIN32
     // 拖选坐标自校准（2026-09-09）：CLion(JediTerm) 的 ConPTY 不响应 CPR
     // 查询（取证实证：查询发出、零响应），FTXUI 鼠标偏移恒为初始值 (1,1)，
@@ -491,26 +515,18 @@ std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {
         }
     }
 #endif
+}
 
-    if (m_lastRowMap.empty()) return std::nullopt;
-    auto [vs, ve] = scrollView.visibleRange();
-    if (ve <= vs) return std::nullopt;
-    int gRow = vs + y - scrollView.topHintCount();
-    if (gRow < vs) gRow = vs;  // 顶提示行 → 首行
-    if (gRow >= ve || gRow >= static_cast<int>(m_lastRowTexts.size()))
-        return std::nullopt;   // 内容区以下 → 放行
-    const std::string& rowText = m_lastRowTexts[gRow];
-    size_t bStart = CLFSelectionModel::colToByte(rowText, x);
-    size_t bEnd   = CLFSelectionModel::colToByteEnd(rowText, x);
-    if (dbgEvt)
-        dbgEvt("  hit vs=" + std::to_string(vs) + " ve=" + std::to_string(ve)
-               + " hints=" + std::to_string(scrollView.topHintCount())
-               + " -> row=" + std::to_string(gRow)
-               + " b0=" + std::to_string(bStart)
-               + " b1=" + std::to_string(bEnd)
-               + " text='" + escDbg(rowText) + "'");
-    return std::make_tuple(gRow, static_cast<int>(bStart),
-                           static_cast<int>(bEnd));
+bool CLFReplView::aboveContent(int y) const {
+    int x = 0;   // 校准对 x/y 相互独立，x 仅作占位
+    calibratePoint(x, y);
+    return y <= 0;
+}
+
+bool CLFReplView::belowContent(int y) const {
+    int x = 0;
+    calibratePoint(x, y);
+    return y >= m_scrollView.contentHeight();
 }
 
 } // namespace CLF::CLFUI

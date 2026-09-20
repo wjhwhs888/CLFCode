@@ -7,6 +7,7 @@
 //   本文件瘦壳 = run 编排 + 组件装配 + 生命周期收尾（A1-5 取证划界）
 
 #include "CLFUI/CLFRepl.hpp"
+#include "CLFTypes/CLFPeriodicTimer.hpp"   // 拖选自动滚动定时（2026-09-20）
 #include "CLFTypes/CLFTextUtil.hpp"   // splitLines（多行输入逐行着色）
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFUI/CLFAsyncSubmit.hpp"
@@ -155,6 +156,15 @@ int CLFRepl::run() {
         // 粘贴合并器：窗满定时线程经 PostEvent(Custom) 唤醒主循环消费
         CLFPasteCoalescer pasteCoalescer(
             [&] { screen.PostEvent(ftxui::Event::Custom); });
+        // 拖选自动滚动定时器（2026-09-20 记事本式边缘滚动）：50ms 常开，
+        // 仅选区激活期（setDragAutoScroll）PostEvent(dragTickEvent)——
+        // 空闲不 PostEvent 零渲染开销；tick 经 InputHandler 选区态分支
+        // 判定贴顶/越底 → 滚动 + 选区扩展
+        CLF::CLFTypes::CLFPeriodicTimer dragScrollTimer(
+            std::chrono::milliseconds(50), [&] {
+                if (m_dragAutoScroll.load(std::memory_order_relaxed))
+                    screen.PostEvent(dragTickEvent());
+            });
 
         ftxui::InputOption inputOpt;
         inputOpt.multiline = true;  // 多行显示（Ctrl+N 换行后可见多行）

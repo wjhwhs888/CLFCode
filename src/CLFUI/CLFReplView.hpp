@@ -51,7 +51,22 @@ public:
     // 滚动事件转发（CatchEvent §8 滚动段用；m_scrollView 保持私有）
     bool scrollHandleEvent(ftxui::Event e) { return m_scrollView.handleEvent(e); }
 
+    // 拖选自动滚动（2026-09-20 记事本式边缘滚动）：
+    // 贴顶判定（y<=0：内容区顶 = frame 顶，鼠标贴顶/拖出终端窗口后
+    // 事件停更、最后位置保持贴顶 → 持续上滚）；下边缘 = 内容区底
+    // （可见行 + 提示行，以下即输入框侧）。判定前先过 calibratePoint
+    // 校准——JediTerm 组件层 y 含行号偏移（≈4），贴顶时原始 y≈4>0，
+    // 不校准则上滚永不触发（2026-09-20 用户实机抓出）
+    bool aboveContent(int y) const;
+    bool belowContent(int y) const;
+    // 单步滚动（±3 行与滚轮一致）+ 可见区间立即重算
+    void autoScrollStep(bool up) { m_scrollView.stepScroll(up); }
+
 private:
+    // 拖选坐标校准（hitTest 与边缘判定共用）：Windows 自校准 + JediTerm
+    // 行号偏移补偿——组件层坐标（已减 cursor 偏移）加回偏移再减 frame
+    // 原点，输出 frame 内坐标（2026-09-09 引入，2026-09-20 抽出复用）
+    void calibratePoint(int& x, int& y) const;
     CLFRepl&   m_repl;
     CLFTerminal* m_terminal;
     std::string& m_inputText;

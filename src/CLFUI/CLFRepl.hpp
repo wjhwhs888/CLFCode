@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -53,6 +54,9 @@ public:
     bool confirmDialog(const std::string& prompt);
     void submit(const std::string& input);
     void cycleMode();
+    // 拖选自动滚动开关（2026-09-20 记事本式边缘滚动）：选区激活时开启、
+    // 清除/松手时关闭——50ms 定时器仅在开启时 PostEvent(dragTickEvent)
+    void setDragAutoScroll(bool on) { m_dragAutoScroll.store(on); }
 
 private:
     // 批次 A1：Renderer/CatchEvent 闭包已拆至 CLFReplView / CLFInputHandler——
@@ -94,6 +98,8 @@ private:
     std::vector<int>         m_lastRowStyles;  // 0=无 1=绿 2=红 3=dim
     // 渲染样式分段（与 m_lastRowTexts 平行；空 = 无样式直通）
     std::vector<std::vector<CLFAnsiSegment>> m_lastRowSegments;
+    // 拖选自动滚动开关（定时器线程读、主线程写；2026-09-20）
+    std::atomic<bool> m_dragAutoScroll{false};
 };
 
 } // namespace CLF::CLFUI

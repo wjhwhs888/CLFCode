@@ -25,7 +25,19 @@
 - **顺带根因修复（qa 取证发现）**：`CLFScrollView::handleEvent` 的 Home/End 分支**从未被触发过**——qa 环境（boost::ut 静态初始化期执行测试）里 `Event::Home` 等静态常量尚未初始化（input 为空），空==空致 Home 误匹配 PageUp 分支（±15 行而非到顶）；实机主程序初始化正常不受影响。修法：键盘事件比较改 **input 字符串比较**（`"\x1B[5~"`/`"\x1B[6~"`/`"\x1B[H"`/`"\x1B[F"`，与 FTXUI event.cpp 定义一致），无静态对象依赖——生产与测试同码更可靠；qa 键盘事件同步改 `Event::Special` 显式构造（qa_CLFSelectionModel S1a/S1b 两处同步）
 - **测试**：新建 qa_CLFScrollView 套件（W1 滚轮后可见区间立即更新 / W2 clamp 与提示行 / W3 键盘翻页 Home/End）；ctest 32/32 全绿
 - **用户验收 ✅（2026-09-20）**：外部终端 + CLion 双环境通过（跨视口拖选 + 滚轮连续扩展 + 松手复制 + Home/End 无回归）
-- **待办**：与拖选修复批次一起提交（用户定：不着急）
+- **收尾 ✅**：已提交推送（a6a0527，14 文件，不打标签——版本号暂定 v0.7.5 待后续批次定）
+
+### 【插入批：拖选边缘自动滚动（记事本效果）✅ 代码完成（2026-09-20，待用户实机验收，未提交）】
+- **用户需求**：拖选时鼠标拖出显示区边缘自动滚动内容、选区随之扩展——不借助滚轮（记事本式）；上边缘 = 拖出终端窗口（frame 填满视口，出窗后事件停更、最后位置保持贴顶值）
+- **实现**：
+  - `CLFScrollView`：`stepScroll(bool up)`（±3 行与滚轮同语义 + recalc，handleEvent 滚轮分支收敛复用）+ `bottomHintCount()/contentHeight()`（内容区总高口径 = 可见行 + 上下提示行）
+  - `CLFReplView`：`aboveContent(y<=0)/belowContent(y>=contentHeight)/autoScrollStep` 边缘判定与步进转发
+  - `CLFInputHandler`：选区态跟踪最后鼠标位置（m_dragLastX/Y，出窗后事件停更）+ `dragTickEvent()`（Special "\x1B[DT"）tick 分支——贴顶且**有拖动动作**（m_dragMoved，防单击首行误滚）→ 上滚+扩展；越内容区底 → 下滚+扩展；滚轮/Pressed/Moved 更新位置；startAt 启动 / clear·Esc·松手 停止
+  - `CLFRepl`：`std::atomic<bool> m_dragAutoScroll` + `setDragAutoScroll` 开关；50ms CLFPeriodicTimer 常开、仅选区激活期 PostEvent(dragTickEvent)（空闲零渲染开销）
+- **测试**：qa_CLFScrollView W4（stepScroll 步进 + 内容区高度/上下提示行口径 + 顶部 clamp）；ctest 32/32 全绿
+- **首轮验收发现 + 修复 ✅（2026-09-20）**：CLion 自上往下翻动正常、**自下而上不触发**——根因：边缘判定未过校准，JediTerm 组件层 y 含行号偏移（≈4），贴顶时 m_dragLastY≈4>0 使 aboveContent(y<=0) 永不成立（向下判定因偏移提前触发反而"有翻动"）。修法：hitTest 校准段抽为 `CLFReplView::calibratePoint`（Windows 自校准 + JediTerm 补偿，2026-09-09 引入 2026-09-20 复用），aboveContent/belowContent 判定前先校准——边缘判定与 hitTest 同坐标系
+- **用户复验 ✅（2026-09-20）**：双终端通过（自下而上/自上而下边缘滚动 + 外部终端无回归）
+- **收尾**：进度/CHANGELOG 已更新；本批无临时设施；提交由用户定（token 显示问题讨论中）
 
 ### 【阶段 2 / 2.1 插件 ABI 与管理器骨架设计 ✅ 已验收定案（2026-09-10 flash 编写 / 09-11 用户拍板），待开工落码】
 - **背景**：DeepSeek 官方公告（2026-09-10）——V4.1 Flash 发布、**V4 Pro 9/14 12:00 下线**（请求全部路由到 V4.1 Flash）。阶段 2 文档 §3.1②/§4.1/§八 三处排期写的是"由 pro 细化签名 / pro 执行 / 谷价时段路由 pro"——**排期落空**，改由 4.1 Flash 承接（用户 2026-09-10 拍板"可以，标明是给阶段2使用的"）

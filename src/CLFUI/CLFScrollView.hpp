@@ -27,6 +27,17 @@ public:
     // 提示行偏移由 topHintCount() 单独提供——两个口径分开，须在 update() 之后调用
     std::pair<int, int> visibleRange() const { return {m_startLine, m_endLine}; }
     int topHintCount() const { return m_scrollOffset > 0 ? 1 : 0; }
+    // 底部提示行数（0/1——与 renderWindow 的"↓ N lines below"同口径）
+    int bottomHintCount() const { return m_scrollOffset < m_maxOff ? 1 : 0; }
+    // 内容区在 frame 内的总高（可见行 + 上下提示行）——拖选自动滚动的
+    // 下边缘判定用（2026-09-20 记事本式边缘滚动）
+    int contentHeight() const {
+        return (m_endLine - m_startLine) + topHintCount() + bottomHintCount();
+    }
+
+    // 单步滚动（±3 行，与滚轮同语义）+ 立即重算可见区间——拖选自动滚动
+    // tick 用（2026-09-20；handleEvent 滚轮分支同款逻辑收敛于此）
+    void stepScroll(bool up);
 
     // 重置（/clear 时调用）
     void reset();

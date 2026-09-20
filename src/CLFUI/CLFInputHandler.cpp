@@ -15,6 +15,7 @@
 #include "CLFUI/CLFTerminal.hpp"
 
 #include <chrono>
+#include <string_view>
 
 namespace CLF::CLFUI {
 
@@ -142,9 +143,34 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     // 应用内等价操作 = 左键拖选 → 松手自动复制（copy-on-select），
     // 之后右键粘贴（终端原生粘贴）即可。
     if (m_selection.active()) {
-        if (e == ftxui::Event::Escape) { m_selection.clear(); return true; }
+        if (e == ftxui::Event::Escape) {
+            m_selection.clear();
+            m_repl.setDragAutoScroll(false);
+            return true;
+        }
+        // 拖选自动滚动 tick（2026-09-20 记事本式边缘滚动）：鼠标贴顶/
+        // 拖出终端窗口（事件停更、最后位置保持贴顶）→ 上滚；越过内容区
+        // 下边缘（输入框侧）→ 下滚。滚动后按最后鼠标位置扩展选区。
+        if (e.input() == std::string_view("\x1B[DT")) {
+            if (m_dragMoved && m_view.aboveContent(m_dragLastY)) {
+                m_view.autoScrollStep(true);
+                if (auto hit = m_view.hitTest(m_dragLastX, m_dragLastY))
+                    m_selection.extendTo(std::get<0>(*hit),
+                                         std::get<1>(*hit),
+                                         std::get<2>(*hit));
+            } else if (m_view.belowContent(m_dragLastY)) {
+                m_view.autoScrollStep(false);
+                if (auto hit = m_view.hitTest(m_dragLastX, m_dragLastY))
+                    m_selection.extendTo(std::get<0>(*hit),
+                                         std::get<1>(*hit),
+                                         std::get<2>(*hit));
+            }
+            return true;
+        }
         if (e.is_mouse()) {
             auto& m = e.mouse();
+            m_dragLastX = m.x;   // 记录最后鼠标位置（出窗口后事件停更）
+            m_dragLastY = m.y;
             if (m.button == ftxui::Mouse::WheelUp
                 || m.button == ftxui::Mouse::WheelDown) {
                 // 拖选期间滚轮：滚动 + 选区跟随扩展（跨视口连续选择，
@@ -159,6 +185,8 @@ bool CLFInputHandler::handle(ftxui::Event e) {
                 return true;
             }
             if (m.button == ftxui::Mouse::Left) {
+                if (m.motion == ftxui::Mouse::Moved)
+                    m_dragMoved = true;   // 有拖动动作才允许贴顶上滚（防单击首行误滚）
                 if (m.motion == ftxui::Mouse::Released) {
                     // 松手：先含入最终位置（松手点可能没有对应 Moved 事件），
                     // 非空选区 → 复制 + 清除；单击/拖回起点（空选区）→ 仅清除
@@ -177,6 +205,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
                                    + escDbg(out) + "'");
                     }
                     m_selection.clear();
+                    m_repl.setDragAutoScroll(false);
                     return true;
                 }
                 // Pressed / Moved → 扩展选区（游标含入鼠标所在字符）
@@ -198,6 +227,11 @@ bool CLFInputHandler::handle(ftxui::Event e) {
             if (auto hit = m_view.hitTest(m.x, m.y)) {
                 m_selection.startAt(std::get<0>(*hit), std::get<1>(*hit),
                                     std::get<2>(*hit));
+                // 启动拖选自动滚动定时（2026-09-20 记事本式边缘滚动）
+                m_dragLastX = m.x;
+                m_dragLastY = m.y;
+                m_dragMoved = false;
+                m_repl.setDragAutoScroll(true);
                 return true;
             }
             return false;
