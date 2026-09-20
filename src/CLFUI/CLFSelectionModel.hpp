@@ -34,7 +34,9 @@ struct RowInfo {
 class CLFSelectionModel {
 public:
     // ---- 显示宽度工具（渲染硬换行 / 列→字节换算 / 高亮拆分共用） ----
-    static int  charWidth(unsigned char c);
+    // charWidth 转发已移除（2026-09-20）：列→字节换算改走 CLFTextUtil::
+    // renderCharWidth（与 FTXUI 布局同表）；displayWidth/substrByWidth
+    // 保持项目规则口径转发
     static int  displayWidth(const std::string& s);
     static std::string substrByWidth(const std::string& s, int maxW);
     static size_t colToByte(const std::string& s, int col);       // 显示列 → 字符起始字节偏移（不截断 UTF-8）

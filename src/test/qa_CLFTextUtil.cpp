@@ -48,6 +48,37 @@ suite qa_CLFTextUtil = [] {
         expect(CLFTextUtil::substrByWidth("abcdef", 3) == "abc");
         expect(CLFTextUtil::substrByWidth("中文内容", 4) == "中文");
     };
+
+    // ---- 渲染宽度（2026-09-20 拖选列偏移根因修复）----
+    // renderCharWidth 与 FTXUI g_full_width_characters 同表：渲染 1 宽的
+    // 多字节符号（⎿/●/❯）必须返回 1——选区列→字节换算与布局同表。
+    // 注意与 charWidth（项目规则：多字节恒 2）的口径差异是刻意的：
+    // 前者对齐渲染布局（选区用），后者保持既有换行/截断语义（qa 钉子）。
+    "renderCharWidth：与 FTXUI 布局同表"_test = [] {
+        expect(CLFTextUtil::renderCharWidth("abc", 1) == 1);            // ASCII
+        expect(CLFTextUtil::renderCharWidth("中文", 0) == 2);           // CJK（U+4E2D 在宽表）
+        expect(CLFTextUtil::renderCharWidth("⎿", 0) == 1);              // U+23BF 渲染 1 宽（根因符号）
+        expect(CLFTextUtil::renderCharWidth("●", 0) == 1);              // U+25CF 渲染 1 宽
+        expect(CLFTextUtil::renderCharWidth("❯", 0) == 1);              // U+276F 渲染 1 宽
+        expect(CLFTextUtil::renderCharWidth("✅", 0) == 2);             // U+2705 在宽表
+        expect(CLFTextUtil::renderCharWidth("🔒", 0) == 2);             // U+1F512 在宽表
+        expect(CLFTextUtil::renderCharWidth("abc", 3) == 0);            // 越界兜底 0
+    };
+
+    "utf8CharLen：字节长度与坏字节兜底"_test = [] {
+        expect(CLFTextUtil::utf8CharLen("abc", 0) == 1);
+        expect(CLFTextUtil::utf8CharLen("中文", 0) == 3);
+        expect(CLFTextUtil::utf8CharLen("⎿", 0) == 3);
+        expect(CLFTextUtil::utf8CharLen("🔒", 0) == 4);
+        expect(CLFTextUtil::utf8CharLen("中文", 1) == 1);   // 续字节位置：兜底 1（调用方不传续字节）
+    };
+
+    // charWidth 项目规则口径保持不变（❯ 计 2 的既有语义钉子）
+    "charWidth 项目规则口径不变"_test = [] {
+        expect(CLFTextUtil::charWidth(static_cast<unsigned char>('a')) == 1);
+        expect(CLFTextUtil::charWidth(static_cast<unsigned char>(0xE2)) == 2);  // ⎿/●/❯ 首字节仍计 2
+        expect(CLFTextUtil::charWidth(static_cast<unsigned char>(0xAB)) == 0);  // 续字节 0
+    };
 };
 
 int main() {}

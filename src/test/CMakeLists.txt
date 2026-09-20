@@ -49,6 +49,7 @@ clf_add_test(qa_CLFStreamAccumulator clf_core clf_ui)
 clf_add_test(qa_CLFHeadTail         clf_core clf_ui)
 clf_add_test(qa_CLFPasteCoalescer   clf_core clf_ui)
 clf_add_test(qa_CLFSelectionModel   clf_core clf_ui)
+clf_add_test(qa_CLFScrollView       clf_core clf_ui)
 clf_add_test(qa_CLFInputRender      clf_core clf_ui)
 clf_add_test(qa_CLFTipsBar          clf_core clf_ui)
 

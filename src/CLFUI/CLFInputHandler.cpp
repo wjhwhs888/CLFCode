@@ -146,8 +146,18 @@ bool CLFInputHandler::handle(ftxui::Event e) {
         if (e.is_mouse()) {
             auto& m = e.mouse();
             if (m.button == ftxui::Mouse::WheelUp
-                || m.button == ftxui::Mouse::WheelDown)
-                return false;  // 滚轮放行到滚动处理
+                || m.button == ftxui::Mouse::WheelDown) {
+                // 拖选期间滚轮：滚动 + 选区跟随扩展（跨视口连续选择，
+                // 2026-09-20）。滚轮事件带鼠标坐标——滚动后（可见区间
+                // 已在 handleEvent 内立即重算）鼠标下方内容即新游标位置。
+                if (m_view.scrollHandleEvent(e)) {
+                    if (auto hit = m_view.hitTest(m.x, m.y))
+                        m_selection.extendTo(std::get<0>(*hit),
+                                             std::get<1>(*hit),
+                                             std::get<2>(*hit));
+                }
+                return true;
+            }
             if (m.button == ftxui::Mouse::Left) {
                 if (m.motion == ftxui::Mouse::Released) {
                     // 松手：先含入最终位置（松手点可能没有对应 Moved 事件），

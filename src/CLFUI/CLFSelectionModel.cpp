@@ -13,10 +13,6 @@ using CLF::CLFCore::CLFTextUtil;   // A2
 // 调用方零改动；与 Terminal cjkWidth 的两套等价实现已合并）
 // ============================================================================
 
-int CLFSelectionModel::charWidth(unsigned char c) {
-    return CLFTextUtil::charWidth(c);
-}
-
 int CLFSelectionModel::displayWidth(const std::string& s) {
     return CLFTextUtil::displayWidth(s);
 }
@@ -26,17 +22,17 @@ std::string CLFSelectionModel::substrByWidth(const std::string& s, int maxW) {
 }
 
 size_t CLFSelectionModel::colToByte(const std::string& s, int col) {
+    // 渲染宽度换算（2026-09-20 根因修复）：列→字节必须与 FTXUI 布局同表
+    // （renderCharWidth）——charWidth 对多字节恒计 2，⎿/● 等符号渲染实为
+    // 1 宽，含此类符号的行点击列偏移 1（用户实机取证：'⎿ 配置: …' 行）。
     if (col <= 0) return 0;
     int w = 0;
     size_t i = 0;
     while (i < s.size()) {
-        int cw = charWidth(static_cast<unsigned char>(s[i]));
-        if (cw == 0) { ++i; continue; }
+        int cw = CLFTextUtil::renderCharWidth(s, i);
         if (w + cw > col) break;   // 宽字符跨列 → 落在字符起始
         w += cw;
-        if (cw == 2) { ++i; while (i < s.size()
-            && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
-        else { ++i; }
+        i += CLFTextUtil::utf8CharLen(s, i);
     }
     return i;
 }
@@ -46,19 +42,13 @@ size_t CLFSelectionModel::colToByteEnd(const std::string& s, int col) {
     int w = 0;
     size_t i = 0;
     while (i < s.size()) {
-        int cw = charWidth(static_cast<unsigned char>(s[i]));
-        if (cw == 0) { ++i; continue; }
+        int cw = CLFTextUtil::renderCharWidth(s, i);
         if (col < w + cw) {
             // 鼠标落在本字符格内 → 含入该字符
-            if (cw == 2) { ++i; while (i < s.size()
-                && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
-            else { ++i; }
-            return i;
+            return i + CLFTextUtil::utf8CharLen(s, i);
         }
         w += cw;
-        if (cw == 2) { ++i; while (i < s.size()
-            && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80) ++i; }
-        else { ++i; }
+        i += CLFTextUtil::utf8CharLen(s, i);
     }
     return s.size();
 }

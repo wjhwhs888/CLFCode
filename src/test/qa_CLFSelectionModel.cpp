@@ -36,7 +36,9 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         auto [s, e] = sv.visibleRange();
         expect(s == 77 && e == 100);
         expect(sv.topHintCount() == 0);  // 底部无滚动
-        sv.handleEvent(ftxui::Event::PageUp);  // 上滚 15 → offset=15
+        // PageUp 用 Special 显式构造（静态 Event 常量在 boost::ut 静态
+        // 初始化期执行时未初始化，== 不可靠——qa_CLFScrollView W3 取证）
+        sv.handleEvent(ftxui::Event::Special("\x1B[5~"));  // 上滚 15 → offset=15
         sv.update(100, 30, 7);
         auto [s2, e2] = sv.visibleRange();
         expect(s2 == 62 && e2 == 85);
@@ -45,7 +47,7 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
 
     "S1b 鼠标坐标换算公式（0 基 + 提示行偏移 + clamp）"_test = [] {
         CLF::CLFUI::CLFScrollView sv;
-        sv.handleEvent(ftxui::Event::PageUp);
+        sv.handleEvent(ftxui::Event::Special("\x1B[5~"));
         sv.update(100, 30, 7);
         auto [vs, ve] = sv.visibleRange();
         int topHints = sv.topHintCount();
@@ -80,6 +82,21 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
         expect(Sel::colToByteEnd("a你好b", 2) == 4); // col 2 是 '你' 末列 → 含入 '你'
         expect(Sel::colToByteEnd("a你好b", 3) == 7); // col 3 是 '好' 首列 → 含入 '好'
         expect(Sel::colToByteEnd("a你好b", 6) == 8); // 总宽 6 → 行尾
+    };
+
+    // S1d（2026-09-20 根因修复）：colToByte 按渲染宽度换算——⎿(U+23BF)/● 等
+    // 符号 FTXUI 渲染 1 宽，charWidth 项目规则计 2 宽的口径曾致含符号行
+    // 点击列偏移 1（用户实机：'⎿ 配置: …' 行点击 k 命中左侧 e）
+    "S1d colToByte：渲染 1 宽的符号行（⎿ 对齐 FTXUI 布局）"_test = [] {
+        using Sel = CLFSelectionModel;
+        // 布局（渲染宽表）：col0-1 空格，col2 '⎿'（1 宽），col3-4 空格，
+        // col5-6 '配'（2 宽），col7-8 '置'，col9 ':'，col10 空格，col11 'h'…
+        std::string s = "  ⎿  配置: https://api.deepseek";
+        expect(Sel::colToByte(s, 2) == 2);   // '⎿' 位置 → 其字节起始
+        expect(Sel::colToByte(s, 3) == 5);   // '⎿' 之后第一个空格（⎿ 仅占 1 列）
+        expect(Sel::colToByte(s, 6) == 7);   // '配' 跨列（5-6）→ 落在 '配' 起始
+        expect(Sel::colToByteEnd(s, 2) == 5);  // 落在 '⎿' 上 → 含入 '⎿'（+3 字节）
+        expect(Sel::colToByteEnd(s, 11) == 16); // 落在 'h' 上 → 含入 'h'（字节 15+1）
     };
 
     // ========== S2: 反向选区归一化 ==========

@@ -32,6 +32,10 @@ public:
     void reset();
 
 private:
+    // 用当前 offset/lastTotalLines/viewH 重算可见区间与 clamp（update 与
+    // handleEvent 共用；2026-09-20 跨视口拖选——滚动后立即生效供 hitTest）
+    void recalcWindow();
+
     int  m_scrollOffset   = 0;
     bool m_autoScroll     = true;
     int  m_lastTotalLines = 0;

@@ -447,14 +447,21 @@ std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {
     // 自校准：GetConsoleScreenBufferInfo 的光标 − 渲染定稿光标 frame 内
     // 坐标（LastFrameCursor，帧尾 CUP 目标）= frame 原点。组件层坐标已减
     // 过 cursor 偏移（x = raw − CursorOffsetX），加回同一偏移再减原点——
-    // 两项抵消，结果恒为 raw − origin，与 CPR 校准与否无关（外部终端
-    // CPR 正常时同样正确，公式幂等）。
+    // 两项抵消，结果恒为 raw − origin，与 CPR 校准与否无关（CPR 有无
+    // 响应公式幂等）。
+    // 基准统一（2026-09-20 根因修复）：origin 与 raw 同取 1 基——csbi 光标
+    // 与 LastFrameCursor 均 0 基，相减后 +1 即 frame 原点的 1 基屏幕坐标；
+    // SGR 鼠标 raw 亦 1 基。此前 origin 按 0 基参与 raw(1 基) − origin，
+    // 拖选恒偏 +1 行/+1 列（原生 PowerShell/WT 取证实证：点击屏幕第 13 行
+    // hitTest 命中第 14 行——raw=13, origin=0 → y=13，正确应为 12）。
     // CLion(JediTerm) 已知局限（2026-09-09 用户定案"接受局限"）：其 SGR
     // 鼠标 y 含内部行号计数偏移（实测 4~6+，每次启动增长——\033[3J 清屏
-    // 不清计数、CPR 无响应、ConPTY 缓冲=视口，程序侧不可测）。默认补偿 5
-    // （用户实测定案：CLion 拖选对齐）；CLF_MOUSE_OFFSET_Y
-    // 环境变量可精确覆盖微调（当前偏移值 = 差几行就设几）。外部终端
-    // 无此偏移——仅 TERMINAL_EMULATOR=JetBrains-JediTerm 时补偿。
+    // 不清计数、CPR 无响应、ConPTY 缓冲=视口，程序侧不可测）。默认补偿 4
+    // （2026-09-20 基准统一 origin 转 1 基后由 5 调至 4——origin +1 已
+    // 相当于多减 1 行，补偿减 1 保持 CLion 拖选净效果与 v0.7.4 实测一致）；
+    // CLF_MOUSE_OFFSET_Y 环境变量可精确覆盖微调（当前偏移值 = 差几行就
+    // 设几）。外部终端无此偏移——仅 TERMINAL_EMULATOR=JetBrains-JediTerm
+    // 时补偿。
     static const bool kIsJediTerm = [] {
         const char* emu = std::getenv("TERMINAL_EMULATOR");
         return emu && std::string(emu).find("JediTerm") != std::string::npos;
@@ -464,7 +471,7 @@ std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {
         if (off && *off) {
             try { return std::stoi(off); } catch (...) {}
         }
-        return 5;
+        return 4;
     }();
     if (m_terminal) {
         if (auto* scr = m_terminal->screen()) {
@@ -473,11 +480,11 @@ std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {
             if (hOut != INVALID_HANDLE_VALUE
                 && GetConsoleScreenBufferInfo(hOut, &csbi)) {
                 int originX = static_cast<int>(csbi.dwCursorPosition.X)
-                            - scr->LastFrameCursorX();
+                            - scr->LastFrameCursorX() + 1;   // +1：0 基差值 → 1 基原点（与 SGR raw 同基准）
                 int originY = static_cast<int>(csbi.dwCursorPosition.Y)
-                            - scr->LastFrameCursorY();
+                            - scr->LastFrameCursorY() + 1;
                 if (kIsJediTerm)
-                    originY += kScrollbackRows;   // 默认 4，CLF_MOUSE_OFFSET_Y 可覆盖
+                    originY += kScrollbackRows;
                 x += scr->CursorOffsetX() - originX;
                 y += scr->CursorOffsetY() - originY;
             }

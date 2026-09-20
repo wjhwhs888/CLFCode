@@ -43,6 +43,19 @@ public:
     // 按显示宽度切分（不劈半多字节字符）；maxW<=0 返回原串
     static std::string substrByWidth(const std::string& s, int maxW);
 
+    // ============ 渲染宽度（2026-09-20 拖选列偏移根因修复）============
+
+    // 渲染层码点宽度：与 FTXUI g_full_width_characters 同表（wcwidth 区间
+    // 表）——FTXUI 按此表布局列，选区列→字节换算必须同表，否则含
+    // ⎿(U+23BF)/●/❯ 等"非宽多字节符号"的行点击列偏移 1（2026-09-20
+    // 用户实机取证：'⎿ 配置: …' 行点击 k 命中左侧 e——charWidth 恒计 2
+    // 而 FTXUI 渲染 1 宽）。displayWidth/substrByWidth 保持 charWidth 的
+    // 项目规则口径（❯ 计 2 等 qa 钉子语义）不改——渲染视觉不受影响
+    // （FTXUI 布局一直按本表），仅选区换算对齐渲染。
+    static int renderCharWidth(const std::string& s, size_t pos);
+    // pos 处 UTF-8 字符的字节长度（1-4；非法首字节兜底 1）
+    static size_t utf8CharLen(const std::string& s, size_t pos);
+
     // ============ 消息内容截断 ============
 
     // tool result 消息内容截断（C2b 自 CLFContext 移出——容器不再含内容策略）：
