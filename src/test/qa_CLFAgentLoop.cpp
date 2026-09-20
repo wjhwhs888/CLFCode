@@ -585,6 +585,9 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         agent->runTurn("hello");
         // Σ: prompt 200 / hit 150 → floor 75%
         expect(agent->getSessionUsage().percentText() == "75");
+        // 2026-09-20：本轮 = 回合内两次 API usage 之和（110+110）
+        expect(agent->getTotalTokensUsed() == 220);
+        expect(agent->getLastTurnTokens() == 220);
     };
 
     "T10d 会话累计跨回合不清零 + 对话流无缓存文案"_test = [] {
@@ -617,6 +620,9 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(second.find("second") != std::string::npos);
         // 第二轮无 usage → 会话累计保持第一轮值（不清零）
         expect(agent->getSessionUsage().percentText() == "100");
+        // 2026-09-20：第二轮无 usage → 本轮 = 0（快照清零语义），累计保持 100
+        expect(agent->getTotalTokensUsed() == 100);
+        expect(agent->getLastTurnTokens() == 0);
         // 请求 body 不含缓存文案（不污染上下文）
         expect(mock->lastBodies.size() >= 2);
         expect(mock->lastBodies[1].find("缓存命中") == std::string::npos);

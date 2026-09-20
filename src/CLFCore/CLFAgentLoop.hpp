@@ -157,6 +157,8 @@ public:
 
     // P2-4: 本次会话累计 token（仅统计已落定的 usage）
     long long getTotalTokensUsed() const { return m_totalTokensUsed; }
+    // 2026-09-20：上一回合"本轮实际使用"token（summary 行展示口径；测试断言用）
+    int getLastTurnTokens() const { return m_lastToolStats.turnTokens; }
 
     // 会话缓存命中统计（底部常亮参数行渲染用；与 m_totalTokensUsed 同生命周期）
     const CLF::CLFTypes::CLFSessionUsage& getSessionUsage() const { return m_sessionUsage; }
@@ -232,6 +234,9 @@ private:
     void appendSummaryLineNow();
     ToolStats                         m_lastToolStats;
     long long                         m_totalTokensUsed = 0;  // P2-4 会话累计 token
+    // 2026-09-20：回合起始快照（runTurn 开头）——turnTokens = 累计 − 快照 =
+    // "本轮实际使用"（summary 行展示；与累计同 R3 规则仅正常解析路径）
+    long long                         m_turnStartTokens = 0;
     CLF::CLFTypes::CLFSessionUsage    m_sessionUsage;  // 会话缓存命中统计（底部常亮参数行）
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
     std::atomic<bool>                 m_interrupted{false};

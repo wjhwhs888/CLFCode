@@ -102,6 +102,10 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     m_sessionFileCtx.setTurnStartMsgCount(m_context.getMessages().size());
     m_context.addMessage("user", userInput);
     m_lastToolStats = {};
+    // 2026-09-20：本轮 token 快照（"本轮实际使用"展示口径——回合内所有
+    // API 调用的 usage 之和；触顶 wrapUp 在 summary 显示之后累加、计入
+    // 下一轮，与累计生命周期一致）
+    m_turnStartTokens = m_totalTokensUsed;
     // P1-1: 状态点接线——Running 于 turn 开始
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
 
@@ -306,6 +310,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
             if (parsed.m_usageTotal > 0) {
                 m_totalTokensUsed += parsed.m_usageTotal;
                 m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
+                m_lastToolStats.turnTokens = static_cast<int>(
+                    m_totalTokensUsed - m_turnStartTokens);
                 // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
                 // 同生命周期不重置，R3 同规则——仅正常解析路径累计）。
                 // 仅响应携带缓存字段才累计——第三方 provider 无此字段时

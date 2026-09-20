@@ -37,7 +37,32 @@
 - **测试**：qa_CLFScrollView W4（stepScroll 步进 + 内容区高度/上下提示行口径 + 顶部 clamp）；ctest 32/32 全绿
 - **首轮验收发现 + 修复 ✅（2026-09-20）**：CLion 自上往下翻动正常、**自下而上不触发**——根因：边缘判定未过校准，JediTerm 组件层 y 含行号偏移（≈4），贴顶时 m_dragLastY≈4>0 使 aboveContent(y<=0) 永不成立（向下判定因偏移提前触发反而"有翻动"）。修法：hitTest 校准段抽为 `CLFReplView::calibratePoint`（Windows 自校准 + JediTerm 补偿，2026-09-09 引入 2026-09-20 复用），aboveContent/belowContent 判定前先校准——边缘判定与 hitTest 同坐标系
 - **用户复验 ✅（2026-09-20）**：双终端通过（自下而上/自上而下边缘滚动 + 外部终端无回归）
-- **收尾**：进度/CHANGELOG 已更新；本批无临时设施；提交由用户定（token 显示问题讨论中）
+- **收尾 ✅**：已提交推送（095a80b，11 文件）
+
+### 【插入批：回合 token 用量双数显示 ✅ 代码完成（2026-09-20，待用户实机验收，未提交）】
+- **背景**：用户观察 summary 行 "· 3.5k tok" 快速增长至几十 k，质疑"一个 read 花了 3.5k"是否显示错误——取证确认：该数 = **会话累计**（m_totalTokensUsed，P2-4 既定口径），delta 才是单轮消耗（DeepSeek 每轮携带全量上下文的 prompt_tokens，几十 k 累计是真实账单）
+- **用户定案（方案 A）**：summary 行双数——"本轮 X tok"（该回合实际消耗）+ "累计 Y tok"（会话总计保留），一行内更直观
+- **实现**：
+  - `ToolStats` 加 `turnTokens`（本轮累计；CLFTypes.hpp）
+  - `CLFAgentLoop`：`m_turnStartTokens` 回合开头快照（runTurn，m_lastToolStats 重置处）；R3 累计点同步填 `turnTokens = 累计 − 快照`（回合内多次 API 实时增长）；`getLastTurnTokens()` 测试 getter
+  - `CLFToolExecutor` progressSummary：`· 本轮 X tok · 累计 Y tok`（totalTokens==0 时两数同规则省略）
+  - 边界：触顶 wrapUp 在 summary 显示之后累加 → 计入下一轮（与累计生命周期一致，注释钉死）
+- **测试**：qa_CLFAgentLoop T10d 跨回合用例补断言（一轮两次 API Σ=220=累计/本轮；第二轮无 usage → 本轮 0 快照清零语义）；ctest 32/32 全绿
+- **用户实机验证 ✅（2026-09-20）**：多工具回合数据自洽（本轮实时增长 = 每批工具循环的 API 增量之和，最后一行 = 回合总消耗；累计 = 回合前 + 本轮）——四行同回合的误读澄清，逻辑无误
+
+### 【插入批：工具摘要直显执行详情 ✅ 全闭环（2026-09-20，用户验收通过"舒服、直观"，随 v0.7.5 发布）】
+- **用户诉求**：summary 行 "(ctrl+t to expand)" 是失效文案（Ctrl+T 已改作切换思考过程，InputHandler:249——展开功能早被覆盖）；行间两个空行浪费——不如直接显示该轮读了哪些文件
+- **实现**：
+  - `CLFToolExecutor::execute`：循环内收集详情行（与 summary 同条件——渐进模式才有 summary；`↳` 弱化前缀，成功行仅文件名、失败行带 ✗ 原因——rd 在 try 块内不可见，用 toolOk/toolResultText）；summary 拼接时追加（单批上限 3 行 + "… 还有 N 个工具"折叠防刷屏）
+  - 删 "(ctrl+t to expand)" 失效文案；块间空行 "\n \n"×2 → "\n "×1（视觉收敛）
+- **测试**：既有 32/32 全绿（E 系列未开渐进模式无 summary 断言点；实机验收为主）
+- **用户验收 ✅（2026-09-20）**："很好，舒服，直观，虽然信息比前面多了，但是看得到干嘛了"
+- **收尾**：随 v0.7.5 发布（token 双数批同批）
+
+### ▶ v0.7.5 发布批次 ✅（2026-09-20，tag 已打待用户发布）
+- **批次内容**（v0.7.4 之后全部工作）：① 拖选复制行/列偏移根因修复（origin 1 基统一 + JediTerm 补偿 5→4）② 符号行列定位（renderCharWidth 与 FTXUI 布局同表）③ 跨视口拖选（滚轮连续选择）④ 拖选边缘自动滚动（记事本式）⑤ 回合 token 双数显示（本轮/累计）⑥ 工具摘要直显执行详情 ⑦ 测试构建体系模块化（v0.7.4 后首批）⑧ CLFScrollView Home/End 潜伏修复 + boost::ut 静态初始化 qa 教训
+- **验证基线**：ctest 32/32 全绿；用户实机验收——外部终端 + CLion 双环境（拖选对齐/跨视口/边缘滚动/双数显示/详情行）全通过
+- **发布状态**：CHANGELOG v0.7.5 正式段 + VERSION v0.7.5（此前已 bump）→ tag + 推送 → **待用户执行发布**（Release 编译 + release.ps1 打包 + Gitee release 上传 zip）
 
 ### 【阶段 2 / 2.1 插件 ABI 与管理器骨架设计 ✅ 已验收定案（2026-09-10 flash 编写 / 09-11 用户拍板），待开工落码】
 - **背景**：DeepSeek 官方公告（2026-09-10）——V4.1 Flash 发布、**V4 Pro 9/14 12:00 下线**（请求全部路由到 V4.1 Flash）。阶段 2 文档 §3.1②/§4.1/§八 三处排期写的是"由 pro 细化签名 / pro 执行 / 谷价时段路由 pro"——**排期落空**，改由 4.1 Flash 承接（用户 2026-09-10 拍板"可以，标明是给阶段2使用的"）

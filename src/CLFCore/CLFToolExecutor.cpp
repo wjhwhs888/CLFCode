@@ -398,6 +398,10 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     int readCount     = m_stats.readCount;
     int progressReads = 0;  // 读类工具计数（用于 summary）
     int progressEdits = 0;  // 写类工具计数
+    // 2026-09-20：summary 详情行收集（每工具一行，直显本轮读了/执行了什么——
+    // 替代失效的 "(ctrl+t to expand)" 提示；渐进模式才收集，非渐进已有 ✓ 行）
+    std::vector<std::string> detailLines;
+    detailLines.reserve(calls.size());
 
     for (const auto& call : calls) {
         // T3: 每次迭代末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
@@ -658,6 +662,17 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             } else if (it->m_isRead) {   // B1：名字匹配 → 能力标签
                 ++progressReads;
             }
+            // 2026-09-20：详情行收集（与 summary 同条件——渐进模式才有
+            // summary 行；↳ 弱化前缀，成功行仅文件名、失败行带 ✗ 原因；
+            // rd 声明在 try 块内不可见，此处用 toolOk/toolResultText）
+            std::string dl = "  ↳ " + call.m_name
+                + (keyParam.empty() ? "" : "(" + keyParam + ")");
+            if (!toolOk) {
+                dl += " — ✗ "
+                    + (toolResultText.size() > 60
+                        ? toolResultText.substr(0, 60) + "…" : toolResultText);
+            }
+            detailLines.push_back(std::move(dl));
         }
 
         results.push_back(std::move(result));
@@ -687,10 +702,23 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 summary += " (" + detail + ")";
         }
         // P2-4: usage 缺失（totalTokens==0）时字段省略——不估猜
-        if (m_stats.totalTokens > 0)
-            summary += " · " + formatTokenCount(m_stats.totalTokens) + " tok";
-        summary += " (ctrl+t to expand)";
-        guard.commit("\n \n" + summary + "\n \n");
+        // 2026-09-20：本轮实际使用 + 会话累计双数展示（用户方案 A 定案——
+        // "本轮"回答"这个回合花了多少"，"累计"保留会话总计口径）
+        if (m_stats.totalTokens > 0) {
+            summary += " · 本轮 " + formatTokenCount(m_stats.turnTokens) + " tok";
+            summary += " · 累计 " + formatTokenCount(m_stats.totalTokens) + " tok";
+        }
+        // 2026-09-20：详情行直显（替代失效的 "(ctrl+t to expand)" 提示——
+        // Ctrl+T 已改作切换思考过程）；单批上限 3 行防长回合刷屏
+        static constexpr int kMaxDetailLines = 3;
+        for (size_t i = 0; i < detailLines.size()
+                        && i < static_cast<size_t>(kMaxDetailLines); ++i)
+            summary += "\n" + detailLines[i];
+        if (detailLines.size() > static_cast<size_t>(kMaxDetailLines))
+            summary += "\n  ↳ … 还有 "
+                    + std::to_string(detailLines.size() - kMaxDetailLines)
+                    + " 个工具";
+        guard.commit("\n " + summary + "\n");
     }
 
     m_stats.searchCount = searchCount;
