@@ -110,6 +110,27 @@ const boost::ut::suite<"CLFWebFetch"> tests = [] {
         s.push_back('\0');
         expect(!looksBinary(s));
     };
+
+    // ========== W4: CLFEncoding::toUtf8（2.2b 加固，2026-09-21） ==========
+    // 背景：用户实抓 execute_command 混合输出（dir 的 GBK + git 的 UTF-8）
+    // 触发 json type_error.316；修根两层——chcp 65001 源头 UTF-8 化 +
+    // toUtf8 预检（合法 UTF-8 原样返回，防 CP_ACP 误转乱码）
+
+    "W4a 合法 UTF-8 原样返回（预检防误转）"_test = [] {
+        const std::string utf8 = "中文内容\nsecond line";
+        expect(CLFEncoding::toUtf8(utf8) == utf8);
+    };
+
+    "W4b GBK 字节转 UTF-8"_test = [] {
+        // "中文" 的 GBK 编码：D6 D0 CE C4（CP936）
+        const std::string gbk = std::string("\xD6\xD0\xCE\xC4", 4);
+        expect(CLFEncoding::toUtf8(gbk) == "中文");
+    };
+
+    "W4c 空串与纯 ASCII 原样"_test = [] {
+        expect(CLFEncoding::toUtf8("").empty());
+        expect(CLFEncoding::toUtf8("plain ascii") == "plain ascii");
+    };
 };
 
 int main() {}

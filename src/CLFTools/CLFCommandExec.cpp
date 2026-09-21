@@ -53,7 +53,12 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds,
     SetHandleInformation(hErrRead, HANDLE_FLAG_INHERIT, 0);
 
     // 匹配 std::system 行为：cmd.exe /s /c "..."
-    std::string cmdLine = "cmd.exe /s /c \"" + CLF::CLFCore::CLFEncoding::fromUtf8(command) + "\"";
+    // 2.2b 修根（2026-09-21，用户实抓 type_error.316）：chcp 65001 源头
+    // UTF-8 化——子进程输出即 UTF-8（否则中文 Windows 命令输出 GBK 字节，
+    // 与 UTF-8 输出混合后单次 CP_ACP 转换不可靠 → 非法 UTF-8 进 JSON 炸）；
+    // chcp 输出重定向 nul 不留痕、& 连接保证原命令照常执行（chcp 失败不阻断）
+    const std::string wrapped = "chcp 65001 >nul & " + command;
+    std::string cmdLine = "cmd.exe /s /c \"" + CLF::CLFCore::CLFEncoding::fromUtf8(wrapped) + "\"";
     std::vector<char> cmdBuf(cmdLine.begin(), cmdLine.end());
     cmdBuf.push_back('\0');
 

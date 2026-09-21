@@ -11,10 +11,14 @@ namespace CLF::CLFCore {
 std::string CLFEncoding::toUtf8(const std::string& input) {
     if (input.empty()) return input;
 #ifdef _WIN32
+    // 2.2b 加固（2026-09-21）：合法 UTF-8 原样返回——防 UTF-8 字节被
+    // CP_ACP 误转（UTF-8 中文字节在 CP936 下部分可解析 → 乱码）
+    if (isValidUtf8(input)) return input;
+
     int wideLen = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS,
                                        input.c_str(), static_cast<int>(input.size()),
                                        nullptr, 0);
-    if (wideLen <= 0) return input; // 非 ACP 字符，原样返回（可能已是 UTF-8）
+    if (wideLen <= 0) return input; // 非 ACP 字符，原样返回（调用方按需处理）
 
     std::wstring wide(wideLen, L'\0');
     MultiByteToWideChar(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()),
