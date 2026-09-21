@@ -8,6 +8,11 @@
 // - 回调函数指针可能为 null，实现侧调用前判空
 // - 所有指针参数（path/content/oldStr/…）与回调内字符串指针仅在调用期间有效，
 //   接收方必须立即复制，不得持有
+// - 【同步契约 2026-09-21】回调必须在本次调用返回前同步完成：ctx 由宿主侧调用栈
+//   持有（如 CLFToolExecutor 的局部 std::string），异步延迟调用 = 悬空指针；
+//   插件实现内部走异步（如阶段 3 集成插件的 IPC）须自行阻塞等待并在返回前完成
+//   全部回调。确需异步能力时以新接口表达（新增服务接口 ≠ ABI 版本变更），
+//   不破坏本契约
 //
 // example:
 //   CLFFileCallbacks cb{};
@@ -52,7 +57,7 @@ struct CLFFileCallbacks {
                     int truncated, const char* truncReason) = nullptr;
 };
 
-// 文件能力域服务接口（getService("tools.fileops", "file") 返回）
+// 文件能力域服务接口（getService("file") 返回；getService 已定案单参服务名，见 2.1 §3.3）
 class ICLFFileService {
 public:
     virtual ~ICLFFileService() = default;

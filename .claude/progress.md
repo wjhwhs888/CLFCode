@@ -74,6 +74,18 @@
 - **二轮现状全量核实 ✅（2026-09-11）**：9 项代码断言逐条实证通过（ToolExecutor:593 / BuiltinTools:439-441 / CLFTypes:124 / 枚举序 0-3 / GetModuleFileNameW:141 等行号分毫不差）；实质修正 1 处——修正①影响面精确化为"仅 CLFFileService.hpp 1 文件"（Impl 单继承链间接继承基类，声明无需改；qa 零影响）；§4.0 CMake 变量对齐项目惯例
 - **三轮 flash 审查 + 四轮 pro 拍板 ✅（2026-09-11）**：flash 7 项修订全部采纳（getService 去 pluginId 单参服务名 / 多继承 CLFService 子对象约束 / 文件名字典序排序 / 插件禁文件级非平凡静态对象 / 服务指针禁跨 unload 缓存 / SEH 加固可选 / P13-P16 测试 + 变体插件清单）；pro 补齐 3 处一致性（§3.3 查询多提供方语义、§3.4 m_configCache 改 map、§1.2 example 宏）+ 宿主长期持有指针与热卸载交互列入 2.2a 评估
 - **后续**：按 §五 步骤 1-8 落码 → 2.2a FileOps DLL 试点（上游 §4.1 步骤 3）
+- **五轮用户评审修订 ✅（2026-09-21，四点落地，仍待开工落码）**：用户提两问——"ABI 还需再分析防设计出错" + "UI 是否插件化"，pro 全文档复查（2.1/分册/总纲/阶段3 四文档 + C1 头实读）后四点落地：
+  - ① **同步契约显式化**（2.1 §1.2/§1.3 头注释 + CLFFileService.hpp 注释）：回调必须在调用返回前完成、ctx 调用栈持有；异步能力以新接口表达（**新增服务接口 ≠ ABI 版本变更**）——防阶段 3 集成插件异步补调回调致悬空 ctx（IPC 往返本质异步，插件作者自然写法即踩坑）
+  - ② **宿主长期持有服务指针定案倾向 = 进程内转发代理**（2.1 新增 §1.6）——CLFFileServiceImpl 改造为转发代理、每次调用经 getService 查询；否决"unload 前通知宿主刷新"（与插件自治 D5 矛盾）；分册 §4.1 "core 零改动"修正为"core 仅装配点小改"（ToolExecutor/AgentLoop 构造注入形状不变、类零改动）
+  - ③ **管理器析构语义显式化**（2.1 §3.1）——先卸载全部插件再释放 host；成员默认析构逆序会致插件 shutdown 时 host 已死 + DLL 句柄泄漏
+  - ④ **阶段 3 分册 §七补两条待细化**——IPC 客户端超时责任（工具 ABI 同步契约下外部进程挂死不得拖死宿主）/ UI 扩展点缺口（ask_user 类交互经新接口或版本 +1 演进）
+  - **UI 插件化分析结论（用户问题 2）**：维持不迁定案（阶段 2 §七③）成立，补全两层论证——含义①（可替换 UI 实现）无需求且 A1 后渲染/输入状态（friend 访问 Repl、拖选校准、IME 光标）不可 ABI 化，C3 的 ICLFOutput 四窄接口已留"进程内接口化"路线；含义②（UI 扩展点）当前零需求（确认流按 risk 宿主侧触发、进度走状态行、dsh 审批在 IPC 侧），唯一缺口 ask_user 类交互留版本演进路径
+  - 附带：CLFFileService.hpp:55 旧双参 getService 注释同步修正（§八 差异清单已记）；2.1 §七 加五轮评审修订块
+- **六轮测试计划审查 ✅（2026-09-21，用户定调"保护设计兜底"，阶段 2 开工前）**：P1-P16 对照 ABI/管理器功能面逐项核对（覆盖矩阵：核心机制大部分已覆盖、层次结构完整）。落地补丁：
+  - **2 个必修盲区**：P17 析构自动卸载（钉五轮修订③析构语义——teststub shutdown 调 host->apiVersion() 作析构顺序检测锚点，顺序错当场崩）+ P18 依赖满足正向拓扑（P11 缺失/P15 环反向已有、正向缺失；新增 depA/depB 变体——阶段 3 集成插件大概率声明依赖，此机制不能只有反向测试）
+  - **5 个便宜补充**：P1 扩 getService 未命中 nullptr / P5 扩回调判空义务（cb=nullptr + 全 null 函数指针）/ P10 拆 P10a 缺符号 + P10b 坏 PE（LoadLibraryW 失败是独立代码路径；新增 nosym 变体 target）/ P12 扩 config() nullptr 骨架断言 / qa_CLFCapabilities 加 static_assert(is_base_of_v<CLFService, ICLFFileService>) 编译期钉子（随步骤 3 实施）
+  - **1 个设计语义补定义**：§3.1 重复加载（load 已加载 → false + warn 幂等拒绝；loadAll 跳过已加载；unload 未加载 → false + warn），P19 钉之
+  - 变体插件清单合计 11 个 target（主 teststub + 10 变体）；§五 步骤 3 验证列加静态断言、步骤 7 套件数表述修正；2.1 §七 加六轮审查块
 
 ### 【模型名同步小批 ⏳ 待用户定夺（2026-09-10 发现，未开工）】
 - **背景**：V4.1 Flash 发布后新调用名 `deepseek-flash`（用户已手动改 `config/agent_settings.json`，未提交）
