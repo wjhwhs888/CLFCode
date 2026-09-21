@@ -2,6 +2,13 @@
 
 ## 进行中
 
+### 【插入批：execute_command GBK 输出炸 JSON ✅ 双层修根（2026-09-21，已提交推送 33c19f5，待用户实机复验）】
+- **用户实抓**（五子棋项目实机会话）：`execute_command(dir /b & ... & git status ...)` 报 `[json.exception.type_error.316] invalid UTF-8 byte at index 2: 0xB2`
+- **根因链**：中文 Windows 下 `dir` 输出 GBK、`git status` 输出 UTF-8——**混合字节流**；捕获层已有 CLFEncoding::toUtf8（CP_ACP 单次转换）但混合流 MB_ERR_INVALID_CHARS 整体失败 → 原样返回 GBK → nlohmann json 赋值非法 UTF-8 抛 316；且 toUtf8 对纯 UTF-8 输入可能误转（UTF-8 中文字节在 CP936 下部分可解析 → 乱码，历史合并遗留）
+- **修根（两层）**：① **源头 UTF-8 化**——executeCommand 命令包装 `chcp 65001 >nul & `（子进程输出即 UTF-8；输出不留痕、& 保证原命令照常执行）② **toUtf8 预检**——合法 UTF-8 原样返回（防 CP_ACP 误转），非 UTF-8 才走 CP936 转换
+- **测试**：qa_CLFWebFetch W4a-c（UTF-8 原样/GBK 转 UTF-8/空串 ASCII）；ctest 34/34 + 冒烟 exit=0
+- **待办**：用户实机复验（dir + 混合命令）→ 继续 2.2c
+
 ### 【2.2b 注册表装配与主程序切换 ✅ 落码完成（2026-09-21，用户拍板裁决①-⑤全采纳，未提交）】
 - **设计**：`设计/设计-阶段2-2.2b-注册表装配与主程序切换.md`（§八 步骤 1-8 + 裁决 5 项 + §十 实施记录）
 - **产出**：主程序已切换插件路径——① registerPluginTools（元数据装配 + handler 捕获 manager 调用时查询——不缓存服务指针 §1.2 落地，卸载后调用走兜底错误文本 = 验证点 4 自然实现）② CLFFileServiceProxy（§1.6 转发代理落地，CLFCore——proxy 依赖 manager 分层定案）③ main 装配链（manager 先行 → loadAll → proxy 注入 → 双注册）④ CLFBuiltinTools 删 4 注册段（缩为 5 工具 + 2 core）
