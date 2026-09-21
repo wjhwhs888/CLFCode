@@ -481,7 +481,8 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
                       CLFAgentLoop& agent, const std::string& historyDir,
                       ICLFOutput* output) -> bool {
             // isBusy 动态查询（调用时经 dispatcher → Repl 注入的回调）
-            return cmdPlugin(args, "", agent, historyDir, output,
+            // 注意参数顺序：cmdPlugin(命令名, args, ...)——args 在第 2 参
+            return cmdPlugin("", args, agent, historyDir, output,
                              dispatcher.pluginManager(),
                              [&dispatcher]() { return dispatcher.busy(); });
         });
