@@ -54,9 +54,6 @@ public:
     // 仅已加载（enabled）插件
     std::vector<std::string> listPluginNames() const;
 
-    // 已加载插件（名字, 版本）对——2.2c /plugin list 展示用
-    std::vector<std::pair<std::string, std::string>> listPlugins() const;
-
     // 插件状态（/plugin list 状态表展示用，2.2c UX 增强 2026-09-21）
     enum class PluginState { Loaded, Unloaded, Disabled };
     struct PluginListEntry {

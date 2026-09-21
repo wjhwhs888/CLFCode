@@ -513,16 +513,6 @@ std::vector<std::string> CLFPluginManager::listPluginNames() const {
     return names;
 }
 
-std::vector<std::pair<std::string, std::string>> CLFPluginManager::listPlugins() const {
-    std::vector<std::pair<std::string, std::string>> result;
-    for (const auto& rec : m_plugins) {
-        if (rec->enabled && rec->plugin) {
-            result.emplace_back(rec->name, rec->plugin->version());
-        }
-    }
-    return result;
-}
-
 std::vector<CLFPluginManager::PluginListEntry> CLFPluginManager::listPluginEntries() const {
     std::vector<PluginListEntry> result;
     result.reserve(m_plugins.size());
