@@ -11,11 +11,13 @@ namespace CLF::CLFUI {
 CLFCommandDispatcher::CLFCommandDispatcher(CLF::CLFCore::CLFAgentLoop& agent,
                                            const std::string& historyDir,
                                            CLF::CLFTypes::ICLFOutput* output,
-                                           std::function<void()> onExit)
+                                           std::function<void()> onExit,
+                                           CLF::CLFCore::CLFPluginManager* pluginManager)
     : m_agent(agent)
     , m_historyDir(historyDir)
     , m_output(output)
-    , m_onExit(std::move(onExit)) {
+    , m_onExit(std::move(onExit))
+    , m_pluginManager(pluginManager) {
     registerBuiltinCommands(*this);
 }
 

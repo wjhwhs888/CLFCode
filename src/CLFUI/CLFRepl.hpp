@@ -22,7 +22,7 @@
 #include "CLFCore/CLFPasserby.hpp" // 会话节奏观察器（值成员）
 #include "CLFTypes/CLFTypes.hpp"   // CLFTodoItem（buildTodoPanelLines 参数）
 
-namespace CLF::CLFCore { class CLFAgentLoop; }
+namespace CLF::CLFCore { class CLFAgentLoop; class CLFPluginManager; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
 namespace CLF::CLFUI {
@@ -46,8 +46,10 @@ std::vector<CLFTodoPanelLine> buildTodoPanelLines(
 
 class CLFRepl {
 public:
+    // 2.2c：pluginManager 注入 /plugin 命令（可空 = 无插件管理）
     CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDir,
-            CLF::CLFTypes::ICLFOutput* output = nullptr);
+            CLF::CLFTypes::ICLFOutput* output = nullptr,
+            CLF::CLFCore::CLFPluginManager* pluginManager = nullptr);
     ~CLFRepl();
 
     int  run();

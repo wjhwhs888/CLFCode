@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace CLF::CLFCore { class CLFAgentLoop; }
+namespace CLF::CLFCore { class CLFAgentLoop; class CLFPluginManager; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
 namespace CLF::CLFUI {
@@ -38,7 +38,9 @@ public:
     CLFCommandDispatcher(CLF::CLFCore::CLFAgentLoop& agent,
                          const std::string& historyDir,
                          CLF::CLFTypes::ICLFOutput* output,
-                         std::function<void()> onExit);
+                         std::function<void()> onExit,
+                         // 2.2c：/plugin 命令注入（可空 = 无插件管理）
+                         CLF::CLFCore::CLFPluginManager* pluginManager = nullptr);
 
     // 注册命令（内部调用，构造时批量注册内置命令）
     void registerCommand(CLFCommand cmd);
@@ -52,14 +54,24 @@ public:
     // 设置退出回调（screen 创建后注入）
     void setOnExit(std::function<void()> cb) { m_onExit = std::move(cb); }
 
+    // 2.2c：busy 判定回调（run() 里 asyncSubmit 创建后延迟注入——同 onExit 模式；
+    // 未注入 = 不判定对话中状态）
+    void setBusyChecker(std::function<bool()> cb) { m_isBusy = std::move(cb); }
+
     // 获取注册表（供 /help 等遍历）
     const std::vector<CLFCommand>& commands() const { return m_commands; }
+
+    // 2.2c：插件管理器与忙碌判定（/plugin 命令 handler 经此访问）
+    CLF::CLFCore::CLFPluginManager* pluginManager() const { return m_pluginManager; }
+    bool busy() const { return m_isBusy ? m_isBusy() : false; }
 
 private:
     CLF::CLFCore::CLFAgentLoop& m_agent;
     std::string m_historyDir;
     CLF::CLFTypes::ICLFOutput* m_output;
     std::function<void()> m_onExit;
+    CLF::CLFCore::CLFPluginManager* m_pluginManager;   // 非拥有（可空）
+    std::function<bool()> m_isBusy;
 
     std::vector<CLFCommand> m_commands;  // 注册表（线性搜索，11 个命令性能充足）
 };

@@ -105,11 +105,13 @@ std::vector<CLFTodoPanelLine> buildTodoPanelLines(
 // ============================================================================
 
 CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDir,
-                 CLF::CLFTypes::ICLFOutput* output)
+                 CLF::CLFTypes::ICLFOutput* output,
+                 CLF::CLFCore::CLFPluginManager* pluginManager)
     : m_agent(agent)
     , m_output(output)
     , m_historyDir(historyDir)
-    , m_dispatcher(std::make_unique<CLFCommandDispatcher>(agent, historyDir, output, nullptr))
+    , m_dispatcher(std::make_unique<CLFCommandDispatcher>(
+          agent, historyDir, output, nullptr, pluginManager))
     , m_passerby(m_output) {
     m_agent.setConfirmCallback(
         [this](const std::string& prompt) { return confirmDialog(prompt); });
@@ -167,6 +169,9 @@ int CLFRepl::run() {
 
         // ---- 组件声明 ----
         CLFAsyncSubmit  asyncSubmit;
+        // 2.2c：busy 判定注入（/plugin unload/reload 的 quiesce 依据——
+        // asyncSubmit 是 run() 局部对象，经 setter 延迟绑定，同 onExit 模式）
+        m_dispatcher->setBusyChecker([&asyncSubmit] { return asyncSubmit.busy(); });
         // 粘贴合并器：窗满定时线程经 PostEvent(Custom) 唤醒主循环消费
         CLFPasteCoalescer pasteCoalescer(
             [&] { screen.PostEvent(ftxui::Event::Custom); });

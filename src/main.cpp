@@ -169,6 +169,6 @@ int main(int argc, char* argv[]) {
     CLF::CLFCore::CLFSessionManager::migrateLegacyIncomplete(historyDir);
     CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30);
 
-    CLF::CLFUI::CLFRepl repl(agent, historyDir, &terminal);
+    CLF::CLFUI::CLFRepl repl(agent, historyDir, &terminal, &pluginManager);   // 2.2c
     return repl.run();
 }

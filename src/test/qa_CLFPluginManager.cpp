@@ -117,6 +117,13 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             const auto names = mgr.listPluginNames();
             expect(names.size() == 1_u);
             expect(names[0] == "clf.teststub");
+            // listPlugins（2.2c /plugin list 展示用）：名字 + 版本对
+            const auto plugins = mgr.listPlugins();
+            expect(plugins.size() == 1_u);
+            if (!plugins.empty()) {
+                expect(plugins[0].first == "clf.teststub");
+                expect(plugins[0].second == "1.0.0");
+            }
         }
         cleanupDir(dir);
     };

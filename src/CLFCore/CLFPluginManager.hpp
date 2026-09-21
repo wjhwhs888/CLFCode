@@ -18,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "CLFPluginApi/CLFPluginApi.hpp"
@@ -52,6 +53,9 @@ public:
 
     // 仅已加载（enabled）插件
     std::vector<std::string> listPluginNames() const;
+
+    // 已加载插件（名字, 版本）对——2.2c /plugin list 展示用
+    std::vector<std::pair<std::string, std::string>> listPlugins() const;
 
     // 服务路由（插件与宿主共用；不存在 → nullptr）；按服务名（2026-09-11 修订）
     CLF::CLFPluginApi::CLFService* getService(const char* service) const;

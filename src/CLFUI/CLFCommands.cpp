@@ -7,6 +7,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFCore/CLFPluginManager.hpp"   // 2.2c
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSkillLoader.hpp"
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 namespace CLF::CLFUI {
@@ -85,6 +87,7 @@ bool cmdHelp(const std::string&, const std::string&,
         "  ⎿ /init       初始化项目规则 PROJECTRULES.md\n"
         "  ⎿ /mode       切换安全模式\n"
         "  ⎿ /model      显示当前模型\n"
+        "  ⎿ /plugin     插件管理（list/load/unload/reload）\n"
         "  ⎿ /resume     恢复指定会话\n"
         "  ⎿ /skill      知识库管理\n"
         "  ⎿ /version    显示版本号\n");
@@ -396,6 +399,64 @@ bool cmdInit(const std::string&, const std::string&,
     return true;
 }
 
+// ============================================================================
+// 插件管理（2.2c，2026-09-21）
+// ============================================================================
+
+// /plugin [list|load <name>|unload <name>|reload <name>]
+// quiesce 语义（2.1 §3.3 定案）：load/unload/reload 在对话进行中拒绝——
+// 管理器不自行判断在途调用（它没有这个信息），busy 判定由 Repl 注入（AsyncSubmit）
+bool cmdPlugin(const std::string&, const std::string& args,
+               CLFAgentLoop&, const std::string&,
+               ICLFOutput* output, CLF::CLFCore::CLFPluginManager* manager,
+               std::function<bool()> isBusy) {
+    auto emit = [&](const std::string& s) { if (output) output->emitContent(s); };
+    if (!manager) {
+        emit("✗ 插件系统未启用\n");
+        return true;
+    }
+    // 子命令解析：无参 = list
+    std::string sub;
+    std::string name;
+    {
+        std::istringstream iss(args);
+        iss >> sub >> name;
+    }
+    if (sub.empty() || sub == "list") {
+        const auto plugins = manager->listPlugins();
+        if (plugins.empty()) {
+            emit("● 已加载插件：无（全静态构建，插件目录无 DLL）\n");
+        } else {
+            emit("● 已加载插件 " + std::to_string(plugins.size()) + " 个:\n");
+            for (const auto& [pName, version] : plugins) {
+                emit("  ⎿ " + pName + " v" + version + "\n");
+            }
+        }
+        return true;
+    }
+
+    // 变更类子命令：quiesce——对话进行中拒绝（§3.3 定案：调用方责任）
+    if (sub == "load" || sub == "unload" || sub == "reload") {
+        if (name.empty()) {
+            emit("用法: /plugin " + sub + " <插件名>\n");
+            return true;
+        }
+        if (isBusy && isBusy()) {
+            emit("✗ 对话进行中——回合结束后再执行 /plugin " + sub + "\n");
+            return true;
+        }
+        bool ok = false;
+        if (sub == "load")   ok = manager->load(name);
+        if (sub == "unload") ok = manager->unload(name);
+        if (sub == "reload") ok = manager->reload(name);
+        emit(ok ? "✓ 已" + sub + ": " + name + "\n"
+                : "✗ " + sub + " 失败（详见日志）: " + name + "\n");
+        return true;
+    }
+    emit("未知子命令（应为 list/load/unload/reload）: " + sub + "\n");
+    return true;
+}
+
 } // anonymous namespace
 
 // ============================================================================
@@ -413,6 +474,17 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
     reg("/exit",    "退出并保存会话",                       cmdExit);
     reg("/help",    "显示帮助信息",                         cmdHelp);
     reg("/clear",   "保存会话并开始新对话",                 cmdClear);
+    // 2.2c：/plugin——handler 经 lambda 拿 dispatcher 注入的 manager/busy
+    // （命令签名固定 5 参，注入通道见 CLFCommandDispatcher 构造）
+    reg("/plugin",  "插件管理 /plugin [list|load|unload|reload <名>]",
+        [&dispatcher](const std::string&, const std::string& args,
+                      CLFAgentLoop& agent, const std::string& historyDir,
+                      ICLFOutput* output) -> bool {
+            // isBusy 动态查询（调用时经 dispatcher → Repl 注入的回调）
+            return cmdPlugin(args, "", agent, historyDir, output,
+                             dispatcher.pluginManager(),
+                             [&dispatcher]() { return dispatcher.busy(); });
+        });
     reg("/model",   "显示或切换当前模型 /model <模型名>",   cmdModel);
     reg("/mode",    "切换安全模式 /mode <auto|analyze|edit|manual>", cmdMode);
     reg("/config",  "显示当前配置信息",                     cmdConfig);
