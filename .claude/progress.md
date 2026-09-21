@@ -2,6 +2,12 @@
 
 ## 进行中
 
+### 【2.2c /plugin 命令 ✅ 落码完成（2026-09-21，已提交推送 1ccb928，待用户实机验收）】
+- **设计**：`设计/设计-阶段2-2.2c-plugin命令.md`（取证 + 清单 + 验收）
+- **实现**：① CLFPluginManager 加 listPlugins()（名字+版本对）② CLFCommandDispatcher 构造注入 pluginManager + setBusyChecker（同 onExit 延迟绑定——asyncSubmit 是 run() 局部对象）③ cmdPlugin（list 展示 / load·unload·reload 对话中拒绝 quiesce / ✓✗ 文案）④ Repl 构造注入 manager → Dispatcher；main 传参 ⑤ /help 加条目
+- **qa**：P2 扩展 listPlugins 断言；ctest 34/34 + 冒烟 exit=0
+- **待办**：用户实机验收（list/unload 后模型调 read_file 得兜底错误/load 恢复/busy 拒绝）→ **2.2 试点出口达成**（分册验证点 1-6 全走通）→ 分册出口标准复核 → 2.3 铺开其余 4 域
+
 ### 【插入批：execute_command GBK 输出炸 JSON ✅ 双层修根（2026-09-21，已提交推送 33c19f5，待用户实机复验）】
 - **用户实抓**（五子棋项目实机会话）：`execute_command(dir /b & ... & git status ...)` 报 `[json.exception.type_error.316] invalid UTF-8 byte at index 2: 0xB2`
 - **根因链**：中文 Windows 下 `dir` 输出 GBK、`git status` 输出 UTF-8——**混合字节流**；捕获层已有 CLFEncoding::toUtf8（CP_ACP 单次转换）但混合流 MB_ERR_INVALID_CHARS 整体失败 → 原样返回 GBK → nlohmann json 赋值非法 UTF-8 抛 316；且 toUtf8 对纯 UTF-8 输入可能误转（UTF-8 中文字节在 CP936 下部分可解析 → 乱码，历史合并遗留）
