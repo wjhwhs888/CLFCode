@@ -2,6 +2,15 @@
 
 ## 进行中
 
+### 【2.2a FileOps 迁 DLL 试点 ✅ 落码完成（2026-09-21，用户拍板裁决①-⑤全采纳，未提交）】
+- **设计**：`设计/设计-阶段2-2.2a-FileOps迁DLL试点.md`（§七 步骤 1-6 + 裁决 5 项 + §九 实施记录）
+- **产出**：tools.fileops.dll（`bin/Debug/plugins/`）——FileOps/Diff 能力 + file 服务（ICLFFileService 回调推送）+ tool.provider（4 工具元数据与 handler 随域打包）；插件壳 `src/CLFPlugins/FileOps/CLFFileOpsPlugin.cpp`（CLFPlugin + CLFFileServiceImpl + ICLFToolProvider 多继承三合一，CLFFileServiceImpl 零重写直接复用——C1 铺路兑现）
+- **共享实现**：`CLFCapabilities/FileOps/CLFFileOpsHandlers.hpp/.cpp`（4 handler 双消费者）；isWithinWorkspace 两参版保留为转发钉子（qa 零破坏）+ 参数化版 isWithinWorkspaceOf 新增；sliceLines 归位 CLFTextUtil；withHandlerScaffold 迁能力域（CLFBuiltinTools using 引入）；read_file workspaceRoot 参数化（CLFBuiltinTools 传 ConfigLoader 值零行为变化；插件暂传空串跳过——**2.2b 切换前必须定案校验归属**，倾向宿主侧与 SecurityPolicy 同层）
+- **构建期实抓修复**：clf_add_plugin 模板 /MD 硬设缺陷（LNK2038 运行时库不匹配——2.2a 首个链静态库插件暴露）→ 删硬设、跟随全局配置（2.1 §4.1 差异回写）
+- **测试**：qa_CLFPluginFileOps 12 用例（F1-F12：加载/路由/readFile 回调/previewEdit/computeDiff/getFileInfo/元数据同值/4 工具 callTool 往返/卸载）全绿；**全量 ctest 34/34** + 主程序 --version 冒烟 exit=0（宿主行为零变化——静态注册未动）
+- **qa 实抓修正 2 处**：F4 ctx 类型错配（ContentCollector 当 ErrorCollector）；cb.onError = cb.onResult 不可行（两参/三参签名不同）
+- **待办**：提交推送 → 2.2b 注册表装配（管理器收集元数据 → 装配 CLFTool → AgentLoop 注册；转发代理切换 §1.6；read_file 校验归属定案）
+
 ### 【插入批：任务清单进行中标识 agent 层兜底 ✅（2026-09-21，用户实机验收 2.1 时发现，未提交）】
 - **用户报告**：清单 1-5 按序执行，1 2 完成变绿，但 3 在执行中无"进行中"标识，执行完直接变绿
 - **取证链（全链路实证）**：渲染层支持 in_progress（⏳ 青色，面板每帧常驻渲染 ✓）→ update 分支支持三态（校验/落库/快照/面板重现 ✓）→ 工具描述只列枚举值无行为指令 → 系统提示词零 todo 指导 → **历史会话 jsonl 中 in_progress 从未出现**——模型从没发过该状态
@@ -104,6 +113,7 @@
   - **⑥ 文档回写完成**：2.1（requires 改名全同步 + §五 机制表述 + §六 P5/P7 + §七 七轮块 + §八 差异行）+ 分册（旧草案签名回写：getService 单参、依赖服务名注释）；CLF_TEST_TARGETS 过时表述修正为 clf_add_test
   - **调试插曲**：exit=3 零输出 + 段错误两连击（静态期 boost::ut + Debug 越界断言 + 空指针），fprintf 探针逐层收敛定位（P1→P2→析构→expect→listPluginNames size=0→init 循环）——sed 跨行探针清理留残片两次，教训：探针清理用 Edit 逐段删除
   - **收尾 ✅（2026-09-21）**：用户实机验收通过（deepseek 模型无问题、进度显示完整、待办显示明显——todo 兜底同批验收）；CHANGELOG v0.7.6 段 + VERSION bump + 架构文档/README 增量同步 + TEMP 测试残留清理（36 项）；**已提交推送 + tag v0.7.6**
+  - **发布策略定调（2026-09-21，用户）**：阶段 2 期间**暂停打包发布**（不打 zip/不做 Gitee release 上传），等阶段 2 全部完成再统一打包——tag 照常打（memory release-workflow 已更新）
   - **并发提醒**：CLion 构建与命令行 ninja 构建撞车致 obj Permission denied（瞬时冲突非代码问题）——命令行构建期间不要在 IDE 里同时 Build
   - **下一步**：2.2a FileOps 迁 DLL 试点（分册 §4.1 验证点 1-6，§1.6 转发代理定案倾向落地）
 

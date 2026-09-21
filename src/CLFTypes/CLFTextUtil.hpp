@@ -75,6 +75,10 @@ public:
     static std::vector<std::string> splitLines(const std::string& text,
                                                bool keepEmpty);
 
+    // 行范围切片（2.2a 自 CLFBuiltinTools 归位）：offset 为 0 基起始行，
+    // limit<=0 取到末尾；offset<=0 且 limit<=0 → 原样返回
+    static std::string sliceLines(const std::string& content, int offset, int limit);
+
     // ============ 本地时间（线程安全）============
 
     // strftime 格式化当前本地时间（内部 localtime_s/_r；替代 7 处平台 ifdef）

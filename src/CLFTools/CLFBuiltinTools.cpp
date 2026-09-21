@@ -15,6 +15,7 @@
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFTools/CLFCommandExec.hpp"
 #include "CLFCapabilities/FileOps/CLFFileOps.hpp"
+#include "CLFCapabilities/FileOps/CLFFileOpsHandlers.hpp"   // 2.2a：4 工具 handler 共享实现
 #include "CLFTools/CLFSearchContent.hpp"
 #include "CLFTools/CLFWebFetch.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：localNow
@@ -32,35 +33,14 @@ using CLF::CLFCore::CLFTextUtil;   // A2
 namespace detail {
 
 //判定路径是否位于工作区（cwd）之内
-// 用 weakly_canonical 解析——它会跟随 symlink/junction，
-// 否则 "workspace/link -> C:\Windows" 这类软链接可绕过边界。
+// 2.2a：实现转调能力域参数化版（工作区根 = ConfigLoader 取——本层补根，
+// 判定逻辑单点；qa 钉子签名不变）
 // example:
 //   std::string err;
 //   if (!detail::isWithinWorkspace(path, err)) return err;
 bool isWithinWorkspace(const std::string& path, std::string& outError) {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-
-    fs::path root = fs::weakly_canonical(
-        fs::u8path(CLF::CLFCore::CLFConfigLoader::getWorkingDir()), ec);
-    if (ec) { outError = "无法解析工作区根目录"; return false; }
-
-    fs::path target = fs::u8path(path);
-    if (!target.is_absolute()) target = root / target;
-    target = fs::weakly_canonical(target, ec);
-    if (ec) { outError = "无法解析路径: " + path; return false; }
-
-    // 必须逐段比较，不能用字符串前缀匹配——否则 "proj-evil" 会被
-    // 误判为落在 "proj" 之内。
-    auto rootIt = root.begin();
-    auto tgtIt  = target.begin();
-    for (; rootIt != root.end(); ++rootIt, ++tgtIt) {
-        if (tgtIt == target.end() || *tgtIt != *rootIt) {
-            outError = "路径超出工作区边界: " + path;
-            return false;
-        }
-    }
-    return true;
+    return CLF::CLFCapabilities::isWithinWorkspaceOf(
+        CLF::CLFCore::CLFConfigLoader::getWorkingDir(), path, outError);
 }
 
 //判定命令的退出码是否应视为成功（S2-3 退出码白名单）
@@ -92,51 +72,20 @@ bool exitCodeMeansSuccess(const std::string& command, int exitCode) {
 }
 
 //按行切片（offset 为 0 基起始行，limit<=0 表示取到末尾）
+// 2.2a：实现归位 CLFTextUtil（单点逻辑；qa 钉子签名不变）
 // example:
 //   sliceLines(content, 10, 20);  // 第 10-29 行
 std::string sliceLines(const std::string& content, int offset, int limit) {
-    if (offset <= 0 && limit <= 0) return content;
-    std::istringstream iss(content);
-    std::string line, out;
-    int idx = 0, taken = 0;
-    while (std::getline(iss, line)) {
-        if (idx++ < offset) continue;
-        if (limit > 0 && taken >= limit) break;
-        out += line;
-        out += '\n';
-        ++taken;
-    }
-    return out;
+    return CLF::CLFCore::CLFTextUtil::sliceLines(content, offset, limit);
 }
 
-// A4a：handler 脚手架收敛（设计-阶段1 §五 A4，2026-09-03）——
-// 统一 parse / try-catch / dump 骨架（原 8 处同构样板）；body 内写业务与容错，
-// 错误文案统一 "Handler error: "（qa 无文案断言，A4-1 取证）；
-// todo_write 状态机不属本批（A4-2），保持原样不经此包装。
-// example:
-//   return withHandlerScaffold(args, [](const json& params, json& result) {
-//       result["success"] = true;
-//   });
-std::string withHandlerScaffold(
-    const std::string& args,
-    const std::function<void(const nlohmann::json& params, nlohmann::json& result)>& body) {
-    nlohmann::json result;
-    try {
-        nlohmann::json params = nlohmann::json::parse(args);
-        body(params, result);
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
-}
+// A4a：handler 脚手架（2.2a：实现迁至能力域共享——CLFBuiltinTools 与插件
+// 双消费；本处 using 引入，调用点零改）
+using CLF::CLFCapabilities::withHandlerScaffold;
 
 } // namespace detail
 
 namespace {
-
-// 单文件读取上限，防超大文件撑爆内存（与 search 的 1MB 上限相互独立）
-constexpr std::uintmax_t kMaxReadFileSize = 50ull * 1024 * 1024;
 
 std::string getCurrentTimeHandler(const std::string& /*args*/) {
     // A2：平台 ifdef → CLFTextUtil::localNow（格式零变化）
@@ -147,49 +96,8 @@ std::string echoHandler(const std::string& args) {
     return "Echo: " + args;
 }
 
-// S2-1: 边界/大小/行范围三项均在 handler 层实施——CLFFileOps::readFile 还被
-// FileOps 内部路径（editFile/readFileWithSnapshot）调用，在底层加限制会误伤。
-// 取证（阶段 2 分册 §3.7）：FileOps 唯一跨层调用方 = CLFToolExecutor（C1 已接口化）。
-// A4a：脚手架收敛至 detail::withHandlerScaffold（parse/try-catch/dump 统一）
-std::string readFileHandlerImpl(const std::string& args, bool allowAbsolute) {
-    return detail::withHandlerScaffold(args, [allowAbsolute](const nlohmann::json& params, nlohmann::json& result) {
-        namespace fs = std::filesystem;
-        std::string path = params.value("path", "");
-        const int offset = params.value("offset", 0);
-        const int limit  = params.value("limit", 0);
-
-        // ① 工作区边界（allow_absolute_read 为逃生口）
-        if (!allowAbsolute) {
-            std::string boundErr;
-            if (!detail::isWithinWorkspace(path, boundErr)) {
-                result["success"] = false;
-                result["error"]   = boundErr
-                    + "（如确需读取工作区外文件，请在配置中开启 agent.allow_absolute_read）";
-                return;
-            }
-        }
-
-        // ② 大小上限（目录时 file_size 置 ec，不会误判）
-        std::error_code ec;
-        const auto size = fs::file_size(fs::u8path(path), ec);
-        if (!ec && size > kMaxReadFileSize) {
-            result["success"] = false;
-            result["error"]   = "文件过大（" + std::to_string(size / (1024 * 1024))
-                              + "MB，上限 50MB）: " + path;
-            return;
-        }
-
-        auto fileResult = CLF::CLFTools::readFile(path);
-        result["success"] = fileResult.m_success;
-        if (!fileResult.m_success) {
-            result["error"] = fileResult.m_error;
-            return;
-        }
-
-        // ③ 行范围切片
-        result["content"] = detail::sliceLines(fileResult.m_content, offset, limit);
-    });
-}
+// read_file 的 handler 实现已迁至能力域共享实现 CLFCapabilities::readFileToolHandler
+// （2.2a，注册处见下——workspaceRoot 传 ConfigLoader 值，主程序行为零变化）
 
 bool isValidTodoStatus(const std::string& s) {
     return s == "pending" || s == "in_progress" || s == "completed";
@@ -332,50 +240,8 @@ std::string webFetchHandler(const std::string& args) {
     });
 }
 
-// A4a：脚手架收敛（三文件工具同款）
-std::string writeFileHandler(const std::string& args) {
-    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-        std::string path    = params.value("path", "");
-        std::string content = params.value("content", "");
-        auto fileResult = CLF::CLFTools::writeFile(path, content);
-        result["success"] = fileResult.m_success;
-        if (fileResult.m_success) {
-            result["path"]    = path;
-            result["written"] = content.size();
-        } else {
-            result["error"] = fileResult.m_error;
-        }
-    });
-}
-
-std::string editFileHandler(const std::string& args) {
-    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-        std::string path    = params.value("path", "");
-        std::string oldStr  = params.value("old_string", "");
-        std::string newStr  = params.value("new_string", "");
-        auto fileResult = CLF::CLFTools::editFile(path, oldStr, newStr);
-        result["success"] = fileResult.m_success;
-        if (fileResult.m_success) {
-            result["path"]    = path;
-            result["written"] = fileResult.m_content.size();
-        } else {
-            result["error"] = fileResult.m_error;
-        }
-    });
-}
-
-std::string listDirectoryHandler(const std::string& args) {
-    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-        std::string path = params.value("path", ".");
-        auto fileResult = CLF::CLFTools::listDirectory(path);
-        result["success"] = fileResult.m_success;
-        if (fileResult.m_success) {
-            result["content"] = fileResult.m_content;
-        } else {
-            result["error"] = fileResult.m_error;
-        }
-    });
-}
+// write_file / edit_file / list_directory 的 handler 实现已迁至能力域共享实现
+// （2.2a，注册处见下）
 
 // A4a：脚手架收敛（cwd 边界容错语义保留）
 std::string executeCommandHandler(const std::string& args) {
@@ -439,7 +305,9 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     // 按值捕获（非引用）：注册后该配置不再变化，无生命周期约束
     const bool allowAbsoluteRead = agent.getConfig().m_allowAbsoluteRead;
     readFileTool.m_handler = [allowAbsoluteRead](const std::string& args) {
-        return readFileHandlerImpl(args, allowAbsoluteRead);
+        // 2.2a：handler 迁共享实现；workspaceRoot 传 ConfigLoader 值（行为零变化）
+        return CLF::CLFCapabilities::readFileToolHandler(
+            args, allowAbsoluteRead, CLF::CLFCore::CLFConfigLoader::getWorkingDir());
     };
     agent.registerTool(readFileTool);
 
@@ -455,7 +323,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         },
         "required": ["path", "content"]
     })";
-    writeFileTool.m_handler = writeFileHandler;
+    writeFileTool.m_handler = CLF::CLFCapabilities::writeFileToolHandler;
     agent.registerTool(writeFileTool);
 
     CLFTool editFileTool;
@@ -471,7 +339,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         },
         "required": ["path", "old_string", "new_string"]
     })";
-    editFileTool.m_handler = editFileHandler;
+    editFileTool.m_handler = CLF::CLFCapabilities::editFileToolHandler;
     agent.registerTool(editFileTool);
 
     CLFTool listDirTool;
@@ -485,7 +353,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         },
         "required": []
     })";
-    listDirTool.m_handler = listDirectoryHandler;
+    listDirTool.m_handler = CLF::CLFCapabilities::listDirectoryToolHandler;
     agent.registerTool(listDirTool);
 
     // —— 系统操作 ——

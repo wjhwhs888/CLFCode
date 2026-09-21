@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <ctime>
+#include <sstream>
 
 namespace CLF::CLFCore {
 
@@ -217,6 +218,23 @@ std::vector<std::string> CLFTextUtil::splitLines(const std::string& text,
         }
         out.push_back(text.substr(pos, nl - pos));
         pos = nl + 1;
+    }
+    return out;
+}
+
+// 行范围切片（2.2a 自 CLFBuiltinTools 归位，语义原样保真）：
+// offset 为 0 基起始行，limit<=0 取到末尾
+std::string CLFTextUtil::sliceLines(const std::string& content, int offset, int limit) {
+    if (offset <= 0 && limit <= 0) return content;
+    std::istringstream iss(content);
+    std::string line, out;
+    int idx = 0, taken = 0;
+    while (std::getline(iss, line)) {
+        if (idx++ < offset) continue;
+        if (limit > 0 && taken >= limit) break;
+        out += line;
+        out += '\n';
+        ++taken;
     }
     return out;
 }
