@@ -11,7 +11,7 @@
 - **实施**：matchingCommands（Dispatcher）✅ / cmdHelp 动态生成 + lambda 捕获注册表（/plugin 同款注入）✅ / buildCommandHintPanel（ReplView，6 行折叠 + "… 还有 N 个"）✅ / qa_CLFCommandDispatcher 新套件 M1-M8 ✅ / CMake 注册 ✅
 - **构建实抓修复 2 处**：① C2589——std::min 被 windows.h min 宏破坏 → NOMINMAX（全文件无裸宏依赖零影响）② LNK2019 缺 main → 套件末尾补 `int main() {}`（boost::ut 静态期执行惯例）
 - **验证基线**：ctest 36/36 全绿 + 冒烟 exit=0；**用户实机验收通过**（面板全量/过滤/空格收起恢复/无匹配/help 同源全过）
-- **收尾 ✅**：CHANGELOG v0.8.1 段 + VERSION v0.8.1 + 设计文档归档 + commit/tag v0.8.1 推送（用户发布）
+- **收尾 ✅**：CHANGELOG v0.8.1 段 + VERSION v0.8.1 + 设计文档归档 + commit d73fb2c/tag v0.8.1 推送 → **用户已发布（2026-09-21）**，全闭环
 
 ### ▶ 阶段 2 出口 ✅✅（2026-09-21，用户实机验收通过，v0.8.0）
 - **阶段 2 全部完成**：2.1 管理器骨架（v0.7.6）→ 2.2a/b/c 试点全闭环 → 2.3 三域铺开 → /plugin 状态表 UX 增强（用户提议：序号索引/三态显示/幂等精确提示）→ 插件 CMake 自管理重构（用户定调）
