@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <ctime>
+#include <filesystem>
 #include <sstream>
 
 namespace CLF::CLFCore {
@@ -237,6 +238,33 @@ std::string CLFTextUtil::sliceLines(const std::string& content, int offset, int 
         ++taken;
     }
     return out;
+}
+
+// 路径边界判定（2.3 自 CLFCapabilities 归位——插件不可链 core，工作区根由
+// 调用方传入；语义原样保真：weakly_canonical 防软链接逃逸、逐段比较防前缀误判）
+bool CLFTextUtil::isWithinWorkspaceOf(const std::string& workspaceRootUtf8,
+                                      const std::string& path, std::string& outError) {
+    namespace fs = std::filesystem;
+    if (workspaceRootUtf8.empty()) return true;   // 空根 = 跳过校验（2.2b 定案）
+    std::error_code ec;
+
+    fs::path root = fs::weakly_canonical(fs::u8path(workspaceRootUtf8), ec);
+    if (ec) { outError = "无法解析工作区根目录"; return false; }
+
+    fs::path target = fs::u8path(path);
+    if (!target.is_absolute()) target = root / target;
+    target = fs::weakly_canonical(target, ec);
+    if (ec) { outError = "无法解析路径: " + path; return false; }
+
+    auto rootIt = root.begin();
+    auto tgtIt  = target.begin();
+    for (; rootIt != root.end(); ++rootIt, ++tgtIt) {
+        if (tgtIt == target.end() || *tgtIt != *rootIt) {
+            outError = "路径超出工作区边界: " + path;
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string CLFTextUtil::localNow(const char* fmt) {

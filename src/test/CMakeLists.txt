@@ -122,3 +122,10 @@ target_compile_definitions(qa_CLFPluginFileOps PRIVATE
     # 生产插件目录（tools.fileops.dll）——与测试插件目录（plugins_test）隔离
     CLF_FILEOPS_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
 add_dependencies(qa_CLFPluginFileOps clf_plugin_fileops)
+
+# —— 2.3 三域插件全链路（command/search/web）——
+clf_add_test(qa_CLFPluginDomains clf_core ${CLF_OPENSSL_LIBS})
+target_compile_definitions(qa_CLFPluginDomains PRIVATE
+    CLF_PROD_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
+add_dependencies(qa_CLFPluginDomains
+    clf_plugin_command clf_plugin_search clf_plugin_web)

@@ -79,6 +79,15 @@ public:
     // limit<=0 取到末尾；offset<=0 且 limit<=0 → 原样返回
     static std::string sliceLines(const std::string& content, int offset, int limit);
 
+    // ============ 路径边界判定 ============
+
+    // 路径是否位于工作区（2.3 自 CLFCapabilities 归位——插件不可链 core，
+    // 工作区根由调用方传入）：weakly_canonical 跟随 symlink/junction 防软链接
+    // 逃逸；逐段比较而非字符串前缀（防 "proj-evil" 误判在 "proj" 内）。
+    // workspaceRootUtf8 为空串 = 跳过校验（返回 true）
+    static bool isWithinWorkspaceOf(const std::string& workspaceRootUtf8,
+                                    const std::string& path, std::string& outError);
+
     // ============ 本地时间（线程安全）============
 
     // strftime 格式化当前本地时间（内部 localtime_s/_r；替代 7 处平台 ifdef）

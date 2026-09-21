@@ -56,6 +56,7 @@ add_library(clf_capabilities STATIC
     CLFCapabilities/FileOps/CLFFileOps.cpp
     CLFCapabilities/FileOps/CLFDiff.cpp
     CLFCapabilities/FileOps/CLFFileServiceImpl.cpp
+    CLFCapabilities/CLFHandlerScaffold.cpp
     CLFCapabilities/FileOps/CLFFileOpsHandlers.cpp
 )
 target_link_libraries(clf_capabilities PUBLIC clf_types)
@@ -73,9 +74,34 @@ clf_add_plugin(clf_plugin_fileops tools.fileops
         ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFFileOps.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFDiff.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFFileServiceImpl.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFFileOpsHandlers.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/FileOps/CLFFileOpsPlugin.cpp
     LIBS clf_types)
+
+# 2.3 铺开：command/search/web 三域（能力源文件原地双编——clf_tools 静态 +
+# 插件 DLL；handler 共享文件双消费）。web 域经 httplib 需 OpenSSL
+clf_add_plugin(clf_plugin_command tools.command
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFCommandExec.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFCommandToolHandler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/Command/CLFCommandPlugin.cpp
+    LIBS clf_types)
+clf_add_plugin(clf_plugin_search tools.search
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFSearchContent.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFSearchToolHandler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/Search/CLFSearchPlugin.cpp
+    LIBS clf_types)
+clf_add_plugin(clf_plugin_web tools.web
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFWebFetch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFWebToolHandler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/Web/CLFWebPlugin.cpp
+    LIBS clf_types ${CLF_OPENSSL_LIBS})
 
 # ============================================================================
 # CLFNetwork — HTTP 传输 (依赖 CLFTypes)
@@ -153,6 +179,9 @@ target_include_directories(clf_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(clf_tools STATIC
     CLFTools/CLFBuiltinTools.cpp
     CLFTools/CLFCommandExec.cpp
+    CLFTools/CLFCommandToolHandler.cpp
+    CLFTools/CLFSearchToolHandler.cpp
+    CLFTools/CLFWebToolHandler.cpp
     CLFTools/CLFPluginTools.cpp
     CLFTools/CLFSearchContent.cpp
     CLFTools/CLFWebFetch.cpp

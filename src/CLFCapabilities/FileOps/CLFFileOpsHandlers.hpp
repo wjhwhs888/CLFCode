@@ -9,35 +9,17 @@
 
 #pragma once
 
-#include <functional>
+#include "CLFCapabilities/CLFHandlerScaffold.hpp"
 #include <string>
-
-#include <nlohmann/json.hpp>
 
 namespace CLF::CLFCapabilities {
 
-// handler 脚手架（A4a 样板，自 CLFBuiltinTools 迁入供双消费者共用）：
-// 统一 parse / try-catch / dump 骨架；错误文案统一 "Handler error: "
-// example:
-//   return withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-//       result["success"] = true;
-//   });
-std::string withHandlerScaffold(
-    const std::string& args,
-    const std::function<void(const nlohmann::json& params, nlohmann::json& result)>& body);
-
-// 路径是否位于工作区（参数化版——插件不可链 core 的 CLFConfigLoader，
-// 工作区根由调用方传入）：weakly_canonical 跟随 symlink/junction 防软链接逃逸；
-// 逐段比较而非字符串前缀（防 "proj-evil" 误判在 "proj" 内）。
-// workspaceRootUtf8 为空串 = 跳过校验（返回 true）。
-// example:
-//   std::string err;
-//   if (!isWithinWorkspaceOf(root, path, err)) reject(err);
-bool isWithinWorkspaceOf(const std::string& workspaceRootUtf8,
-                         const std::string& path, std::string& outError);
+// （2.3：withHandlerScaffold 已独立为 CLFHandlerScaffold——各域插件只编入
+// 脚手架，不连带本文件的能力符号）
 
 // read_file：allowAbsolute=true 跳过边界校验；workspaceRootUtf8 为空串 = 跳过
-// （2.2a 阶段插件侧传空串——2.2b 切换前校验归属定案，见 2.2a 设计 §二）
+// （2.2b 定案：保持 handler 层校验——插件经 host->config 取根）。
+// 边界判定用 CLFTextUtil::isWithinWorkspaceOf（2.3 归位——插件可链 clf_types）
 std::string readFileToolHandler(const std::string& args,
                                 bool allowAbsolute,
                                 const std::string& workspaceRootUtf8);

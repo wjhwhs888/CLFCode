@@ -16,6 +16,7 @@
 #include "CLFTools/CLFCommandExec.hpp"
 #include "CLFCapabilities/FileOps/CLFFileOps.hpp"
 #include "CLFCapabilities/FileOps/CLFFileOpsHandlers.hpp"   // 2.2a：4 工具 handler 共享实现
+#include "CLFTools/CLFCommandToolHandler.hpp"   // 2.3：exitCodeMeansSuccess 共享实现
 #include "CLFTools/CLFSearchContent.hpp"
 #include "CLFTools/CLFWebFetch.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：localNow
@@ -39,36 +40,16 @@ namespace detail {
 //   std::string err;
 //   if (!detail::isWithinWorkspace(path, err)) return err;
 bool isWithinWorkspace(const std::string& path, std::string& outError) {
-    return CLF::CLFCapabilities::isWithinWorkspaceOf(
+    return CLF::CLFCore::CLFTextUtil::isWithinWorkspaceOf(
         CLF::CLFCore::CLFConfigLoader::getWorkingDir(), path, outError);
 }
 
 //判定命令的退出码是否应视为成功（S2-3 退出码白名单）
-// grep/diff 一类用退出码 1 表示"无匹配 / 有差异"——那是正常结果而非失败，
-// 一律按 exitCode!=0 判失败会让模型误以为命令出错。
+// 2.3：实现迁共享 CLFCommandToolHandler（双消费者）；qa 钉子签名不变
 // example:
 //   exitCodeMeansSuccess("grep foo a.txt", 1);  // true
 bool exitCodeMeansSuccess(const std::string& command, int exitCode) {
-    if (exitCode == 0) return true;
-    if (exitCode != 1) return false;   // 仅退出码 1 参与白名单判定
-
-    // 取命令首 token → 去引号 → 去路径 → 去扩展名 → 转小写
-    std::istringstream iss(command);
-    std::string first;
-    iss >> first;
-    first.erase(std::remove(first.begin(), first.end(), '"'), first.end());
-    if (const auto slash = first.find_last_of("/\\"); slash != std::string::npos) {
-        first = first.substr(slash + 1);
-    }
-    if (const auto dot = first.rfind('.'); dot != std::string::npos) {
-        first = first.substr(0, dot);
-    }
-    for (auto& c : first) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-    for (const char* name : {"grep", "rg", "findstr", "diff", "fc"}) {
-        if (first == name) return true;
-    }
-    return false;
+    return CLF::CLFTools::exitCodeMeansSuccess(command, exitCode);
 }
 
 //按行切片（offset 为 0 基起始行，limit<=0 表示取到末尾）
@@ -204,73 +185,9 @@ std::string todoWriteHandlerImplInternal(const std::string& args,
     return result.dump();
 }
 
-// S2-5: 网络抓取。注意 CLFWebFetch 内部不携带任何凭据（详见其头文件说明）
-// A4a：脚手架收敛（容错语义保留：url 必填 → 报错）
-std::string webFetchHandler(const std::string& args) {
-    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-        CLFWebRequest req;
-        req.m_url        = params.value("url", "");
-        req.m_method     = params.value("method", "GET");
-        req.m_body       = params.value("body", "");
-        req.m_timeoutSec = params.value("timeout", 15);
-        if (params.contains("headers") && params["headers"].is_object()) {
-            for (auto it = params["headers"].begin(); it != params["headers"].end(); ++it) {
-                if (it.value().is_string()) {
-                    req.m_headers[it.key()] = it.value().get<std::string>();
-                }
-            }
-        }
-        if (req.m_url.empty()) {
-            result["success"] = false;
-            result["error"]   = "url is required";
-            return;
-        }
-
-        const auto resp = CLF::CLFTools::webFetch(req);
-        result["success"] = resp.m_success;
-        if (!resp.m_success) {
-            result["error"] = resp.m_error;
-            return;
-        }
-        result["status"]  = resp.m_status;
-        result["headers"] = resp.m_headers;
-        result["body"]    = resp.m_body;
-        if (resp.m_truncated) result["truncated"] = true;
-        if (resp.m_binary)    result["binary"]    = true;
-    });
-}
-
-// write_file / edit_file / list_directory 的 handler 实现已迁至能力域共享实现
-// （2.2a，注册处见下）
-
-// A4a：脚手架收敛（cwd 边界容错语义保留）
-std::string executeCommandHandler(const std::string& args) {
-    return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-        std::string command = params.value("command", "");
-        int timeout = params.value("timeout", 30);
-        std::string cwd = params.value("cwd", "");
-
-        // cwd 须位于工作区内（复用 S2-1 边界校验）；仅约束该参数本身，
-        // 命令文本里的 cd 不在管控范围内
-        if (!cwd.empty()) {
-            std::string boundErr;
-            if (!detail::isWithinWorkspace(cwd, boundErr)) {
-                result["success"] = false;
-                result["error"]   = "cwd 无效：" + boundErr;
-                return;
-            }
-        }
-
-        auto cmdResult = CLF::CLFTools::executeCommand(command, timeout, cwd);
-        result["success"]  = detail::exitCodeMeansSuccess(command, cmdResult.m_exitCode);
-        result["exitCode"] = cmdResult.m_exitCode;
-        result["stdout"]   = cmdResult.m_stdout;
-        result["stderr"]   = cmdResult.m_stderr;
-        if (cmdResult.m_timedOut) {
-            result["timedOut"] = true;
-        }
-    });
-}
+// web_fetch / execute_command 的 handler 实现已迁共享实现
+// （2.3：CLFWebToolHandler / CLFCommandToolHandler——CLFBuiltinTools 与插件
+// 双消费；注册处见下）
 
 } // anonymous namespace
 
@@ -291,23 +208,8 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     // —— 文件操作（2.2b：read/write/edit/list 4 工具已随 FileOps 域迁插件——
     // 经 registerPluginTools 装配注册；共享 handler 保留为插件消费者）——
 
-    // —— 系统操作 ——
-    CLFTool execCmdTool;
-    execCmdTool.m_name        = "execute_command";
-    execCmdTool.m_description =
-        "执行 Shell 命令并返回输出。grep/rg/findstr/diff/fc 的退出码 1 视为成功（无匹配/有差异是正常结果）";
-    execCmdTool.m_risk        = CLF::CLFCore::CLFToolRisk::Command;
-    execCmdTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "command": {"type": "string", "description": "要执行的命令"},
-            "timeout": {"type": "integer", "description": "超时秒数，默认 30"},
-            "cwd": {"type": "string", "description": "工作目录（须位于工作区内），省略则用当前目录"}
-        },
-        "required": ["command"]
-    })";
-    execCmdTool.m_handler = executeCommandHandler;
-    agent.registerTool(execCmdTool);
+    // —— 系统操作（2.3：execute_command 已随 Command 域迁插件——经
+    // registerPluginTools 装配注册；共享 handler 保留为插件消费者）——
 
     // —— 协作 ——
     // 待办不独立落盘，随会话持久化（见 CLFTypes::CLFTodoItem 说明）
@@ -362,28 +264,8 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     };
     agent.registerTool(compressTool);
 
-    // —— 网络 ——
-    // 风险级取 Read：GET/HEAD 本质是读取，与 read_file 同级。
-    // POST 有远端副作用，由 CLFToolExecutor 动态升级为强制确认（同 S2-2 模式）。
-    CLFTool webFetchTool;
-    webFetchTool.m_name        = "web_fetch";
-    webFetchTool.m_description =
-        "抓取 URL 内容。响应上限 1MB，正文按 head 8KB + tail 2KB 截断；"
-        "二进制内容自动跳过。不会携带本机任何凭据";
-    webFetchTool.m_risk        = CLF::CLFCore::CLFToolRisk::Read;
-    webFetchTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "url": {"type": "string", "description": "完整 URL，形如 https://host/path"},
-            "method": {"type": "string", "description": "GET（默认）/ POST / HEAD"},
-            "headers": {"type": "object", "description": "可选的额外请求头"},
-            "body": {"type": "string", "description": "POST 请求体"},
-            "timeout": {"type": "integer", "description": "超时秒数，默认 15，上限 60"}
-        },
-        "required": ["url"]
-    })";
-    webFetchTool.m_handler = webFetchHandler;
-    agent.registerTool(webFetchTool);
+    // —— 网络（2.3：web_fetch 已随 Web 域迁插件——经 registerPluginTools
+    // 装配注册；共享 handler 保留为插件消费者）——
 
     CLFTool timeTool;
     timeTool.m_name        = "get_current_time";
@@ -413,42 +295,8 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     echoTool.m_handler = echoHandler;
     agent.registerTool(echoTool);
 
-    // —— search_content ——
-    CLFTool searchTool;
-    searchTool.m_name        = "search_content";
-    searchTool.m_isSearch    = true;  // B1：统计 search 桶
-    searchTool.m_description =
-        "在目录中搜索文件内容（纯文本匹配）。省略 fileTypes 时只搜常见文本扩展名（不扫二进制）；"
-        "跳过 .git/node_modules/build/cmake-build-* 等目录，跳过 >1MB 文件，结果上限 500 行";
-    searchTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "pattern": {
-                "type": "string",
-                "description": "要搜索的文本（纯文本，非正则）"
-            },
-            "directory": {
-                "type": "string",
-                "description": "搜索根目录（相对于工作区）"
-            },
-            "fileTypes": {
-                "type": "string",
-                "description": "逗号分隔的扩展名过滤（如 .cpp,.h）；省略则使用默认文本扩展名白名单"
-            }
-        },
-        "required": ["pattern", "directory"]
-    })";
-    // A4a：脚手架收敛（错误文案统一 "Handler error: "——qa 无文案断言）
-    searchTool.m_handler = [](const std::string& args) -> std::string {
-        return detail::withHandlerScaffold(args, [](const nlohmann::json& params, nlohmann::json& result) {
-            std::string pattern   = params.value("pattern", "");
-            std::string directory = params.value("directory", ".");
-            std::string fileTypes = params.value("fileTypes", "");
-            result["success"] = true;
-            result["content"] = searchContent(pattern, directory, fileTypes);
-        });
-    };
-    agent.registerTool(searchTool);
+    // —— search_content（2.3：已随 Search 域迁插件——经 registerPluginTools
+    // 装配注册；共享 handler 保留为插件消费者）——
 }
 
 } // namespace CLF::CLFTools

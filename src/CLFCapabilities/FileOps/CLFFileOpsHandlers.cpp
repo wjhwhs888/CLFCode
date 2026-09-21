@@ -21,51 +21,11 @@ constexpr std::uintmax_t kMaxReadFileSize = 50ull * 1024 * 1024;
 
 } // namespace
 
-// A4a：handler 脚手架（自 CLFBuiltinTools 迁入原样保真）
-std::string withHandlerScaffold(
-    const std::string& args,
-    const std::function<void(const nlohmann::json& params, nlohmann::json& result)>& body) {
-    nlohmann::json result;
-    try {
-        nlohmann::json params = nlohmann::json::parse(args);
-        body(params, result);
-    } catch (const std::exception& e) {
-        result["success"] = false;
-        result["error"]   = std::string("Handler error: ") + e.what();
-    }
-    return result.dump();
-}
-
-// 参数化工作区边界判定（插件不可链 core——工作区根由调用方传入）。
-// 逐段比较防前缀误判、weakly_canonical 防软链接逃逸的语义与原版一致
-bool isWithinWorkspaceOf(const std::string& workspaceRootUtf8,
-                         const std::string& path, std::string& outError) {
-    namespace fs = std::filesystem;
-    if (workspaceRootUtf8.empty()) return true;   // 空根 = 跳过校验（§二 定案）
-    std::error_code ec;
-
-    fs::path root = fs::weakly_canonical(fs::u8path(workspaceRootUtf8), ec);
-    if (ec) { outError = "无法解析工作区根目录"; return false; }
-
-    fs::path target = fs::u8path(path);
-    if (!target.is_absolute()) target = root / target;
-    target = fs::weakly_canonical(target, ec);
-    if (ec) { outError = "无法解析路径: " + path; return false; }
-
-    auto rootIt = root.begin();
-    auto tgtIt  = target.begin();
-    for (; rootIt != root.end(); ++rootIt, ++tgtIt) {
-        if (tgtIt == target.end() || *tgtIt != *rootIt) {
-            outError = "路径超出工作区边界: " + path;
-            return false;
-        }
-    }
-    return true;
-}
 
 // S2-1: 边界/大小/行范围三项均在 handler 层实施——CLFFileOps::readFile 还被
 // FileOps 内部路径（editFile/readFileWithSnapshot）调用，在底层加限制会误伤。
 // 取证（阶段 2 分册 §3.7）：FileOps 唯一跨层调用方 = CLFToolExecutor（C1 已接口化）。
+// 边界判定用 CLFTextUtil::isWithinWorkspaceOf（2.3 归位——插件可链 clf_types）
 std::string readFileToolHandler(const std::string& args, bool allowAbsolute,
                                 const std::string& workspaceRootUtf8) {
     return withHandlerScaffold(args, [allowAbsolute, &workspaceRootUtf8](
@@ -78,7 +38,7 @@ std::string readFileToolHandler(const std::string& args, bool allowAbsolute,
         // ① 工作区边界（allow_absolute_read 为逃生口；空根 = 跳过——2.2a 插件侧形态）
         if (!allowAbsolute) {
             std::string boundErr;
-            if (!isWithinWorkspaceOf(workspaceRootUtf8, path, boundErr)) {
+            if (!CLF::CLFCore::CLFTextUtil::isWithinWorkspaceOf(workspaceRootUtf8, path, boundErr)) {
                 result["success"] = false;
                 result["error"]   = boundErr
                     + "（如确需读取工作区外文件，请在配置中开启 agent.allow_absolute_read）";
