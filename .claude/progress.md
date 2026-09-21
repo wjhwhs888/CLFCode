@@ -2,6 +2,21 @@
 
 ## 进行中
 
+### ▶ 阶段 2 出口 ✅✅（2026-09-21，用户实机验收通过，v0.8.0）
+- **阶段 2 全部完成**：2.1 管理器骨架（v0.7.6）→ 2.2a/b/c 试点全闭环 → 2.3 三域铺开 → /plugin 状态表 UX 增强（用户提议：序号索引/三态显示/幂等精确提示）→ 插件 CMake 自管理重构（用户定调）
+- **出口标准逐项达成**（分册 §六）：5 域插件全齐（fileops/command/search/web DLL + misc 并入 core）✅ / 原功能等价（ctest 35/35 + 多轮实机）✅ / 管理器验证（21 用例）✅ / main 极薄 ✅ / 阶段 3 挂载点就绪（服务表通用扩展）✅ / core/basic/UI 内建 ✅
+- **5 份设计文档全部归档**（2.1/2.2a/2.2b/2.2c + 分册——归档-阶段2-*）；架构文档/README/CHANGELOG v0.8.0 段同步
+- **待办**：提交 + tag v0.8.0 + 推送 → **用户打包发布**（Release 编译 + release.ps1 + Gitee 上传——阶段 2 期间暂停打包的策略已到期恢复）
+- **下一步**：2.4 core 收尾（C2 对象化消费/AgentLoop 纯编排）+ 2.5 main 极薄复核 → 阶段 3（第三方集成，dsh 用例——决策门仍挂起，激活 = 用户排期）
+
+### 【2.3 铺开三域 ✅ 已提交 f35039d（2026-09-21，随阶段 2 出口发布）】
+- **产出**：tools.command.dll（execute_command）/ tools.search.dll（search_content）/ tools.web.dll（web_fetch）三个生产插件；get_current_time/echo 并入 core 内建（分册允许选项——零依赖小工具迁 DLL 无收益）
+- **共享化**：CLFHandlerScaffold 独立（withHandlerScaffold 单点——2.3 实抓：整文件编入插件致 FileOps 未解析符号 LNK2019）；3 个域 handler 共享文件；exitCodeMeansSuccess 迁共享（detail 转调钉子 qa 零破坏）；isWithinWorkspaceOf 归位 CLFTextUtil
+- **插件壳**：CLFPlugins/Command|Search|Web 三壳（照 FileOps 模式）；command 的 cwd 校验经 host->config 取根（2.2b 校验归属模式复用）
+- **CLFBuiltinTools 缩至 4 个 core 工具**（get_current_time/echo/todo_write/compress_context）
+- **测试**：qa_CLFPluginDomains 6 用例（D1-D6）——**ctest 35/35 全绿** + 冒烟 exit=0；插件目录 4 个生产 DLL 全产出
+- **后续插入批**（已提交）：/plugin 状态表 UX（6fcda30）+ 测试插件 POST_BUILD 残留防御（8e0b6a4）+ Release 残留清理
+
 ### 【2.2c /plugin 命令 ✅ 落码完成（2026-09-21，已提交推送 1ccb928，待用户实机验收）】
 - **设计**：`设计/设计-阶段2-2.2c-plugin命令.md`（取证 + 清单 + 验收）
 - **实现**：① CLFPluginManager 加 listPlugins()（名字+版本对）② CLFCommandDispatcher 构造注入 pluginManager + setBusyChecker（同 onExit 延迟绑定——asyncSubmit 是 run() 局部对象）③ cmdPlugin（list 展示 / load·unload·reload 对话中拒绝 quiesce / ✓✗ 文案）④ Repl 构造注入 manager → Dispatcher；main 传参 ⑤ /help 加条目
@@ -596,11 +611,3 @@
 - **install.ps1 版本检测闪退** ✅ 已修复（`exit 0` → `return`）
 - Ctrl+C 确认栏退出（低优先，暂缓）
 - emitRaw 钩子（设计预留）
-
-### 【2.3 铺开三域 ✅ 落码完成（2026-09-21，未提交）】
-- **产出**：tools.command.dll（execute_command）/ tools.search.dll（search_content）/ tools.web.dll（web_fetch）三个生产插件；get_current_time/echo 并入 core 内建（分册允许选项——零依赖小工具迁 DLL 无收益）
-- **共享化**：CLFHandlerScaffold 独立（withHandlerScaffold 单点——2.3 实抓：整文件编入插件致 FileOps 未解析符号 LNK2019，脚手架必须独立成文件）；3 个域 handler 共享文件（Command/Search/Web）；exitCodeMeansSuccess 迁共享（detail 版转调钉子 qa 零破坏）；isWithinWorkspaceOf 归位 CLFTextUtil（三域插件可链）
-- **插件壳**：CLFPlugins/Command|Search|Web 三壳（照 FileOps 模式）；command 的 cwd 校验经 host->config 取根（2.2b 校验归属模式复用）
-- **CLFBuiltinTools 缩至 4 个 core 工具**（get_current_time/echo/todo_write/compress_context）
-- **测试**：qa_CLFPluginDomains 6 用例（D1-D6：三插件加载/元数据同值/execute 往返/search 往返/web 错误路径/卸载）——**ctest 35/35 全绿** + 冒烟 exit=0；插件目录 4 个生产 DLL 全产出
-- **待办**：提交推送 → 用户实机验收（4 插件 + 工具全集）→ **阶段 2 出口**（5 域能力 DLL 全齐 + main 极薄 + 挂载点就绪）
