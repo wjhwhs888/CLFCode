@@ -87,7 +87,16 @@ bool CLFInputHandler::handle(ftxui::Event e) {
             m_historyIndex = -1;
             auto text = inputText;
             inputText.clear();
-            asyncSubmit.launch([&repl = m_repl, text]() { repl.submit(text); });
+            // 2.2c 修根（2026-09-21 用户实抓"空闲 unload 被拒"）：命令输入
+            // **不 launch**——UI 线程同步处理。launch 会置 m_submitting=true，
+            // 异步线程内 dispatcher 处理命令时，/plugin 的 quiesce 判定读到
+            // "自己这个提交" → 空闲自拒。命令处理是轻量同步（dispatcher +
+            // 输出），不阻塞 UI
+            if (!text.empty() && text[0] == '/') {
+                m_repl.submit(text);
+            } else {
+                asyncSubmit.launch([&repl = m_repl, text]() { repl.submit(text); });
+            }
         }
     };
 
