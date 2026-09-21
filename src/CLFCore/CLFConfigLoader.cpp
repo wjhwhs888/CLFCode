@@ -129,6 +129,7 @@ void applyConfigFields(const json& cfg, CLFAgentConfig& outConfig) {
 } // anonymous namespace
 
 std::string CLFConfigLoader::s_projectRoot;
+bool        CLFConfigLoader::s_allowAbsoluteRead = false;
 
 std::string CLFConfigLoader::findProjectRoot() {
     if (!s_projectRoot.empty()) return s_projectRoot;
@@ -221,7 +222,15 @@ bool CLFConfigLoader::loadFromFileWithEnv(const std::string& configPath, CLFAgen
         outConfig.m_modelName = envModel;
     }
 
+    // 2.2b：缓存 allow_absolute_read（宿主级配置键的取值通道——CLFHostApiImpl::
+    // config 经此供插件读取；getWorkingDir 同款"静态缓存"先例）
+    s_allowAbsoluteRead = outConfig.m_allowAbsoluteRead;
+
     return fileOk;
+}
+
+bool CLFConfigLoader::allowAbsoluteRead() {
+    return s_allowAbsoluteRead;
 }
 
 } // namespace CLF::CLFCore

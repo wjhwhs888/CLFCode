@@ -57,6 +57,9 @@ public:
     // 注册工具
     void registerTool(const CLFTool& tool);
 
+    // 已注册工具集（2.2b 装配查重用——registerPluginTools 防御工具名冲突）
+    const std::vector<CLFTool>& getTools() const { return m_tools; }
+
     // 清空对话上下文
     void clearContext();
 

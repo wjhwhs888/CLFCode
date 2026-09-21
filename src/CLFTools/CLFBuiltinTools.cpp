@@ -288,73 +288,8 @@ std::string todoWriteHandlerImpl(const std::string& args,
 void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
     using CLF::CLFCore::CLFTool;
 
-    // —— 文件操作 ——
-    CLFTool readFileTool;
-    readFileTool.m_name        = "read_file";
-    readFileTool.m_description = "读取文件内容（限工作区内，单文件上限 50MB，支持按行范围读取）";
-    readFileTool.m_isRead      = true;  // B1：统计 read 桶
-    readFileTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "文件路径，相对工作区或绝对路径（须位于工作区内）"},
-            "offset": {"type": "integer", "description": "起始行号（0 基），省略则从头读"},
-            "limit": {"type": "integer", "description": "最多读取行数，省略或 <=0 表示读到末尾"}
-        },
-        "required": ["path"]
-    })";
-    // 按值捕获（非引用）：注册后该配置不再变化，无生命周期约束
-    const bool allowAbsoluteRead = agent.getConfig().m_allowAbsoluteRead;
-    readFileTool.m_handler = [allowAbsoluteRead](const std::string& args) {
-        // 2.2a：handler 迁共享实现；workspaceRoot 传 ConfigLoader 值（行为零变化）
-        return CLF::CLFCapabilities::readFileToolHandler(
-            args, allowAbsoluteRead, CLF::CLFCore::CLFConfigLoader::getWorkingDir());
-    };
-    agent.registerTool(readFileTool);
-
-    CLFTool writeFileTool;
-    writeFileTool.m_name        = "write_file";
-    writeFileTool.m_description = "将内容写入指定路径的文件（覆盖模式，原子写入）";
-    writeFileTool.m_risk        = CLF::CLFCore::CLFToolRisk::Write;
-    writeFileTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "文件路径"},
-            "content": {"type": "string", "description": "要写入的内容"}
-        },
-        "required": ["path", "content"]
-    })";
-    writeFileTool.m_handler = CLF::CLFCapabilities::writeFileToolHandler;
-    agent.registerTool(writeFileTool);
-
-    CLFTool editFileTool;
-    editFileTool.m_name        = "edit_file";
-    editFileTool.m_description = "精确替换文件中的字符串（old_string 必须唯一匹配）";
-    editFileTool.m_risk        = CLF::CLFCore::CLFToolRisk::Write;
-    editFileTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "文件路径"},
-            "old_string": {"type": "string", "description": "要替换的原字符串（必须唯一匹配）"},
-            "new_string": {"type": "string", "description": "替换后的新字符串"}
-        },
-        "required": ["path", "old_string", "new_string"]
-    })";
-    editFileTool.m_handler = CLF::CLFCapabilities::editFileToolHandler;
-    agent.registerTool(editFileTool);
-
-    CLFTool listDirTool;
-    listDirTool.m_name        = "list_directory";
-    listDirTool.m_description = "列出指定目录下的文件和子目录";
-    listDirTool.m_isRead      = true;  // B1：统计 read 桶（B1-4 口径定案：readCount 与 progressReads 统一含 list）
-    listDirTool.m_parametersSchema = R"({
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "目录路径，默认当前目录"}
-        },
-        "required": []
-    })";
-    listDirTool.m_handler = CLF::CLFCapabilities::listDirectoryToolHandler;
-    agent.registerTool(listDirTool);
+    // —— 文件操作（2.2b：read/write/edit/list 4 工具已随 FileOps 域迁插件——
+    // 经 registerPluginTools 装配注册；共享 handler 保留为插件消费者）——
 
     // —— 系统操作 ——
     CLFTool execCmdTool;

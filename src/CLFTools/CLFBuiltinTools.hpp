@@ -13,12 +13,23 @@ namespace CLF::CLFCore {
 class CLFAgentLoop;
 }
 
+namespace CLF::CLFCore {
+class CLFPluginManager;   // 2.2b：registerPluginTools 参数（前向声明）
+} // namespace CLF::CLFCore
+
 namespace CLF::CLFTools {
 
-// 向 Agent 注册全部内置工具
-// 包括：read_file, write_file, edit_file, list_directory, search_content,
-//       execute_command, get_current_time, echo
+// 向 Agent 注册 core 内建工具（2.2b：fileops 4 工具已随域迁插件——
+// read/write/edit/list 经 registerPluginTools 装配；其余 5 个迁 2.3）
+// 包括：search_content, execute_command, get_current_time, echo,
+//       todo_write, compress_context
 void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent);
+
+// 2.2b：从插件管理器收集 tool.provider 元数据装配注册。
+// handler 捕获 manager 引用、调用时经 getService 查询（不缓存服务指针——
+// 卸载后调用走兜底错误文本，分册验证点 4）
+void registerPluginTools(CLF::CLFCore::CLFAgentLoop& agent,
+                         CLF::CLFCore::CLFPluginManager& manager);
 
 // todo_write handler——暴露仅为单测可达（qa_CLFBuiltinTools B4），
 // 正常使用经 registerBuiltinTools 注册的工具

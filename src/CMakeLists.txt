@@ -92,6 +92,7 @@ add_library(clf_core STATIC
     CLFCore/CLFArgParser.cpp
     CLFCore/CLFConfigLoader.cpp
     CLFCore/CLFContext.cpp
+    CLFCore/CLFFileServiceProxy.cpp
     CLFCore/CLFContextWindow.cpp
     CLFCore/CLFDangerousCommandDetector.cpp
     CLFCore/CLFLogger.cpp
@@ -146,6 +147,7 @@ target_include_directories(clf_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(clf_tools STATIC
     CLFTools/CLFBuiltinTools.cpp
     CLFTools/CLFCommandExec.cpp
+    CLFTools/CLFPluginTools.cpp
     CLFTools/CLFSearchContent.cpp
     CLFTools/CLFWebFetch.cpp
 )

@@ -2,6 +2,15 @@
 
 ## 进行中
 
+### 【2.2b 注册表装配与主程序切换 ✅ 落码完成（2026-09-21，用户拍板裁决①-⑤全采纳，未提交）】
+- **设计**：`设计/设计-阶段2-2.2b-注册表装配与主程序切换.md`（§八 步骤 1-8 + 裁决 5 项 + §十 实施记录）
+- **产出**：主程序已切换插件路径——① registerPluginTools（元数据装配 + handler 捕获 manager 调用时查询——不缓存服务指针 §1.2 落地，卸载后调用走兜底错误文本 = 验证点 4 自然实现）② CLFFileServiceProxy（§1.6 转发代理落地，CLFCore——proxy 依赖 manager 分层定案）③ main 装配链（manager 先行 → loadAll → proxy 注入 → 双注册）④ CLFBuiltinTools 删 4 注册段（缩为 5 工具 + 2 core）
+- **read_file 校验归属定案（2.2a 硬约束兑现）**：保持 handler 层校验（S2-1）——CLFConfigLoader 加 s_allowAbsoluteRead 静态缓存 + CLFHostApiImpl::config 真实现（宿主级键 workspace_root/allow_absolute_read + 插件配置文件 config/plugins/<pluginId>.json 复合键缓存）；插件 init 经 config 取根，校验语义与静态路径一致（qa F8 补"工作区外路径拒绝"断言实证）
+- **降级语义**：插件不可用 → fileops 4 工具不注册（模型不可见，无静态 fallback 双注册）；卸载后调用 → 兜底错误 → 模型自兜底
+- **编译实抓修正 5 处**：ICLFFileService 非 const / hpp 前向声明命名空间 / CLFLogger using / AgentLoop 构造第 4 参 / qa OpenSSL 传递依赖
+- **测试**：qa_CLFPluginFileOps 17 用例（F1-F12 + G1 装配注册/G2 装配 handler 往返/G3 卸载兜底/G4 proxy 转发/G5 proxy 停用兜底）；**ctest 34/34** + 冒烟 exit=0
+- **待办**：提交推送 → **用户实机验收**（文件操作全族 + diff 预览 + TOCTOU + 确认流 + 卸载兜底）→ 2.2c /plugin 命令
+
 ### 【2.2a FileOps 迁 DLL 试点 ✅ 落码完成（2026-09-21，用户拍板裁决①-⑤全采纳，未提交）】
 - **设计**：`设计/设计-阶段2-2.2a-FileOps迁DLL试点.md`（§七 步骤 1-6 + 裁决 5 项 + §九 实施记录）
 - **产出**：tools.fileops.dll（`bin/Debug/plugins/`）——FileOps/Diff 能力 + file 服务（ICLFFileService 回调推送）+ tool.provider（4 工具元数据与 handler 随域打包）；插件壳 `src/CLFPlugins/FileOps/CLFFileOpsPlugin.cpp`（CLFPlugin + CLFFileServiceImpl + ICLFToolProvider 多继承三合一，CLFFileServiceImpl 零重写直接复用——C1 铺路兑现）

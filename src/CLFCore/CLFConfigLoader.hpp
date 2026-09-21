@@ -53,8 +53,13 @@ public:
     // 获取当前工作目录（用户启动 CLFCode 的目录，即 user's project root）
     static std::string getWorkingDir();
 
+    // 上次 loadFromFileWithEnv 解析的 agent.allow_absolute_read（2.2b 静态缓存——
+    // CLFHostApiImpl 宿主级键取值通道；loadFromFileWithEnv 末尾赋值，默认 false）
+    static bool allowAbsoluteRead();
+
 private:
     static std::string s_projectRoot;
+    static bool        s_allowAbsoluteRead;
 };
 
 } // namespace CLF::CLFCore

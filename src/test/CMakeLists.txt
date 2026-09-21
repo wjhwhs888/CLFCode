@@ -117,7 +117,7 @@ add_dependencies(qa_CLFPluginManager
 )
 
 # —— FileOps 域插件全链路（2.2a）——
-clf_add_test(qa_CLFPluginFileOps clf_core)
+clf_add_test(qa_CLFPluginFileOps clf_core clf_tools ${CLF_OPENSSL_LIBS})
 target_compile_definitions(qa_CLFPluginFileOps PRIVATE
     CLF_TEST_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
 add_dependencies(qa_CLFPluginFileOps clf_plugin_fileops)

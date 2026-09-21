@@ -40,7 +40,16 @@ public:
     uint32_t hostApiVersion() const override { return CLF_PLUGIN_API_VERSION; }
     const char* const* requiresServices() const override { return kNoRequires; }
     const CLFServiceEntry* services() const override { return m_services; }
-    bool init() override { return true; }
+    bool init() override {
+        // 2.2b：经 host 取宿主级配置——read_file 校验归属定案（§二）：保持 handler
+        // 层校验语义（S2-1），工作区根/逃生口经 config 通道（零 ABI 变更）。
+        // 缺失 → 空串/false 兜底（空根 = 跳过校验）
+        const char* root = m_host ? m_host->config(name(), "workspace_root") : nullptr;
+        m_workspaceRoot  = root ? root : "";
+        const char* allowAbs = m_host ? m_host->config(name(), "allow_absolute_read") : nullptr;
+        m_allowAbsolute = allowAbs && std::string(allowAbs) == "true";
+        return true;
+    }
     void shutdown() override {
         if (m_host) {
             (void)m_host->apiVersion();
@@ -81,7 +90,10 @@ private:
     std::string dispatch(const char* name, const char* argsJson) {
         const std::string args(argsJson);
         if (std::strcmp(name, "read_file") == 0) {
-            return CLF::CLFCapabilities::readFileToolHandler(args, true, "");
+            // 2.2b：校验语义与静态路径一致（init 时经 host->config 取的根与逃生口；
+            // 空根 = 跳过校验——宿主级键不可用时的兜底形态）
+            return CLF::CLFCapabilities::readFileToolHandler(
+                args, m_allowAbsolute, m_workspaceRoot);
         }
         if (std::strcmp(name, "write_file") == 0) {
             return CLF::CLFCapabilities::writeFileToolHandler(args);
@@ -97,6 +109,9 @@ private:
 
     const CLFHostApi* m_host;   // 非拥有；宿主生命周期 > 插件（管理器保证）
     CLFServiceEntry m_services[3];   // 必须为成员（含 this 指针，不能是 static 局部）
+    // 2.2b：init 时经 host->config 取的宿主级配置（read_file 校验用）
+    std::string m_workspaceRoot;      // 空 = 跳过边界校验
+    bool m_allowAbsolute = false;
 
     static constexpr const char* const kNoRequires[] = {nullptr};
     // 元数据与 CLFBuiltinTools 注册同文案同值（2.2b 切换后模型看到的工具定义零变化）

@@ -5,6 +5,7 @@
 
 #include <boost/ut.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -12,7 +13,10 @@
 #include <string>
 #include <vector>
 
+#include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFFileServiceProxy.hpp"
 #include "CLFCore/CLFPluginManager.hpp"
+#include "CLFTools/CLFBuiltinTools.hpp"   // 2.2b：registerPluginTools
 #include "CLFPluginApi/CLFFileService.hpp"
 #include "CLFPluginApi/CLFToolApi.hpp"
 #include <nlohmann/json.hpp>
@@ -258,8 +262,14 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
 
     "F8 read_file callTool 往返"_test = [] {
         std::string dir = makePluginDir();
-        fs::path tmp = makeTempFile("plugin read ok\n");
+        // 2.2b：插件 init 经 host->config 取 workspace_root = 运行时 cwd——
+        // 文件须建在 cwd 内（临时目录会被边界校验拒绝，qa cwd = 构建目录/src）
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        fs::path tmp = fs::current_path() / ("clf_plugin_read_" + std::to_string(stamp) + ".txt");
         {
+            std::ofstream f(tmp, std::ios::trunc);
+            f << "plugin read ok\n";
+            f.close();
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
             auto* provider = static_cast<ICLFToolProvider*>(mgr.getService("tool.provider"));
@@ -273,6 +283,12 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             // 不存在文件 → 失败文本
             const auto bad = callToolText(provider, "read_file", R"({"path":"no_such_file_xyz"})");
             expect(!nlohmann::json::parse(bad).value("success", true));
+            // 工作区外路径 → 边界校验拒绝（handler 层校验语义经 config 通道保持）
+            const auto outside = callToolText(provider, "read_file",
+                                              R"({"path":"C:/Windows/win.ini"})");
+            const auto parsedOutside = nlohmann::json::parse(outside);
+            expect(!parsedOutside.value("success", true));
+            expect(parsedOutside.value("error", "").find("工作区") != std::string::npos);
         }
         cleanupDir(dir);
         std::error_code ec; fs::remove(tmp, ec);
@@ -354,6 +370,138 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(mgr.unload("tools.fileops"));
             expect(mgr.getService("file") == nullptr);
             expect(mgr.getService("tool.provider") == nullptr);
+        }
+        cleanupDir(dir);
+    };
+
+    // ========== G 系列（2.2b 装配与转发代理） ==========
+
+    "G1 装配注册"_test = [] {
+        std::string dir = makePluginDir();
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 1_i);
+
+            CLF::CLFCore::CLFAgentConfig config;
+            config.m_apiKey = "test-key";
+            CLF::CLFCore::CLFAgentLoop agent(config);
+            CLF::CLFTools::registerPluginTools(agent, mgr);
+
+            const auto& tools = agent.getTools();
+            expect(tools.size() == 4_u);   // read/write/edit/list 装配
+            const char* expectNames[] = {"read_file", "write_file", "edit_file", "list_directory"};
+            for (int i = 0; i < 4; ++i) {
+                bool found = false;
+                for (const auto& t : tools) {
+                    if (t.m_name == expectNames[i]) {
+                        found = true;
+                        break;
+                    }
+                }
+                expect(found) << expectNames[i];
+            }
+            // 标签映射（B1 跨边界：ToolFlagRead → m_isRead）
+            for (const auto& t : tools) {
+                if (t.m_name == "read_file" || t.m_name == "list_directory") {
+                    expect(t.m_isRead);
+                } else {
+                    expect(!t.m_isRead);
+                }
+            }
+        }
+        cleanupDir(dir);
+    };
+
+    "G2 装配 handler 往返"_test = [] {
+        std::string dir = makePluginDir();
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        fs::path tmp = fs::current_path() / ("clf_plugin_asm_" + std::to_string(stamp) + ".txt");
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 1_i);
+
+            CLF::CLFCore::CLFAgentConfig config;
+            config.m_apiKey = "test-key";
+            CLF::CLFCore::CLFAgentLoop agent(config);
+            CLF::CLFTools::registerPluginTools(agent, mgr);
+
+            // 经装配的 handler 全链路：装配 → callTool → 插件 → 能力
+            const auto& tools = agent.getTools();
+            auto it = std::find_if(tools.begin(), tools.end(),
+                                   [](const auto& t) { return t.m_name == "write_file"; });
+            expect(it != tools.end());
+            if (it == tools.end()) return;
+            nlohmann::json args{{"path", pathToUtf8(tmp)}, {"content", "assembled write"}};
+            const auto out = it->m_handler(args.dump());
+            expect(nlohmann::json::parse(out).value("success", false));
+            expect(readFileText(tmp) == "assembled write");
+        }
+        cleanupDir(dir);
+        std::error_code ec; fs::remove(tmp, ec);
+    };
+
+    "G3 卸载后兜底"_test = [] {
+        std::string dir = makePluginDir();
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 1_i);
+
+            CLF::CLFCore::CLFAgentConfig config;
+            config.m_apiKey = "test-key";
+            CLF::CLFCore::CLFAgentLoop agent(config);
+            CLF::CLFTools::registerPluginTools(agent, mgr);
+
+            expect(mgr.unload("tools.fileops"));   // 热卸载（验证点 4）
+            const auto& tools = agent.getTools();
+            auto it = std::find_if(tools.begin(), tools.end(),
+                                   [](const auto& t) { return t.m_name == "read_file"; });
+            expect(it != tools.end());
+            if (it == tools.end()) return;
+            // 调用时 getService nullptr → 兜底错误文本（不崩，模型自兜底）
+            const auto out = it->m_handler(R"({"path":"x"})");
+            const auto parsed = nlohmann::json::parse(out);
+            expect(!parsed.value("success", true));
+            expect(parsed.value("error", "").find("插件已停用") != std::string::npos);
+        }
+        cleanupDir(dir);
+    };
+
+    "G4 proxy 转发"_test = [] {
+        std::string dir = makePluginDir();
+        fs::path tmp = makeTempFile("proxy forward ok\n");
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 1_i);
+            CLF::CLFCore::CLFFileServiceProxy proxy(&mgr);
+
+            CLFFileInfo info;
+            ContentCollector col;
+            CLFFileCallbacks cb{};
+            cb.onContent = onContent;
+            cb.onError   = onError;
+            expect(proxy.readFile(pathToUtf8(tmp).c_str(), &info, &col, &cb));
+            expect(col.content == "proxy forward ok\n");
+            expect(info.size == col.content.size());
+        }
+        cleanupDir(dir);
+        std::error_code ec; fs::remove(tmp, ec);
+    };
+
+    "G5 proxy 停用兜底"_test = [] {
+        std::string dir = makePluginDir();
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 1_i);
+            CLF::CLFCore::CLFFileServiceProxy proxy(&mgr);
+            expect(mgr.unload("tools.fileops"));
+
+            CLFFileInfo info;
+            ErrorCollector err;
+            CLFFileCallbacks cb{};
+            cb.onError = onError;
+            expect(!proxy.readFile("x", &info, &err, &cb));   // 停用 → false
+            expect(err.error.find("插件已停用") != std::string::npos);
+            expect(proxy.getFileInfo("x").size == 0_ull);     // 元信息全 0
         }
         cleanupDir(dir);
     };

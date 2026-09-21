@@ -15,7 +15,9 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFArgParser.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFCore/CLFFileServiceProxy.hpp"   // 2.2b
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFCore/CLFPluginManager.hpp"      // 2.2b
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFUI/CLFRepl.hpp"
@@ -141,9 +143,14 @@ int main(int argc, char* argv[]) {
         config.m_stream = false;
     }
 
-    // 4. 创建 Agent
-    CLF::CLFCore::CLFAgentLoop agent(config);
-    CLF::CLFTools::registerBuiltinTools(agent);
+    // 4. 创建 Agent（2.2b：插件管理器先行——file 服务经转发代理注入，
+    //    工具经 registerPluginTools 装配；管理器生命周期 > agent（栈序））
+    CLF::CLFCore::CLFPluginManager pluginManager;      // 缺省 = exe 目录/plugins
+    pluginManager.loadAll();                           // 无插件 → 0，静默降级
+    CLF::CLFCore::CLFFileServiceProxy fileProxy(&pluginManager);
+    CLF::CLFCore::CLFAgentLoop agent(config, nullptr, {}, &fileProxy);   // fileService 第 4 参
+    CLF::CLFTools::registerBuiltinTools(agent);        // core 内建工具（5 工具 + 2 core）
+    CLF::CLFTools::registerPluginTools(agent, pluginManager);   // 插件工具装配
 
     if (nonInteractive) {
         agent.setSecurityMode(args.allowWrite
