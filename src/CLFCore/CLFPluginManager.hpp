@@ -57,6 +57,21 @@ public:
     // 已加载插件（名字, 版本）对——2.2c /plugin list 展示用
     std::vector<std::pair<std::string, std::string>> listPlugins() const;
 
+    // 插件状态（/plugin list 状态表展示用，2.2c UX 增强 2026-09-21）
+    enum class PluginState { Loaded, Unloaded, Disabled };
+    struct PluginListEntry {
+        std::string name;
+        std::string version;
+        PluginState state = PluginState::Unloaded;
+        std::string error;      // Disabled 时原因（其余空）
+    };
+    // 全记录列表（含已卸载/已禁用；顺序稳定——unload 保留记录不 erase，
+    // 序号索引依据）。Loaded 才有版本；Unloaded/Disabled 版本留空或保留
+    std::vector<PluginListEntry> listPluginEntries() const;
+
+    // 按名查状态（幂等提示用）；未找到返回 false、outState 不变
+    bool pluginState(const std::string& name, PluginState& outState) const;
+
     // 服务路由（插件与宿主共用；不存在 → nullptr）；按服务名（2026-09-11 修订）
     CLF::CLFPluginApi::CLFService* getService(const char* service) const;
 

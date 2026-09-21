@@ -14,6 +14,7 @@
 #include "CLFTypes/CLFTextUtil.hpp"   // B4：splitLines（回显行拆分）
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -403,7 +404,9 @@ bool cmdInit(const std::string&, const std::string&,
 // 插件管理（2.2c，2026-09-21）
 // ============================================================================
 
-// /plugin [list|load <name>|unload <name>|reload <name>]
+// /plugin [list|load <目标>|unload <目标>|reload <目标>]
+// 目标 = 插件名 或 list 中的序号（1 基）——2.2c UX 增强 2026-09-21：
+// 状态表三态（已加载/已卸载/已禁用）+ 幂等操作精确提示。
 // quiesce 语义（2.1 §3.3 定案）：load/unload/reload 在对话进行中拒绝——
 // 管理器不自行判断在途调用（它没有这个信息），busy 判定由 Repl 注入（AsyncSubmit）
 bool cmdPlugin(const std::string&, const std::string& args,
@@ -417,37 +420,94 @@ bool cmdPlugin(const std::string&, const std::string& args,
     }
     // 子命令解析：无参 = list
     std::string sub;
-    std::string name;
+    std::string target;
     {
         std::istringstream iss(args);
-        iss >> sub >> name;
+        iss >> sub >> target;
     }
-    if (sub.empty() || sub == "list") {
-        const auto plugins = manager->listPlugins();
-        if (plugins.empty()) {
-            emit("● 已加载插件：无（全静态构建，插件目录无 DLL）\n");
-        } else {
-            emit("● 已加载插件 " + std::to_string(plugins.size()) + " 个:\n");
-            for (const auto& [pName, version] : plugins) {
-                emit("  ⎿ " + pName + " v" + version + "\n");
+
+    // 目标解析：纯数字 → 序号（1 基，状态表索引）；否则按插件名。
+    // 返回是否解析成功；outName 为对应插件名
+    auto resolveTarget = [&](const std::string& t, std::string& outName) -> bool {
+        const auto entries = manager->listPluginEntries();
+        if (t.empty()) {
+            return false;
+        }
+        bool allDigits = std::all_of(t.begin(), t.end(),
+                                     [](unsigned char c) { return std::isdigit(c); });
+        if (allDigits) {
+            const int idx = std::stoi(t);
+            if (idx < 1 || static_cast<size_t>(idx) > entries.size()) {
+                return false;
             }
+            outName = entries[static_cast<size_t>(idx - 1)].name;
+            return true;
+        }
+        outName = t;
+        return true;
+    };
+
+    if (sub.empty() || sub == "list") {
+        const auto entries = manager->listPluginEntries();
+        if (entries.empty()) {
+            emit("● 插件：无（全静态构建，插件目录无 DLL）\n");
+        } else {
+            emit("● 插件 " + std::to_string(entries.size()) + " 个:\n");
+            for (size_t i = 0; i < entries.size(); ++i) {
+                const auto& e = entries[i];
+                std::string stateText;
+                switch (e.state) {
+                case CLF::CLFCore::CLFPluginManager::PluginState::Loaded:
+                    stateText = "已加载"; break;
+                case CLF::CLFCore::CLFPluginManager::PluginState::Unloaded:
+                    stateText = "已卸载"; break;
+                case CLF::CLFCore::CLFPluginManager::PluginState::Disabled:
+                    stateText = "已禁用" + (e.error.empty() ? "" : ": " + e.error);
+                    break;
+                }
+                std::string versionText =
+                    e.state == CLF::CLFCore::CLFPluginManager::PluginState::Loaded
+                        ? " v" + e.version : "";
+                emit("  ⎿ " + std::to_string(i + 1) + " [" + stateText + "] "
+                     + e.name + versionText + "\n");
+            }
+            emit("  ⎿ 操作: /plugin <load|unload|reload> <序号|插件名>\n");
         }
         return true;
     }
 
     // 变更类子命令：quiesce——对话进行中拒绝（§3.3 定案：调用方责任）
     if (sub == "load" || sub == "unload" || sub == "reload") {
-        if (name.empty()) {
-            emit("用法: /plugin " + sub + " <插件名>\n");
+        std::string name;
+        if (!resolveTarget(target, name)) {
+            emit("✗ 目标无效（序号越界或未指定）: " + target +
+                 "——先 /plugin list 查看序号\n");
             return true;
         }
         if (isBusy && isBusy()) {
-            // 取证日志（2026-09-21 用户实抓"空闲被拒"——busy 链路定位）
             CLFLogger::instance().info(
                 "[Plugin] /plugin " + sub + " rejected: busy (AsyncSubmit submitting)");
             emit("✗ 对话进行中——回合结束后再执行 /plugin " + sub + "\n");
             return true;
         }
+
+        // 幂等提示（2.2c UX 增强）：操作前查状态，重复操作给精确文案
+        CLF::CLFCore::CLFPluginManager::PluginState state;
+        if (manager->pluginState(name, state)) {
+            if (sub == "load" && state == CLF::CLFCore::CLFPluginManager::PluginState::Loaded) {
+                emit("✗ 已加载，无需重复加载: " + name + "\n");
+                return true;
+            }
+            if (sub == "unload" && state == CLF::CLFCore::CLFPluginManager::PluginState::Unloaded) {
+                emit("✗ 已卸载，无需重复卸载: " + name + "\n");
+                return true;
+            }
+            if (sub == "unload" && state == CLF::CLFCore::CLFPluginManager::PluginState::Disabled) {
+                emit("✗ 该插件处于禁用状态（未加载）: " + name + "\n");
+                return true;
+            }
+        }
+
         bool ok = false;
         if (sub == "load")   ok = manager->load(name);
         if (sub == "unload") ok = manager->unload(name);

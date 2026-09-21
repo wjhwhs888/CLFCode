@@ -472,6 +472,43 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
         }
         cleanupDir(dir);
     };
+
+    "P20 状态表语义"_test = [] {
+        std::string dir = makePluginDir({"clf.teststub.dll"});
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 1_i);
+
+            // 加载态：Loaded + 版本
+            auto entries = mgr.listPluginEntries();
+            expect(entries.size() == 1_u);
+            expect(entries[0].state == CLFPluginManager::PluginState::Loaded);
+            expect(entries[0].version == "1.0.0");
+            CLFPluginManager::PluginState st{};
+            expect(mgr.pluginState("clf.teststub", st));
+            expect(st == CLFPluginManager::PluginState::Loaded);
+
+            // 卸载后：记录保留（序号稳定）+ 状态 Unloaded + 版本保留
+            expect(mgr.unload("clf.teststub"));
+            entries = mgr.listPluginEntries();
+            expect(entries.size() == 1_u);                       // 记录保留不 erase
+            expect(entries[0].state == CLFPluginManager::PluginState::Unloaded);
+            expect(entries[0].version == "1.0.0");               // 版本缓存保留
+            expect(mgr.listPluginNames().empty());               // 名字列表仍只列已加载
+            expect(mgr.pluginState("clf.teststub", st));
+            expect(st == CLFPluginManager::PluginState::Unloaded);
+
+            // 重载：恢复 Loaded
+            expect(mgr.load("clf.teststub"));
+            entries = mgr.listPluginEntries();
+            expect(entries.size() == 1_u);
+            expect(entries[0].state == CLFPluginManager::PluginState::Loaded);
+
+            // 未知名：pluginState false
+            expect(!mgr.pluginState("nonexistent", st));
+        }
+        cleanupDir(dir);
+    };
 };
 
 int main() {}

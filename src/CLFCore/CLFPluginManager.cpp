@@ -62,12 +62,16 @@ constexpr const char* kLogPrefix = "[Plugin] ";
 
 struct CLFPluginManager::PluginRecord {
     std::string name;                                   // 插件 ID（自述；约定与 DLL 文件名一致）
+    std::string version;                                // 插件自述版本（unload 后保留——状态表展示）
     std::string dllPathUtf8;
     DllHandle   handle    = nullptr;
     CLF::CLFPluginApi::CLFPlugin*        plugin    = nullptr;
     CLF::CLFPluginApi::CLFPluginDestroyFn destroyFn = nullptr;
     bool enabled = false;    // init() 已通过（unload/析构时决定是否 shutdown）
-    std::string error;       // 禁用原因（enabled=false 时有效）
+    std::string error;       // 禁用原因（Disabled 时有效）
+    // 状态表语义（2.2c UX 增强 2026-09-21）：unload 保留记录标记 Unloaded
+    // （listPluginNames/toolProviders 只列 enabled 不受影响）
+    PluginState state = PluginState::Unloaded;
 };
 
 struct CLFPluginManager::ServiceBinding {
@@ -371,6 +375,7 @@ int CLFPluginManager::loadAll() {
         pending.erase(it);           // 从 pending 移除（防后续遍历踩空）
         if (!rec->plugin->init()) {
             rec->enabled = false;
+            rec->state   = PluginState::Disabled;
             rec->error   = "init() returned false";
             CLFLogger::instance().warn(std::string(kLogPrefix) + "'" + rec->name +
                                        "' disabled: " + rec->error);
@@ -378,6 +383,8 @@ int CLFPluginManager::loadAll() {
             continue;
         }
         rec->enabled = true;
+        rec->state   = PluginState::Loaded;
+        rec->version = rec->plugin->version();
         ++loaded;
         CLFLogger::instance().info(std::string(kLogPrefix) + "'" + rec->name +
                                    "' loaded (v" + rec->plugin->version() + ")");
@@ -456,6 +463,7 @@ bool CLFPluginManager::load(const std::string& pluginName) {
     }
     if (!rec->plugin->init()) {
         rec->enabled = false;
+        rec->state   = PluginState::Disabled;
         rec->error   = "init() returned false";
         CLFLogger::instance().warn(std::string(kLogPrefix) + "'" + rec->name +
                                    "' disabled: " + rec->error);
@@ -463,6 +471,8 @@ bool CLFPluginManager::load(const std::string& pluginName) {
         return false;
     }
     rec->enabled = true;
+    rec->state   = PluginState::Loaded;
+    rec->version = rec->plugin->version();
     insertServices(*rec);
     CLFLogger::instance().info(std::string(kLogPrefix) + "'" + rec->name +
                                "' loaded (v" + rec->plugin->version() + ")");
@@ -478,10 +488,10 @@ bool CLFPluginManager::unload(const std::string& pluginName) {
                                    "' ignored: not loaded");
         return false;   // 未加载 → 无操作
     }
-    auto rec = std::move(*it);
-    m_plugins.erase(it);
     removePluginServices(pluginName);
-    destroyRecord(*rec);   // shutdown → Destroy → FreeLibrary
+    destroyRecord(**it);   // shutdown → Destroy → FreeLibrary
+    (*it)->enabled = false;
+    (*it)->state   = PluginState::Unloaded;   // 保留记录（状态表语义——序号索引稳定）
     CLFLogger::instance().info(std::string(kLogPrefix) + "'" + pluginName + "' unloaded");
     return true;
 }
@@ -511,6 +521,30 @@ std::vector<std::pair<std::string, std::string>> CLFPluginManager::listPlugins()
         }
     }
     return result;
+}
+
+std::vector<CLFPluginManager::PluginListEntry> CLFPluginManager::listPluginEntries() const {
+    std::vector<PluginListEntry> result;
+    result.reserve(m_plugins.size());
+    for (const auto& rec : m_plugins) {
+        PluginListEntry e;
+        e.name    = rec->name;
+        e.version = rec->version;
+        e.state   = rec->state;
+        e.error   = rec->error;
+        result.push_back(std::move(e));
+    }
+    return result;
+}
+
+bool CLFPluginManager::pluginState(const std::string& name, PluginState& outState) const {
+    auto it = std::find_if(m_plugins.begin(), m_plugins.end(),
+                           [&](const auto& r) { return r->name == name; });
+    if (it == m_plugins.end()) {
+        return false;
+    }
+    outState = (*it)->state;
+    return true;
 }
 
 CLF::CLFPluginApi::CLFService* CLFPluginManager::getService(const char* service) const {
