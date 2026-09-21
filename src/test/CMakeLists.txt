@@ -76,24 +76,10 @@ else()
 endif()
 
 # ============================================================================
-# 插件管理器测试（2.1 §4.2：测试插件 = 插件开发样板，2.2a 照此抄骨架）
-# 测试插件 DLL 输出 bin/$<CONFIG>/plugins/（clf_add_plugin 模板）；qa 经
-# CLF_TEST_PLUGIN_DIR 编译定义注入绝对路径（ctest cwd 是构建目录，相对路径不可靠）
+# 测试插件（2.1 §4.2：测试插件 = 插件开发样板，2.2a 照此抄骨架；
+# 注册内聚于 plugins/CMakeLists.txt——2.3 收尾重构同生产插件模式）
 # ============================================================================
-set(PLUGIN_TEST_SRC ${CMAKE_CURRENT_SOURCE_DIR}/plugins)
-
-# 主 stub（P2-P7/P12/P17/P19 等）+ 10 变体（P8-P11/P13-P16/P18）
-clf_add_plugin(clf_plugin_teststub         clf.teststub         PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPlugin.cpp)
-clf_add_plugin(clf_plugin_teststub_badinit clf.teststub.badinit PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginBadInit.cpp)
-clf_add_plugin(clf_plugin_teststub_badabi  clf.teststub.badabi  PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginBadAbi.cpp)
-clf_add_plugin(clf_plugin_teststub_multisvc clf.teststub.multisvc PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginMultiSvc.cpp)
-clf_add_plugin(clf_plugin_teststub_loopA   clf.teststub.loopA   PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginLoopA.cpp)
-clf_add_plugin(clf_plugin_teststub_loopB   clf.teststub.loopB   PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginLoopB.cpp)
-clf_add_plugin(clf_plugin_teststub_svc1    clf.teststub.svc1    PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginSvc1.cpp)
-clf_add_plugin(clf_plugin_teststub_svc2    clf.teststub.svc2    PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginSvc2.cpp)
-clf_add_plugin(clf_plugin_teststub_depA    clf.teststub.depA    PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginDepA.cpp)
-clf_add_plugin(clf_plugin_teststub_depB    clf.teststub.depB    PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginDepB.cpp)
-clf_add_plugin(clf_plugin_teststub_nosym   clf.teststub.nosym   PLUGIN_DIR plugins_test SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginNoSym.cpp)
+add_subdirectory(plugins)
 
 clf_add_test(qa_CLFPluginManager clf_core)
 # 插件目录绝对路径注入（多配置生成器下 $<CONFIG> 展开为实际配置）

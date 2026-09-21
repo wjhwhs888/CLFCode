@@ -63,45 +63,12 @@ target_link_libraries(clf_capabilities PUBLIC clf_types)
 target_include_directories(clf_capabilities PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
-# 插件 DLL（阶段 2 §3.5；clf_add_plugin 模板见文件末尾）
-# tools.fileops（2.2a 试点）：FileOps/Diff 能力 + file 服务 + 4 工具随域打包。
-# 插件不链 clf_core（避免把宿主实现拖进 DLL）——只链 clf_types。
-# 同一源文件双编（clf_capabilities 静态 + 本 DLL）合法且是试点最小路径；
-# 2.2b 宿主装配切换后静态副本随注册删除而退化。
+# 生产插件（阶段 2；各插件经自己的 CMakeLists 管理——2.3 收尾重构 2026-09-21：
+# 新增插件 = 新目录 + 自己的 CMake + CLFPlugins/CMakeLists.txt 加一行，
+# 主 CMake 不再随插件增删而改动；clf_add_plugin 模板在本文件前部，
+# 子目录作用域继承父作用域函数）
 # ============================================================================
-clf_add_plugin(clf_plugin_fileops tools.fileops
-    SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFFileOps.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFDiff.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFFileServiceImpl.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/FileOps/CLFFileOpsHandlers.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/FileOps/CLFFileOpsPlugin.cpp
-    LIBS clf_types)
-
-# 2.3 铺开：command/search/web 三域（能力源文件原地双编——clf_tools 静态 +
-# 插件 DLL；handler 共享文件双消费）。web 域经 httplib 需 OpenSSL
-clf_add_plugin(clf_plugin_command tools.command
-    SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFCommandExec.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFCommandToolHandler.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/Command/CLFCommandPlugin.cpp
-    LIBS clf_types)
-clf_add_plugin(clf_plugin_search tools.search
-    SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFSearchContent.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFSearchToolHandler.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/Search/CLFSearchPlugin.cpp
-    LIBS clf_types)
-clf_add_plugin(clf_plugin_web tools.web
-    SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFWebFetch.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFTools/CLFWebToolHandler.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFCapabilities/CLFHandlerScaffold.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/CLFPlugins/Web/CLFWebPlugin.cpp
-    LIBS clf_types ${CLF_OPENSSL_LIBS})
+add_subdirectory(CLFPlugins)
 
 # ============================================================================
 # CLFNetwork — HTTP 传输 (依赖 CLFTypes)
