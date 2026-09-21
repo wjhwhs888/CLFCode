@@ -16,6 +16,7 @@
 - **本批清理**：listPlugins 死代码（2.2c UX 增强后零生产调用，语义并入 listPluginEntries）——hpp/cpp 删除 + qa P2 断言改 entries；ctest 35/35 全绿
 - **阶段 2 全步骤达成**（2.1 → 2.2a/b/c → 2.3 → 2.4 → 2.5）→ 分册 §4.2 全部完成态；出口标准 §六 逐项达成
 - **阶段 3 待激活**：第三方集成（dsh 用例）——决策门仍挂起，激活 = 用户排期；协议适配器多协议预留（§九）同期待排期
+- **两条线排期定调（2026-09-21 用户）**：① **thinking 治理批**（设计已定案）——等 v4.1 pro 出来再定（当前问题不大）② **阶段 3/dsh**——继续挂起：dsh 当天出问题靠 CLFCode 审查改源码才解决，成熟度不足（memory dsh-decision-lean 已更新实证）
 
 ### 【2.3 铺开三域 ✅ 已提交 f35039d（2026-09-21，随阶段 2 出口发布）】
 - **产出**：tools.command.dll（execute_command）/ tools.search.dll（search_content）/ tools.web.dll（web_fetch）三个生产插件；get_current_time/echo 并入 core 内建（分册允许选项——零依赖小工具迁 DLL 无收益）
