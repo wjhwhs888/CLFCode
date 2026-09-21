@@ -11,6 +11,12 @@
 - **新规则（memory tag-requires-user-authorization）**：打标签必须用户明确授权——用户不说打标签就只推送；补 tag 用进度文件标点微调触发新 commit（不重指已推送 tag）
 - **下一步**：2.4 core 收尾（C2 对象化消费/AgentLoop 纯编排）+ 2.5 main 极薄复核 → 阶段 3（第三方集成，dsh 用例——决策门仍挂起，激活 = 用户排期）
 
+### 【2.4/2.5 收尾 ✅ 已提交 b28b310（2026-09-21）】
+- **取证结论**：2.4/2.5 的实际剩余在 2.2b/2.3 实施中已被提前消化——AgentLoop/ToolExecutor 零 manager 直接依赖（工具经装配 handler 调用时查询 + file 服务经 proxy 注入 = 纯编排达成）；main 插件装配 5 行；C2 对象阶段 1 已完成
+- **本批清理**：listPlugins 死代码（2.2c UX 增强后零生产调用，语义并入 listPluginEntries）——hpp/cpp 删除 + qa P2 断言改 entries；ctest 35/35 全绿
+- **阶段 2 全步骤达成**（2.1 → 2.2a/b/c → 2.3 → 2.4 → 2.5）→ 分册 §4.2 全部完成态；出口标准 §六 逐项达成
+- **阶段 3 待激活**：第三方集成（dsh 用例）——决策门仍挂起，激活 = 用户排期；协议适配器多协议预留（§九）同期待排期
+
 ### 【2.3 铺开三域 ✅ 已提交 f35039d（2026-09-21，随阶段 2 出口发布）】
 - **产出**：tools.command.dll（execute_command）/ tools.search.dll（search_content）/ tools.web.dll（web_fetch）三个生产插件；get_current_time/echo 并入 core 内建（分册允许选项——零依赖小工具迁 DLL 无收益）
 - **共享化**：CLFHandlerScaffold 独立（withHandlerScaffold 单点——2.3 实抓：整文件编入插件致 FileOps 未解析符号 LNK2019）；3 个域 handler 共享文件；exitCodeMeansSuccess 迁共享（detail 转调钉子 qa 零破坏）；isWithinWorkspaceOf 归位 CLFTextUtil
