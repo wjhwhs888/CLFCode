@@ -442,6 +442,9 @@ bool cmdPlugin(const std::string&, const std::string& args,
             return true;
         }
         if (isBusy && isBusy()) {
+            // 取证日志（2026-09-21 用户实抓"空闲被拒"——busy 链路定位）
+            CLFLogger::instance().info(
+                "[Plugin] /plugin " + sub + " rejected: busy (AsyncSubmit submitting)");
             emit("✗ 对话进行中——回合结束后再执行 /plugin " + sub + "\n");
             return true;
         }
