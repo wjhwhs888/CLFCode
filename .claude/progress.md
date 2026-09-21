@@ -6,7 +6,9 @@
 - **阶段 2 全部完成**：2.1 管理器骨架（v0.7.6）→ 2.2a/b/c 试点全闭环 → 2.3 三域铺开 → /plugin 状态表 UX 增强（用户提议：序号索引/三态显示/幂等精确提示）→ 插件 CMake 自管理重构（用户定调）
 - **出口标准逐项达成**（分册 §六）：5 域插件全齐（fileops/command/search/web DLL + misc 并入 core）✅ / 原功能等价（ctest 35/35 + 多轮实机）✅ / 管理器验证（21 用例）✅ / main 极薄 ✅ / 阶段 3 挂载点就绪（服务表通用扩展）✅ / core/basic/UI 内建 ✅
 - **5 份设计文档全部归档**（2.1/2.2a/2.2b/2.2c + 分册——归档-阶段2-*）；架构文档/README/CHANGELOG v0.8.0 段同步
-- **待办**：提交 + tag v0.8.0 + 推送 → **用户打包发布**（Release 编译 + release.ps1 + Gitee 上传——阶段 2 期间暂停打包的策略已到期恢复）
+- **发布 ✅（2026-09-21 用户执行）**：tag v0.8.0 重指 36be959（release.ps1 插件打包修复，三步一致）→ release.ps1 全流程（构建含 4 插件 + 打包 + Gitee/GitHub 上传）→ zip 4MB 已上传；安装测试待用户抽查（zip 解压含 plugins/ 4 DLL + /plugin list 4 插件）
+- **脚本检查结论**：release.ps1 修 2 处（构建 target 加插件 + plugins 打包校验）；install/upgrade 整目录解压无需改；uninstall 整目录卸载无需改
+- **新规则（memory tag-requires-user-authorization）**：打标签必须用户明确授权——用户不说打标签就只推送；补 tag 用进度文件标点微调触发新 commit（不重指已推送 tag）
 - **下一步**：2.4 core 收尾（C2 对象化消费/AgentLoop 纯编排）+ 2.5 main 极薄复核 → 阶段 3（第三方集成，dsh 用例——决策门仍挂起，激活 = 用户排期）
 
 ### 【2.3 铺开三域 ✅ 已提交 f35039d（2026-09-21，随阶段 2 出口发布）】
