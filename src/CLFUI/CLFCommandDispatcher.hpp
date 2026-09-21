@@ -61,6 +61,13 @@ public:
     // 获取注册表（供 /help 等遍历）
     const std::vector<CLFCommand>& commands() const { return m_commands; }
 
+    // 前缀匹配查询（输入候选面板与 /help 展示用；注册表查询职责归 Dispatcher）
+    // 纯前缀语义：不含空格判定——空格收起属 UI 交互语义，在 ReplView 层判定。
+    // 注册表是命令清单唯一权威源：分发、/help、候选面板三处消费同一份数据。
+    // example:
+    //   auto m = dispatcher.matchingCommands("/c");  // → /clear, /config, /context
+    std::vector<const CLFCommand*> matchingCommands(const std::string& prefix) const;
+
     // 2.2c：插件管理器与忙碌判定（/plugin 命令 handler 经此访问）
     CLF::CLFCore::CLFPluginManager* pluginManager() const { return m_pluginManager; }
     bool busy() const { return m_isBusy ? m_isBusy() : false; }

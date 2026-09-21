@@ -65,6 +65,7 @@ clf_add_test(qa_CLFSearchContent    clf_tools)
 # —— clf_core + clf_network + clf_ui + OpenSSL ——
 clf_add_test(qa_CLFAgentLoop  clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
 clf_add_test(qa_CLFTodoPanel  clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
+clf_add_test(qa_CLFCommandDispatcher clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
 
 # —— clf_tools + OpenSSL（Windows 另需 ws2_32/crypt32）——
 if(WIN32)

@@ -16,10 +16,14 @@
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：utf8SafeHead
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 
 #ifdef _WIN32
+// NOMINMAX：禁 windows.h 的 min/max 宏（本文件使用 std::min——C2589 实抓，
+// 宏展开破坏 std::min 调用；全文件无裸 min/max 宏依赖，零影响）
+#define NOMINMAX
 // 拖选坐标自校准（GetConsoleScreenBufferInfo：CLion 的 ConPTY 不响应 CPR）
 #include <windows.h>
 #endif
@@ -423,6 +427,9 @@ ftxui::Element CLFReplView::render() {
         // 原子读 busy/ticker 状态，渲染线程安全（设计 §3.4）
         m_repl.m_tipsBar ? m_repl.m_tipsBar->render(m_asyncSubmit.busy())
                          : ftxui::emptyElement(),
+        // 命令候选面板（2026-09-21）：输入框上方、分隔线之上——命令模式
+        // 时列出注册表匹配命令，其余时刻空 Element 零占用
+        buildCommandHintPanel(inputText),
         thinSep(),
         m_input->Render(),
         thinSep(),
@@ -430,6 +437,35 @@ ftxui::Element CLFReplView::render() {
         // C4：确认栏渲染走快照（状态收 private 后不再直读 Terminal 成员）
         m_confirmBar.render(m_lastSnapshot),
     });
+}
+
+ftxui::Element CLFReplView::buildCommandHintPanel(const std::string& inputText) {
+    // 命令模式判定：非空 + 首字符 '/' + 不含空格（含空格 = 已进入参数
+    // 阶段，面板收起——用户定案 2026-09-21）
+    if (inputText.empty() || inputText[0] != '/' ||
+        inputText.find(' ') != std::string::npos) {
+        return ftxui::emptyElement();
+    }
+
+    const auto matches = m_repl.m_dispatcher->matchingCommands(inputText);
+    if (matches.empty()) return ftxui::emptyElement();  // 无匹配不显示面板
+
+    constexpr int kMaxHintRows = 6;  // 折叠上限（13 命令防顶飞内容区）
+    const size_t shown = std::min(matches.size(), static_cast<size_t>(kMaxHintRows));
+    ftxui::Elements lines;
+    for (size_t i = 0; i < shown; ++i) {
+        lines.push_back(
+            ftxui::hbox({
+                ftxui::text("  " + matches[i]->m_name) | ftxui::bold,
+                ftxui::text("  " + matches[i]->m_description) | ftxui::dim,
+            }));
+    }
+    if (matches.size() > shown) {
+        lines.push_back(
+            ftxui::text("  … 还有 " + std::to_string(matches.size() - shown)
+                        + " 个") | ftxui::dim);
+    }
+    return ftxui::vbox(std::move(lines)) | ftxui::dim;
 }
 
 std::optional<std::tuple<int, int, int>> CLFReplView::hitTest(int x, int y) {

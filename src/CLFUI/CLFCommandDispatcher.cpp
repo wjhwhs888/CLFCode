@@ -29,6 +29,20 @@ void CLFCommandDispatcher::registerCommand(CLFCommand cmd) {
     m_commands.push_back(std::move(cmd));
 }
 
+std::vector<const CLFCommand*> CLFCommandDispatcher::matchingCommands(
+    const std::string& prefix) const {
+    // 纯前缀匹配（空前缀匹配全部——语义与 handle 的"非命令不处理"无关，
+    // UI 层在调用前已判定空串不进入命令模式）
+    std::vector<const CLFCommand*> result;
+    for (const auto& cmd : m_commands) {
+        if (cmd.m_name.size() >= prefix.size() &&
+            cmd.m_name.compare(0, prefix.size(), prefix) == 0) {
+            result.push_back(&cmd);
+        }
+    }
+    return result;
+}
+
 bool CLFCommandDispatcher::handle(const std::string& input) {
     // 非命令 → 不处理
     if (input.empty() || input[0] != '/') return false;

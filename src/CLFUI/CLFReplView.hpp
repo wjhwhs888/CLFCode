@@ -63,6 +63,13 @@ public:
     void autoScrollStep(bool up) { m_scrollView.stepScroll(up); }
 
 private:
+    // 命令候选面板（唯一维护定案 2026-09-21）：输入框内容以 '/' 开头且不含
+    // 空格（纯命令前缀阶段）时，在输入框上方列出注册表前缀匹配的命令；
+    // 纯展示不劫持按键（用户定案）。数据源 = CLFCommandDispatcher 注册表
+    // 唯一权威源——新增命令只改 registerBuiltinCommands 一处。
+    // 条件不满足 / 无匹配 → 空 Element 零占用（Tips 行同款惯例）。
+    ftxui::Element buildCommandHintPanel(const std::string& inputText);
+
     // 拖选坐标校准（hitTest 与边缘判定共用）：Windows 自校准 + JediTerm
     // 行号偏移补偿——组件层坐标（已减 cursor 偏移）加回偏移再减 frame
     // 原点，输出 frame 内坐标（2026-09-09 引入，2026-09-20 抽出复用）

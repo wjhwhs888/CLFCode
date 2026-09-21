@@ -56,9 +56,18 @@ bool cmdClear(const std::string&, const std::string&,
 // 信息查询
 // ============================================================================
 
-bool cmdHelp(const std::string&, const std::string&,
-             CLFAgentLoop&, const std::string&,
-             ICLFOutput* output) {
+bool cmdHelp(ICLFOutput* output, const std::vector<CLFCommand>& commands) {
+    // ● 命令段遍历注册表动态生成（唯一维护定案 2026-09-21）：
+    // 注册表是命令清单唯一权威源——新增命令只改 registerBuiltinCommands，
+    // 分发、/help、输入候选面板三处自动同步（硬编码第二份清单已删除）
+    std::string cmdSection = "● 命令\n";
+    for (const auto& cmd : commands) {
+        cmdSection += "  ⎿ " + cmd.m_name;
+        if (cmd.m_name.size() < 12) {
+            cmdSection += std::string(12 - cmd.m_name.size(), ' ');
+        }
+        cmdSection += cmd.m_description + "\n";
+    }
     if (output) output->emitContent(
         "\n● 快捷键\n"
         "  ⎿ 提交        enter / ctrl+d\n"
@@ -77,21 +86,7 @@ bool cmdHelp(const std::string&, const std::string&,
         "  ⎿ ← →     切换选项\n"
         "  ⎿ enter    确认执行 / 返回中断\n"
         "  ⎿ esc      返回（中断 Agent）\n"
-        "\n"
-        "● 命令\n"
-        "  ⎿ /clear      保存并开始新会话\n"
-        "  ⎿ /config     显示配置信息\n"
-        "  ⎿ /context    显示上下文用量\n"
-        "  ⎿ /exit       退出并保存会话\n"
-        "  ⎿ /help       显示此帮助\n"
-        "  ⎿ /history    显示最近会话\n"
-        "  ⎿ /init       初始化项目规则 PROJECTRULES.md\n"
-        "  ⎿ /mode       切换安全模式\n"
-        "  ⎿ /model      显示当前模型\n"
-        "  ⎿ /plugin     插件管理（list/load/unload/reload）\n"
-        "  ⎿ /resume     恢复指定会话\n"
-        "  ⎿ /skill      知识库管理\n"
-        "  ⎿ /version    显示版本号\n");
+        "\n" + cmdSection);
     return true;
 }
 
@@ -535,7 +530,14 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
         dispatcher.registerCommand(std::move(cmd));
     };
     reg("/exit",    "退出并保存会话",                       cmdExit);
-    reg("/help",    "显示帮助信息",                         cmdHelp);
+    // 唯一维护（2026-09-21）：/help 经 lambda 捕获注册表——与 /plugin 同款
+    // 注入模式。命令清单只维护 registerBuiltinCommands 一处。
+    reg("/help",    "显示帮助信息",
+        [&dispatcher](const std::string&, const std::string&,
+                      CLFAgentLoop&, const std::string&,
+                      ICLFOutput* output) -> bool {
+            return cmdHelp(output, dispatcher.commands());
+        });
     reg("/clear",   "保存会话并开始新对话",                 cmdClear);
     // 2.2c：/plugin——handler 经 lambda 拿 dispatcher 注入的 manager/busy
     // （命令签名固定 5 参，注入通道见 CLFCommandDispatcher 构造）
