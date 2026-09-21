@@ -54,8 +54,17 @@ std::vector<CLFTodoPanelLine> buildTodoPanelLines(
     if (todos.empty() || panelDone) return lines;   // 入口检查（§4.2 第 1 条）
 
     size_t completed = 0;
-    for (const auto& t : todos)
-        if (t.m_status == "completed") ++completed;
+    bool hasInProgress = false;
+    size_t firstPending = todos.size();   // 第一个 pending 的索引（无则哨兵）
+    for (size_t i = 0; i < todos.size(); ++i) {
+        if (todos[i].m_status == "completed") {
+            ++completed;
+        } else if (todos[i].m_status == "in_progress") {
+            hasInProgress = true;
+        } else if (todos[i].m_status == "pending" && firstPending == todos.size()) {
+            firstPending = i;
+        }
+    }
 
     // 标题行：📋 任务清单 n/total（执行中形态；全完成收尾走 T6，面板随即清空）
     lines.push_back({
@@ -68,7 +77,12 @@ std::vector<CLFTodoPanelLine> buildTodoPanelLines(
         const auto& t = todos[i];
         std::string icon;
         ftxui::Color color;
-        if (t.m_status == "in_progress") {
+        // 进行中 = 模型报告的 in_progress 优先；模型未报告时 agent 层兜底推断：
+        // 第一个 pending 项以进行中样式显示（不教模型、不伪造数据——仅显示层推断，
+        // 2026-09-21 用户定调"agent 层面兜底，不干扰模型"；未知状态不被推断）
+        const bool showInProgress = t.m_status == "in_progress" ||
+            (t.m_status == "pending" && !hasInProgress && i == firstPending);
+        if (showInProgress) {
             icon = "⏳"; color = ftxui::Color::CyanLight;
         } else if (t.m_status == "completed") {
             icon = "✓";  color = ftxui::Color::GreenLight;

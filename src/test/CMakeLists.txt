@@ -74,3 +74,44 @@ else()
     clf_add_test(qa_CLFWebFetch     clf_tools ${CLF_OPENSSL_LIBS})
     clf_add_test(qa_CLFBuiltinTools clf_tools clf_core clf_network ${CLF_OPENSSL_LIBS})
 endif()
+
+# ============================================================================
+# 插件管理器测试（2.1 §4.2：测试插件 = 插件开发样板，2.2a 照此抄骨架）
+# 测试插件 DLL 输出 bin/$<CONFIG>/plugins/（clf_add_plugin 模板）；qa 经
+# CLF_TEST_PLUGIN_DIR 编译定义注入绝对路径（ctest cwd 是构建目录，相对路径不可靠）
+# ============================================================================
+set(PLUGIN_TEST_SRC ${CMAKE_CURRENT_SOURCE_DIR}/plugins)
+
+# 主 stub（P2-P7/P12/P17/P19 等）+ 10 变体（P8-P11/P13-P16/P18）
+clf_add_plugin(clf_plugin_teststub         clf.teststub         SOURCES ${PLUGIN_TEST_SRC}/CLFTestPlugin.cpp)
+clf_add_plugin(clf_plugin_teststub_badinit clf.teststub.badinit SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginBadInit.cpp)
+clf_add_plugin(clf_plugin_teststub_badabi  clf.teststub.badabi  SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginBadAbi.cpp)
+clf_add_plugin(clf_plugin_teststub_multisvc clf.teststub.multisvc SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginMultiSvc.cpp)
+clf_add_plugin(clf_plugin_teststub_loopA   clf.teststub.loopA   SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginLoopA.cpp)
+clf_add_plugin(clf_plugin_teststub_loopB   clf.teststub.loopB   SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginLoopB.cpp)
+clf_add_plugin(clf_plugin_teststub_svc1    clf.teststub.svc1    SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginSvc1.cpp)
+clf_add_plugin(clf_plugin_teststub_svc2    clf.teststub.svc2    SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginSvc2.cpp)
+clf_add_plugin(clf_plugin_teststub_depA    clf.teststub.depA    SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginDepA.cpp)
+clf_add_plugin(clf_plugin_teststub_depB    clf.teststub.depB    SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginDepB.cpp)
+clf_add_plugin(clf_plugin_teststub_nosym   clf.teststub.nosym   SOURCES ${PLUGIN_TEST_SRC}/CLFTestPluginNoSym.cpp)
+
+clf_add_test(qa_CLFPluginManager clf_core)
+# 插件目录绝对路径注入（多配置生成器下 $<CONFIG> 展开为实际配置）
+target_compile_definitions(qa_CLFPluginManager PRIVATE
+    CLF_TEST_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
+# 测试插件头（plugins/TestPluginCommon.hpp：qa 与插件共享的第二服务接口定义）
+target_include_directories(qa_CLFPluginManager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# 运行期依赖：测试插件 DLL 须先构建
+add_dependencies(qa_CLFPluginManager
+    clf_plugin_teststub
+    clf_plugin_teststub_badinit
+    clf_plugin_teststub_badabi
+    clf_plugin_teststub_multisvc
+    clf_plugin_teststub_loopA
+    clf_plugin_teststub_loopB
+    clf_plugin_teststub_svc1
+    clf_plugin_teststub_svc2
+    clf_plugin_teststub_depA
+    clf_plugin_teststub_depB
+    clf_plugin_teststub_nosym
+)

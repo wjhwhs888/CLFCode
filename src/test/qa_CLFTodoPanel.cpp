@@ -71,9 +71,42 @@ const boost::ut::suite<"CLFTodoPanel"> tests = [] {
             {"2", "正常", "pending"},
         };
         const auto lines = buildTodoPanelLines(todos, false);
-        expect(lines[1].text.find("○") != std::string::npos);        // 未知 → pending 图标
+        expect(lines[1].text.find("○") != std::string::npos);        // 未知 → pending 图标（不被推断）
         expect(lines[1].text.find("(无内容)") != std::string::npos); // 空内容兜底
         expect(lines[2].text.find("正常") != std::string::npos);
+        expect(lines[2].text.find("⏳") != std::string::npos);        // 正常 pending 被推断为进行中
+    };
+
+    // P7/P8（补 2026-09-21）：agent 层兜底推断——用户定调"不教模型、不伪造数据、
+    // 仅显示层推断"：模型未报告 in_progress 时第一个 pending 以进行中样式显示；
+    // 模型报告了 in_progress 则以模型为准
+    "P7 模型未报告 in_progress → 首个 pending 推断为进行中"_test = [] {
+        const std::vector<CLFTodoItem> todos{
+            {"1", "任务1", "completed"},
+            {"2", "任务2", "completed"},
+            {"3", "任务3", "pending"},
+            {"4", "任务4", "pending"},
+        };
+        const auto lines = buildTodoPanelLines(todos, false);
+        expect(lines[1].text.find("✓") != std::string::npos);
+        expect(lines[2].text.find("✓") != std::string::npos);
+        expect(lines[3].text.find("⏳") != std::string::npos);   // 首个 pending 推断进行中
+        expect(lines[3].color == ftxui::Color::CyanLight);
+        expect(lines[4].text.find("○") != std::string::npos);   // 其余 pending 保持灰显
+        expect(lines[4].color == ftxui::Color::GrayDark);
+    };
+
+    "P8 模型报告 in_progress → 以模型为准（不推断）"_test = [] {
+        const std::vector<CLFTodoItem> todos{
+            {"1", "任务1", "pending"},
+            {"2", "任务2", "in_progress"},
+            {"3", "任务3", "pending"},
+        };
+        const auto lines = buildTodoPanelLines(todos, false);
+        expect(lines[1].text.find("○") != std::string::npos);   // 首个 pending 不被推断
+        expect(lines[2].text.find("⏳") != std::string::npos);   // 模型报告的 in_progress
+        expect(lines[2].color == ftxui::Color::CyanLight);
+        expect(lines[3].text.find("○") != std::string::npos);
     };
 };
 

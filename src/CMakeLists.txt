@@ -1,4 +1,17 @@
 # ============================================================================
+# clf_plugin_api — 插件 ABI 接口头（阶段 2 §3.5：唯一跨 DLL 共享头，INTERFACE
+# target 统一提供；禁依赖 CLFPluginApi/ 之外任何项目头）
+# ============================================================================
+add_library(clf_plugin_api INTERFACE)
+# include 根与既有 target 惯例一致（clf_types/clf_core 等均为 ${CMAKE_CURRENT_SOURCE_DIR} = src）
+target_include_directories(clf_plugin_api INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_sources(clf_plugin_api INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/CLFPluginApi/CLFPluginApi.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CLFPluginApi/CLFToolApi.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CLFPluginApi/CLFFileService.hpp
+)
+
+# ============================================================================
 # CLFTypes — 基础类型 (header-only + EventQueue, 无项目依赖)
 # ============================================================================
 add_library(clf_types STATIC
@@ -45,7 +58,9 @@ add_library(clf_core STATIC
     CLFCore/CLFDangerousCommandDetector.cpp
     CLFCore/CLFLogger.cpp
     CLFCore/CLFMessageCodec.cpp
+    CLFCore/CLFHostApiImpl.cpp
     CLFCore/CLFPasserby.cpp
+    CLFCore/CLFPluginManager.cpp
     CLFCore/CLFProjectRulesLoader.cpp
     CLFCore/CLFProtocolAdapter.cpp
     CLFCore/CLFRetryPolicy.cpp
@@ -61,7 +76,7 @@ add_library(clf_core STATIC
     CLFCore/CLFTodoStore.cpp
     CLFCore/CLFToolExecutor.cpp
 )
-target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities)
+target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities clf_plugin_api)
 target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
@@ -107,6 +122,24 @@ target_link_libraries(CLFCode PRIVATE clf_core clf_network clf_tools clf_ui ${CL
 if(WIN32)
     target_link_libraries(CLFCode PRIVATE ws2_32 crypt32)
 endif()
+
+# ============================================================================
+# 插件 target 模板（阶段 2 §3.5；2.1 建立，2.2a 首个生产使用）
+# 约定：一个 DLL = 一个能力域；只导出工厂 C 符号；与主程序同一编译链与运行时
+# ============================================================================
+function(clf_add_plugin TARGET_NAME OUTPUT_BASENAME)
+    # 用法：clf_add_plugin(clf_plugin_fileops tools.fileops SOURCES ... LIBS ...)
+    cmake_parse_arguments(ARG "" "" "SOURCES;LIBS" ${ARGN})
+    add_library(${TARGET_NAME} SHARED ${ARG_SOURCES})
+    target_link_libraries(${TARGET_NAME} PRIVATE clf_plugin_api ${ARG_LIBS})
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        PREFIX ""                                              # 无 lib 前缀
+        OUTPUT_NAME "${OUTPUT_BASENAME}"                       # tools.fileops.dll
+        MSVC_RUNTIME_LIBRARY "MultiThreadedDLL"                # /MD 硬约束（§3.5）
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins"   # .dll
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib/$<CONFIG>/plugins"   # 导入库
+    )
+endfunction()
 
 # ============================================================================
 # 测试（迁至 test/CMakeLists.txt 统一管理；Boost.UT，L1 单元 + L2 Mock 集成）

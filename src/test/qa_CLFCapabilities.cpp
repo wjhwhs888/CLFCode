@@ -11,6 +11,7 @@
 #include <fstream>
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "CLFCapabilities/FileOps/CLFDiff.hpp"
@@ -48,6 +49,11 @@ using CLF::CLFPluginApi::CLFDiffOpCode;
 using CLF::CLFPluginApi::CLFFileCallbacks;
 using CLF::CLFPluginApi::CLFFileInfo;
 using CLF::CLFPluginApi::ICLFFileService;
+
+// 2.1 修正①编译期钉子：ICLFFileService 必须继承 CLFService
+// （getService 返回 CLFService* 后 downcast 的类型安全前提）
+static_assert(std::is_base_of_v<CLF::CLFPluginApi::CLFService, ICLFFileService>,
+              "ICLFFileService must derive from CLFService (2.1 fix #1)");
 
 struct ContentCollector {
     std::string content;

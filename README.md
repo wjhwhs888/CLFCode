@@ -26,16 +26,18 @@ irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex
 
 ```
 src/
-├── CLFTypes/     — 基础类型 + ICLFOutput 接口
-├── CLFNetwork/   — HTTP 传输 + 思考指示器
-├── CLFCore/      — Agent 核心逻辑 (编排/上下文/安全/会话)
-├── CLFTools/     — 工具实现 (文件/命令)
-├── CLFUI/        — 终端 UI (FTXUI 组件树)
-├── main.cpp      — 组合根 (依赖注入)
-└── test/         — 单元测试
+├── CLFTypes/         — 基础类型 + ICLFOutput 接口
+├── CLFNetwork/       — HTTP 传输 + 思考指示器
+├── CLFCore/          — Agent 核心逻辑 (编排/上下文/安全/会话/插件管理器)
+├── CLFCapabilities/  — 能力层 (FileOps/Diff，阶段 2 插件化迁移单元)
+├── CLFPluginApi/     — 插件 ABI (跨 DLL 共享接口，禁依赖其目录之外)
+├── CLFTools/         — 工具实现 (文件/命令/搜索/网络)
+├── CLFUI/            — 终端 UI (FTXUI 组件树)
+├── main.cpp          — 组合根 (依赖注入)
+└── test/             — 单元测试 (含测试插件 plugins/)
 ```
 
-依赖方向：`CLFTypes → CLFNetwork → CLFCore → {CLFTools, CLFUI} → main`
+依赖方向：`clf_tools → clf_core → clf_capabilities → clf_types`；`clf_ui → clf_core`；`clf_network` 独立；`clf_plugin_api` 为接口目标（插件与宿主共享）；`main` 组装（无环依赖）
 
 ## 依赖
 

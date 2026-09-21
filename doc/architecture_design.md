@@ -1,10 +1,10 @@
 # CLFCode 系统架构设计
 
-> 更新日期：2026-07-31 | 对应提交：master 最新（e716af2 之后）
+> 更新日期：2026-09-21 | 对应提交：master 最新（v0.7.6 之后）
 
 ## 1. 概述
 
-CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交互，Agent 通过 HTTP 调用 DeepSeek API（OpenAI 兼容协议），利用工具层（文件操作、命令执行）完成开发任务。
+CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交互，Agent 通过 HTTP 调用 DeepSeek API（OpenAI 兼容协议），利用工具层（文件操作、命令执行）完成开发任务。自 v0.7.6 起，插件系统基础设施（ABI + 管理器）已落地，内置工具将逐步迁移为可热插拔插件（阶段 2）。
 
 ## 2. 架构图
 
@@ -14,30 +14,35 @@ CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交�
 │          入口编排：配置加载 · 工具注册 · REPL       │
 └──────┬───────────────┬────────────────┬──────────┘
        │               │                │
-┌──────▼─────────┐ ┌───▼────────────┐ ┌─▼───────────┐
-│  CLFCore       │ │  CLFTools      │ │ CLFNetwork  │
-│  （Agent 核心） │ │  （工具层）     │ │ （通信层）   │
-│                │ │                │ │             │
-│ CLFAgentLoop   │ │ CLFBuiltinTools│ │ CLFHttpClient│
-│  （调度主循环） │ │  （内置工具）   │ │ （HTTP/SSE） │
-│ CLFContext     │ │ CLFFileOps     │ │             │
-│  （上下文管理） │ │ CLFCommandExec │ │             │
-│ CLFProtocolAdapter              │ │             │
-│  （协议适配）  │ │                │ │             │
-│ CLFConfigLoader│ │                │ │             │
-│  （配置加载）  │ │                │ │             │
-│ CLFSkillLoader │ │                │ │             │
-│  （知识库）    │ │                │ │             │
-│ CLFSecurityPolicy │              │ │             │
-│  （安全策略）  │ │                │ │             │
-│ CLFLogger      │ │                │ │             │
-│  （日志）      │ │                │ │             │
-│ CLFStreamAccumulator │            │ │             │
-│  （流式累积）  │ │                │ │             │
-└───────────────┘ └────────────────┘ └─────────────┘
+┌──────▼─────────┐ ┌───▼────────────┐ ┌─▼──────────────┐
+│  CLFUI         │ │  CLFCore       │ │ CLFNetwork     │
+│  （终端界面）   │ │  （Agent 核心） │ │ （通信层）      │
+│ CLFRepl        │ │ CLFAgentLoop   │ │ CLFHttpClient  │
+│ CLFReplView    │ │ CLFContext     │ │ （HTTP/SSE）    │
+│ CLFInputHandler│ │ CLFProtocolAdapter               │
+│ CLFTerminal    │ │ CLFConfigLoader│ │                │
+│ CLFScrollView  │ │ CLFSystemPromptBuilder            │
+│ CLFSelectionModel               │ │                │
+│                │ │ CLFSecurityPolicy                │
+│                │ │ CLFPluginManager                 │
+│                │ │  （插件管理器） │ │                │
+│                │ │ CLFLogger      │ │                │
+└───────┬────────┘ └───────┬────────┘ └────────────────┘
+        │                  │
+        │           ┌──────▼──────────┐    ┌─────────────────────┐
+        │           │ CLFCapabilities │    │ CLFPluginApi (ABI)  │
+        │           │  （能力层）      │◄──►│ （跨 DLL 共享接口）  │
+        │           │ FileOps / Diff  │    │ CLFPlugin/CLFHostApi│
+        └──────────►└─────────────────┘    │ ICLFToolProvider    │
+         CLFTools（工具层：BuiltinTools     └─────────┬───────────┘
+         / CommandExec / Search / WebFetch）          │
+                                                      ▼
+                                           插件 DLL（阶段 2 迁出目标：
+                                           tools.fileops / command /
+                                           search / web / misc）
 ```
 
-**依赖方向**：`clf_tools` → `clf_core`；`clf_network` 独立；`main` 组装三者（无环依赖 ADP）。
+**依赖方向**：`clf_tools` → `clf_core` → `clf_capabilities` → `clf_types`；`clf_ui` → `clf_core`；`clf_network` 独立；`clf_plugin_api` 为接口目标（禁依赖其目录之外，插件与宿主共享）；`main` 组装（无环依赖 ADP）。
 
 ## 3. 模块职责
 
@@ -61,14 +66,32 @@ CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交�
 | `CLFSecurityPolicy` | 四模式安全策略（auto/analyze/edit/manual） |
 | `CLFLogger` | 单例日志：级别过滤 + 时间戳 + 文件/控制台输出 |
 | `CLFStreamAccumulator` | SSE 流式 delta 累积（文本 + tool_calls 分片合并） |
+| `CLFPluginManager` | 插件管理器（阶段 2，v0.7.6）：扫描 plugins/ 目录 DLL → 版本闸门 → 服务名依赖图（拓扑/环检测）→ 加载/卸载/热替换 → 服务注册表路由；单插件失败隔离兜底 |
+| `CLFHostApiImpl` | 宿主 API 实现（注入插件的宿主面）：日志/配置段读取/服务查询/跨边界内存通道 |
 
 ### CLFTools — 工具层
-- `CLFBuiltinTools`：6 个内置工具统一注册（read_file / write_file / list_directory / execute_command / get_current_time / echo）
-- `CLFFileOps`：文件读写、目录列举
+- `CLFBuiltinTools`：内置工具统一注册（read_file / write_file / edit_file / list_directory / execute_command / search_content / web_fetch / get_current_time / echo + todo_write / compress_context）
 - `CLFCommandExec`：shell 命令执行（临时文件捕获输出 + 超时检测）
+- `CLFSearchContent`：文本搜索（扩展名白名单 + 忽略目录 + 非法 UTF-8 行跳过）
+- `CLFWebFetch`：URL 抓取（1MB 上限 + head/tail 截断 + 不携带凭据）
+
+### CLFCapabilities — 能力层（C1 归属修正）
+- `CLFFileOps`：文件读写、目录列举、边界校验
+- `CLFDiff`：行级 diff（着色渲染数据源）
+
+### CLFPluginApi — 插件 ABI（跨 DLL 唯一共享面，禁依赖其目录之外）
+- `CLFPluginApi.hpp`：C 工厂符号 + 纯虚接口 + POD 服务表 + 版本化（禁 STL/异常/RTTI 跨边界）
+- `CLFToolApi.hpp`：工具插件域（元数据 POD + 调用回调 + ICLFToolProvider）
+- `CLFFileService.hpp`：文件能力域（回调推送模式）
 
 ### CLFNetwork — 通信层
 - `CLFHttpClient`：封装 cpp-httplib，同步 POST + SSE 流式 POST（跨 chunk 行缓冲）
+
+### CLFUI — 终端界面（FTXUI）
+- `CLFRepl`：主循环编排（run/render/生命周期装配）；任务面板行构建
+- `CLFReplView`：渲染器（内容区/状态行/滚动）
+- `CLFInputHandler`：输入事件处理（提交/快捷键/拖选）
+- `CLFTerminal`：ICLFOutput 四窄接口实现（内容/进度/交互/辅助）
 
 ## 4. 数据流
 

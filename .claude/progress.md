@@ -2,6 +2,15 @@
 
 ## 进行中
 
+### 【插入批：任务清单进行中标识 agent 层兜底 ✅（2026-09-21，用户实机验收 2.1 时发现，未提交）】
+- **用户报告**：清单 1-5 按序执行，1 2 完成变绿，但 3 在执行中无"进行中"标识，执行完直接变绿
+- **取证链（全链路实证）**：渲染层支持 in_progress（⏳ 青色，面板每帧常驻渲染 ✓）→ update 分支支持三态（校验/落库/快照/面板重现 ✓）→ 工具描述只列枚举值无行为指令 → 系统提示词零 todo 指导 → **历史会话 jsonl 中 in_progress 从未出现**——模型从没发过该状态
+- **根因**：模型自然行为"默默执行、完成才写 completed"——数据里没有 in_progress，渲染无从显示
+- **用户定调**：**不教模型、不干扰模型（"不要主动教大模型你要干嘛干嘛"），agent 层面兜底**
+- **修复（显示层推断，不伪造数据）**：`buildTodoPanelLines`——模型报告了 in_progress → 以模型为准；未报告 → **第一个 pending 项以 ⏳ 进行中样式显示**（未知状态不被推断）。数据保持模型原样（jsonl/上下文零影响）
+- **测试**：qa_CLFTodoPanel P6 更新（正常 pending 被推断断言）+ P7（模型未报告 → 首个 pending ⏳、其余 ○）/ P8（模型报告 → 以模型为准不推断）新增；6 tests / 17 asserts 全绿；ctest 33/33 全绿
+- **收尾 ✅（2026-09-21）**：用户实机复验通过（待办显示明显）；随 v0.7.6 发布
+
 ### 【插入批：拖选偏一行根因修复 ✅（2026-09-20，全链路取证闭环 + 双根因修复 + 用户双终端验收，未提交）】
 - **用户报告**：外部终端（WT 中的 PowerShell 5.1）拖选复制时，实际响应行在鼠标点击起始位置的**下一行**（偏 +1 行）
 - **取证闭环**（CLF_DEBUG_EVENTS 事件日志 + 临时取证小程序，均已清理）：
@@ -86,6 +95,17 @@
   - **5 个便宜补充**：P1 扩 getService 未命中 nullptr / P5 扩回调判空义务（cb=nullptr + 全 null 函数指针）/ P10 拆 P10a 缺符号 + P10b 坏 PE（LoadLibraryW 失败是独立代码路径；新增 nosym 变体 target）/ P12 扩 config() nullptr 骨架断言 / qa_CLFCapabilities 加 static_assert(is_base_of_v<CLFService, ICLFFileService>) 编译期钉子（随步骤 3 实施）
   - **1 个设计语义补定义**：§3.1 重复加载（load 已加载 → false + warn 幂等拒绝；loadAll 跳过已加载；unload 未加载 → false + warn），P19 钉之
   - 变体插件清单合计 11 个 target（主 teststub + 10 变体）；§五 步骤 3 验证列加静态断言、步骤 7 套件数表述修正；2.1 §七 加六轮审查块
+- **七轮实施落码 ✅（2026-09-21，§五 步骤 1-8 全部完成，未提交）**：ctest 33/33 全绿（qa_CLFPluginManager 20 tests / 97 asserts）+ 主程序 --version 冒烟 exit=0。实施中发现并修正（2.1 §七 七轮已入档）：
+  - **① requires 改名 requiresServices**——`requires` 是 C++20 关键字，ABI 头被 C++20 消费者（qa 即 C++20）编译直接失败，**构建期抓出**（测试插件比生产插件先编译 = 测试保护设计的直接收益）
+  - **② 两个管理器实现 bug（qa 实抓根因修复）**：a) init 成功分支漏 m_plugins.push_back（记录随 pending 析构 → P2 names[0] 越界 abort）b) init 循环 move 后未从 pending erase（下一轮 find_if 空 unique_ptr 解引用 → P14 双插件段错误——此前用例均单插件从未暴露）
+  - **③ 服务注册时机前移**：批量注册（init 循环后）→ init 成功即注册（P18 实抓：depA 的 init 里 getService 查不到提供方服务，拓扑序语义要求依赖方 init 时可用）
+  - **④ P7/P5 断言修订**：删除"实例地址变化"断言（Windows 同路径 DLL 重载常映射相同地址，实抓）；P5 判空跳过回调时 content 保持旧值
+  - **⑤ 系统错误弹窗抑制**：loadDll 加 SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)——用户实测 P10b 垃圾文件触发 Windows"损坏的映像"弹窗（临时目录路径实抓），CLI 程序不能被系统弹窗卡住；加载后立即恢复
+  - **⑥ 文档回写完成**：2.1（requires 改名全同步 + §五 机制表述 + §六 P5/P7 + §七 七轮块 + §八 差异行）+ 分册（旧草案签名回写：getService 单参、依赖服务名注释）；CLF_TEST_TARGETS 过时表述修正为 clf_add_test
+  - **调试插曲**：exit=3 零输出 + 段错误两连击（静态期 boost::ut + Debug 越界断言 + 空指针），fprintf 探针逐层收敛定位（P1→P2→析构→expect→listPluginNames size=0→init 循环）——sed 跨行探针清理留残片两次，教训：探针清理用 Edit 逐段删除
+  - **收尾 ✅（2026-09-21）**：用户实机验收通过（deepseek 模型无问题、进度显示完整、待办显示明显——todo 兜底同批验收）；CHANGELOG v0.7.6 段 + VERSION bump + 架构文档/README 增量同步 + TEMP 测试残留清理（36 项）；**已提交推送 + tag v0.7.6**
+  - **并发提醒**：CLion 构建与命令行 ninja 构建撞车致 obj Permission denied（瞬时冲突非代码问题）——命令行构建期间不要在 IDE 里同时 Build
+  - **下一步**：2.2a FileOps 迁 DLL 试点（分册 §4.1 验证点 1-6，§1.6 转发代理定案倾向落地）
 
 ### 【模型名同步小批 ⏳ 待用户定夺（2026-09-10 发现，未开工）】
 - **背景**：V4.1 Flash 发布后新调用名 `deepseek-flash`（用户已手动改 `config/agent_settings.json`，未提交）

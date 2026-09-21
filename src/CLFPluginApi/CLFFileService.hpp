@@ -1,7 +1,9 @@
 // CLFFileService.hpp — 文件能力域跨边界接口（clf_plugin_api 头，唯一跨 DLL 共享头）
 // 阶段 2 分册 §3.1② 草案细化，C1（2026-09-07）落地：POD 签名 + 回调推送，
 // 跨 DLL 边界禁传 STL。进程内表示（CLFDiffLine 等）由宿主侧持有。
-// 本头不依赖项目任何其他头（§3.5 纪律），宿主与插件统一编译链共享。
+// 2.1 修正①（2026-09-21）：ICLFFileService 加 CLFService 基类（getService
+// downcast 的类型安全返回）。
+// 本头不依赖 CLFPluginApi/ 之外的任何项目头（§3.5 纪律），宿主与插件统一编译链共享。
 //
 // 回调约定（实现侧义务）：
 // - ctx 由调用方提供，原样转发给该次调用的全部回调
@@ -27,6 +29,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "CLFPluginApi/CLFPluginApi.hpp"
 
 namespace CLF::CLFPluginApi {
 
@@ -58,7 +61,9 @@ struct CLFFileCallbacks {
 };
 
 // 文件能力域服务接口（getService("file") 返回；getService 已定案单参服务名，见 2.1 §3.3）
-class ICLFFileService {
+// 2.1 修正①：继承 CLFService——getService 返回 CLFService* 后
+// static_cast<ICLFFileService*> 要求单继承链成立（多继承子对象约束见 CLFPluginApi.hpp）
+class ICLFFileService : public CLFService {
 public:
     virtual ~ICLFFileService() = default;
 
