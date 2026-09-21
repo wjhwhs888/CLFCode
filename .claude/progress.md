@@ -6,7 +6,10 @@
 - **设计**：`设计/设计-阶段2-2.2c-plugin命令.md`（取证 + 清单 + 验收）
 - **实现**：① CLFPluginManager 加 listPlugins()（名字+版本对）② CLFCommandDispatcher 构造注入 pluginManager + setBusyChecker（同 onExit 延迟绑定——asyncSubmit 是 run() 局部对象）③ cmdPlugin（list 展示 / load·unload·reload 对话中拒绝 quiesce / ✓✗ 文案）④ Repl 构造注入 manager → Dispatcher；main 传参 ⑤ /help 加条目
 - **qa**：P2 扩展 listPlugins 断言；ctest 34/34 + 冒烟 exit=0
-- **待办**：用户实机验收（list/unload 后模型调 read_file 得兜底错误/load 恢复/busy 拒绝）→ **2.2 试点出口达成**（分册验证点 1-6 全走通）→ 分册出口标准复核 → 2.3 铺开其余 4 域
+- **实机实抓修复 2 处（用户验收期）**：① 注册 lambda 参数错位（args 传 cmdName 位置 → unload 误走 list 分支）② **命令输入走异步提交致空闲自拒**——InputHandler 回车无条件 launch → m_submitting=true → 异步线程内 dispatcher 处理命令时 /plugin 的 quiesce 判定读到"自己这个提交"自拒（日志铁证 [Submit] entry → rejected）；修根：命令输入 UI 线程同步处理不 launch
+- **实机验收 ✅（2026-09-21 用户全链路演示）**：/plugin list → unload ✓ → 无插件 → 模型调 list_directory/read_file 得"工具提供者不可用（插件已停用）"→ **自兜底换 execute_command + powershell 分段读取完成任务**（验证点 4 完美实证；模型还从上下文学会了加 chcp 65001 前缀）
+- **收尾 ✅**：**2.2 试点出口达成**（分册验证点 1-6 全部通过）；三份 2.2 设计文档归档（归档-阶段2-2.2a/b/c）；分册 §4.1 步骤与验证点更新完成态
+- **下一步**：2.3 铺开其余 4 域（command/search/web/misc 逐一迁 DLL——execute_command 迁出后 GBK 包装/exitCodeMeansSuccess 随域走；search/web 零 core 依赖 §3.7 取证；misc 或并入 core 内建）
 
 ### 【插入批：execute_command GBK 输出炸 JSON ✅ 双层修根（2026-09-21，已提交推送 33c19f5，待用户实机复验）】
 - **用户实抓**（五子棋项目实机会话）：`execute_command(dir /b & ... & git status ...)` 报 `[json.exception.type_error.316] invalid UTF-8 byte at index 2: 0xB2`
