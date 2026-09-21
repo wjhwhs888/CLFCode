@@ -58,7 +58,7 @@ if ((Test-Path $vcvars) -and -not $env:VCToolsInstallDir) {
 $exe = "$ScriptDir\bin\Release\CLFCode.exe"
 Remove-Item $exe -ErrorAction SilentlyContinue
 
-cmake --build "$ScriptDir\$BuildDir" --target CLFCode --config Release -j6 2>&1 | Select-Object -Last 5
+cmake --build "$ScriptDir\$BuildDir" --target CLFCode clf_plugin_fileops clf_plugin_command clf_plugin_search clf_plugin_web --config Release -j6 2>&1 | Select-Object -Last 5
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) {
     Write-Host "ERROR: Build failed (exit $LASTEXITCODE)" -ForegroundColor Red
     exit 1
@@ -87,6 +87,19 @@ foreach ($d in @("$ReleaseDir\bin\Release", "$ReleaseDir\config", "$ReleaseDir\d
 
 # Copy exe
 Copy-Item "$ScriptDir\bin\Release\CLFCode.exe" "$ReleaseDir\bin\Release\" -Force
+
+# 插件 DLL（v0.8.0+：主程序启动扫描 exe 目录/plugins 加载能力域插件——
+# 必须随包，缺失则文件/命令/搜索/网络四域工具全部不可用）
+$pluginSrc = "$ScriptDir\bin\Release\plugins"
+$requiredPlugins = @('tools.fileops.dll', 'tools.command.dll', 'tools.search.dll', 'tools.web.dll')
+$missingPlugins = $requiredPlugins | Where-Object { -not (Test-Path "$pluginSrc\$_") }
+if ($missingPlugins.Count -gt 0) {
+    Write-Host "ERROR: missing plugin DLL(s): $($missingPlugins -join ', ') under $pluginSrc" -ForegroundColor Red
+    exit 1
+}
+New-Item -ItemType Directory -Path "$ReleaseDir\bin\Release\plugins" -Force | Out-Null
+Copy-Item "$pluginSrc\*.dll" "$ReleaseDir\bin\Release\plugins\" -Force
+Write-Host "  Plugins: $(($requiredPlugins).Count) files" -ForegroundColor Gray
 
 # 运行库 DLL：MSVC 构建仅依赖 OpenSSL 动态库对。
 # 来源优先级：本机 OpenSSL 安装目录（与链接的 lib 同版本）→ 上一版发布目录。
