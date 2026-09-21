@@ -47,7 +47,7 @@ std::string makePluginDir() {
                    ("clf_fileops_test_" + std::to_string(stamp) + "_" +
                     std::to_string(g_dirCounter.fetch_add(1)));
     fs::create_directories(dir);
-    fs::copy_file(fs::path(CLF_TEST_PLUGIN_DIR) / "tools.fileops.dll",
+    fs::copy_file(fs::path(CLF_FILEOPS_PLUGIN_DIR) / "tools.fileops.dll",
                   dir / "tools.fileops.dll");
     return pathToUtf8(dir);
 }

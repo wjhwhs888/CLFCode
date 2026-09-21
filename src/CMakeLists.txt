@@ -18,7 +18,13 @@ target_sources(clf_plugin_api INTERFACE
 # ============================================================================
 function(clf_add_plugin TARGET_NAME OUTPUT_BASENAME)
     # 用法：clf_add_plugin(clf_plugin_fileops tools.fileops SOURCES ... LIBS ...)
-    cmake_parse_arguments(ARG "" "" "SOURCES;LIBS" ${ARGN})
+    # 可选 PLUGIN_DIR <目录>：输出子目录（默认 plugins；测试插件用 plugins_test
+    # 隔离——2026-09-21 实机实抓：测试插件混入生产目录致主程序加载 teststub，
+    # 工具路由错乱）
+    cmake_parse_arguments(ARG "" "PLUGIN_DIR" "SOURCES;LIBS" ${ARGN})
+    if(NOT ARG_PLUGIN_DIR)
+        set(ARG_PLUGIN_DIR "plugins")
+    endif()
     add_library(${TARGET_NAME} SHARED ${ARG_SOURCES})
     target_link_libraries(${TARGET_NAME} PRIVATE clf_plugin_api ${ARG_LIBS})
     set_target_properties(${TARGET_NAME} PROPERTIES
@@ -27,8 +33,8 @@ function(clf_add_plugin TARGET_NAME OUTPUT_BASENAME)
         # 运行时库**不硬设**——跟随全局配置（Debug=MDd / Release=MD），与宿主/
         # clf_types 同运行时（"统一运行时"§3.5 的正确实现；2.2a 实抓：硬钉 /MD
         # 链接 clf_types 静态库报 LNK2038 RuntimeLibrary 不匹配）
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins"   # .dll
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib/$<CONFIG>/plugins"   # 导入库
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/${ARG_PLUGIN_DIR}"   # .dll
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib/$<CONFIG>/${ARG_PLUGIN_DIR}"   # 导入库
     )
 endfunction()
 

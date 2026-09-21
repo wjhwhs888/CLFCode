@@ -68,24 +68,31 @@ void registerPluginTools(CLF::CLFCore::CLFAgentLoop& agent,
             tool.m_isRead           = (meta->flags & CLF::CLFPluginApi::ToolFlagRead) != 0;
             tool.m_isSearch         = (meta->flags & CLF::CLFPluginApi::ToolFlagSearch) != 0;
             tool.m_concludesTurn    = meta->concludesTurn != 0;
-            // 调用时查询：unload 后 getService nullptr → 兜底错误（验证点 4）
+            // 调用时查询：**按工具名精确路由**——遍历提供者找"声明了该工具名"的
+            // provider（不笼统取 getService("tool.provider") 的字典序首个——
+            // 2026-09-21 实机实抓：多提供者场景 read_file 被路由到 teststub
+            // 回显参数，工具结果错乱）。不缓存服务指针（§1.2）；
+            // 卸载后无提供者 → 兜底错误（验证点 4）
             tool.m_handler = [&manager, toolName](const std::string& args) -> std::string {
-                auto* svc = manager.getService("tool.provider");
-                if (!svc) {
-                    return providerUnavailableError(toolName);
+                for (auto* provider : manager.toolProviders()) {
+                    for (int idx = 0; idx < provider->toolCount(); ++idx) {
+                        const auto* m = provider->toolMeta(idx);
+                        if (m && std::string(m->name) == toolName) {
+                            std::string content;
+                            CLFToolCallbacks cb{};
+                            cb.onResult = [](void* ctx, const char* s, size_t n) {
+                                static_cast<std::string*>(ctx)->append(s, n);
+                            };
+                            // onError 两参签名（不可直接赋 onResult——2.2a 实抓）
+                            cb.onError = [](void* ctx, const char* s) {
+                                static_cast<std::string*>(ctx)->append(s);
+                            };
+                            provider->callTool(toolName.c_str(), args.c_str(), &content, &cb);
+                            return content;
+                        }
+                    }
                 }
-                std::string content;
-                CLFToolCallbacks cb{};
-                cb.onResult = [](void* ctx, const char* s, size_t n) {
-                    static_cast<std::string*>(ctx)->append(s, n);
-                };
-                // onError 两参签名（不可直接赋 onResult——2.2a 实抓）
-                cb.onError = [](void* ctx, const char* s) {
-                    static_cast<std::string*>(ctx)->append(s);
-                };
-                static_cast<ICLFToolProvider*>(svc)->callTool(
-                    toolName.c_str(), args.c_str(), &content, &cb);
-                return content;
+                return providerUnavailableError(toolName);
             };
             agent.registerTool(std::move(tool));
             ++registered;
