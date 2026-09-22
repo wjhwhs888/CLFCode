@@ -2,7 +2,7 @@
 
 ## 进行中
 
-### ▶ 启动横幅 Logo 改版 ✅ 全闭环（2026-09-22，用户实机验收通过，待提交推送 tag v0.8.3 后用户发布）
+### ▶ 启动横幅 Logo 改版 ✅✅ 全闭环（2026-09-22 用户已发布 v0.8.3）
 - **背景**：用户与 flash 完成前期调研，产出三份文档（决策简报 / 设计稿讨论稿 / 审查报告——5 致命 + 11 中等 + 8 轻微）；pro 任主审 + 执行官
 - **主审亲验**：审查报告全部关键断言逐条实读证实——F0 折行口径（charWidth 多字节恒 2 → 块字 58 字符算 110 列，80 列终端必被劈）+ F2（bold(cyan(x)) 不丢 bold，flush 先于 applyCode；真失效形态 = 外层包装内拼接多段，根因在生成侧）+ F0b（行首 `|` 被表格检测吞噬）+ F3（版本读取两份三处差异）+ qa 钉子（charWidth(0xE2)==2 刻意保留）全部属实
 - **主审增量判断（审查报告高估影响面的修正）**：`CLFSelectionModel::displayWidth/substrByWidth` 是纯转发（CLFSelectionModel.cpp:16-22）→ 路线 (b) 可**零钉子破坏**实施——不动 charWidth/displayWidth/substrByWidth 本体，新增 renderDisplayWidth/renderSubstrByWidth/wrapLines，只切 CLFReplView 折行调用点；中文零影响（宽表仍计 2）；折行点只会右移
@@ -15,8 +15,8 @@
 - **步骤 4 ✅**：CLFConfigLoader::readVersionFile 三态契约（不存在→"unknown"/打不开→""/成功→首行）+ main.cpp printVersion/CLFCommands cmdVersion 两调用点改造（输出逐字保持；is_open 缺陷随契约自然消失）
 - **步骤 5 ✅**：qa_CLFTextUtil +3 用例（12 tests/57 asserts）+ qa_CLFAnsiParser +2 用例（双序等价 + 跨段拼接语义——Q3 约定固化）；**ctest 36/36 全绿** + --version（v0.8.2）/--help 冒烟逐字一致
 - **实施期实抓（qa 静态期陷阱变体）**：qa_CLFAnsiParser 新用例最初调生产 CLFAnsi 包装 → 静态初始化期 s_enabled 恒 false → 包装退化为裸串 → 跨段用例 segs[1] 越界 Debug 弹窗 exit=3（用户实抓）。修法沿用项目惯例：qa 写**字面转义序列**（包装展开形态，既有"两段"用例注释背书）；probe 运行时验证已走真机生产链路
-- **待做**：~~用户实机验收~~ ✅（banner 显示正常 + 用户验收修订：版本号右对齐→紧随 tagline——宽终端视觉断开）→ ~~probe 清理~~ ✅（源文件 + CMake target + exe/ilk/pdb 零残留）→ ~~设计文档归档~~ ✅（三份移入 `设计/归档/归档-启动横幅Logo-*`，设计稿补 §10 实施记录，交叉引用批量更新）→ CHANGELOG v0.8.3 段 + VERSION bump ✅ → 最终回归 ✅（ctest 36/36 + --version v0.8.3/--help 冒烟）→ **提交推送 + tag v0.8.3（用户已授权）** → 用户发布
-- **用户待参与**：发布（Release 编译 + release.ps1 打包 + Gitee release 上传）
+- **收尾 ✅（2026-09-22）**：用户实机验收通过（banner 显示正常 + 验收修订：版本号右对齐→紧随 tagline）→ probe 清理零残留 → 三份设计文档归档（`归档-启动横幅Logo-*`，设计稿补 §10 实施记录）→ CHANGELOG v0.8.3 + VERSION bump → 最终回归（ctest 36/36 + 冒烟）→ 提交 32663fe + tag v0.8.3 推送 → **用户已发布 v0.8.3（2026-09-22）**，全闭环
+- **遗留说明**：v0.8.2 的 irm|iex 安装链路实机复验由用户随 v0.8.3 发布合并覆盖（修复已含于 v0.8.3）
 
 ### ▶ QA 空壳残留与安装脚本加固 ✅ 实施完成（2026-09-22，待提交推送与用户实机验收）
 - **背景**：2026-09-21 用户发布自测事故——install.ps1 删安装目录时 clf_agent.log 被 14 个孤儿进程（findstr/cmd，父进程全死）锁住 → Stop 中止 → 半删残骸（config/会话历史靠 2.49MB 备份救回，哈希一致无损失）；善后发现 TEMP 43 个 clf_* 空壳目录（0 文件，跨 8/26–9/15）+ 10 个备份残留
@@ -35,7 +35,7 @@
   - **修复**：install.ps1 去 BOM + 删 param 块（-Upgrade 开关装饰性无用）；upgrade.ps1 去 BOM + 薄壳把拉取内容**转写为带 BOM 临时文件**再执行（两条来源同处理）；uninstall.ps1 生成物走 -File 保持带 BOM
   - **复验**：V1-V4 + S6 全场景 **30/30 通过**（新增"无解析噪声"断言 + 占用零破坏断言全过）
 - **tag 重指 ✅（2026-09-22，用户拍板"重指 v0.8.2"）**：修复提交 519bdc9 推送后 tag v0.8.2 重指该 commit 并强推（此前 tag 已被用户实际下载引用，重指经 AskUserQuestion 明确授权后执行）
-- **待用户**：发布 + 实机复验（重跑 irm install.ps1——应先看到干净输出；退出 CLFCode 后安装）
+- **收尾 ✅（2026-09-22）**：用户发布 v0.8.3（含本批修复）——irm|iex 安装链路实机复验随新版发布合并覆盖
 
 
 ### ▶ 命令候选面板与唯一维护 ✅（2026-09-21 全闭环，随 v0.8.1 发布）
