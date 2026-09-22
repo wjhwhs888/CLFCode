@@ -2,6 +2,22 @@
 
 ## 进行中
 
+### ▶ 启动横幅 Logo 改版 ✅ 全闭环（2026-09-22，用户实机验收通过，待提交推送 tag v0.8.3 后用户发布）
+- **背景**：用户与 flash 完成前期调研，产出三份文档（决策简报 / 设计稿讨论稿 / 审查报告——5 致命 + 11 中等 + 8 轻微）；pro 任主审 + 执行官
+- **主审亲验**：审查报告全部关键断言逐条实读证实——F0 折行口径（charWidth 多字节恒 2 → 块字 58 字符算 110 列，80 列终端必被劈）+ F2（bold(cyan(x)) 不丢 bold，flush 先于 applyCode；真失效形态 = 外层包装内拼接多段，根因在生成侧）+ F0b（行首 `|` 被表格检测吞噬）+ F3（版本读取两份三处差异）+ qa 钉子（charWidth(0xE2)==2 刻意保留）全部属实
+- **主审增量判断（审查报告高估影响面的修正）**：`CLFSelectionModel::displayWidth/substrByWidth` 是纯转发（CLFSelectionModel.cpp:16-22）→ 路线 (b) 可**零钉子破坏**实施——不动 charWidth/displayWidth/substrByWidth 本体，新增 renderDisplayWidth/renderSubstrByWidth/wrapLines，只切 CLFReplView 折行调用点；中文零影响（宽表仍计 2）；折行点只会右移
+- **拍板记录（已落入决策简报 §八 + 设计稿定稿）**：路线 **(b) 修折行口径**（前置 = 步骤 0 块字字体实机验证，M11 歧义宽度若命中则降级 a）；Q3 立书写约定不修 parser；Q4 保留 skills；Q5 版本访问器归 CLFConfigLoader 三态契约（不存在→"unknown"/打不开→""/成功→首行，两调用点输出逐字保持，is_open 缺陷自然消失）；Q7 保留 ⎿；M8 路径行保持"进程启动目录"语义；M9 probe 链接生产 parser + wrapLines 三用；顺手批修 hpp:43 错误注释
+- **文档状态**：决策简报（拍板记录 §八）✅ / 设计稿已重写为**定稿**（§4.5 完整行序规格 10 行、§7 步骤 0-6、§8 验收 8 项，含步骤 0 回填：块字阈值 62 + M11 未命中结论）✅ / 审查报告保持为历史依据
+- **步骤 0 实机验证 ✅（2026-09-22 用户 PowerShell 实跑）**：probe 全部断言通过——四变体无缺字、块字 1 格渲染（M11 未命中）、双序等价实证、前导空格保真、ASCII 兜底无 `|` 开头、最宽 58 ≤ 80；M5 防御实锤（重定向环境 exit=2 正确拒绝）
+- **步骤 1 ✅**：CLFTextUtil 新增 renderDisplayWidth/renderSubstrByWidth/wrapLines（渲染口径，与 renderCharWidth 同表）；charWidth/displayWidth/substrByWidth 本体不动（qa 钉子全保）；顺手批修 hpp:43 错误注释（"maxW<=0 返回原串"→"首字符即返回空串"）
+- **步骤 2 ✅**：CLFReplView 三处折行全部切渲染口径（主内容/pendingLine/折叠块展开，wrapLines 收敛——原三处 while 循环各重复实现收敛为单点）；Sel::displayWidth/substrByWidth 生产调用清零（转发保留，qa_CLFSelectionModel:77 断言两口径一致零破坏）
+- **步骤 3 ✅**：printBanner 重构（块字 6 行 cyanLight(bold) 逐行独立着色 + tagline/版本右对齐同行（填充 clamp ≥1）+ 空行分隔 + 环境层 gray 2 行（路径=进程启动目录语义 + skills 保留）；kBlockLogoMinWidth=62 窄终端降级跳过块字；诊断/配置/模型行删除；m_output 早退守卫）
+- **步骤 4 ✅**：CLFConfigLoader::readVersionFile 三态契约（不存在→"unknown"/打不开→""/成功→首行）+ main.cpp printVersion/CLFCommands cmdVersion 两调用点改造（输出逐字保持；is_open 缺陷随契约自然消失）
+- **步骤 5 ✅**：qa_CLFTextUtil +3 用例（12 tests/57 asserts）+ qa_CLFAnsiParser +2 用例（双序等价 + 跨段拼接语义——Q3 约定固化）；**ctest 36/36 全绿** + --version（v0.8.2）/--help 冒烟逐字一致
+- **实施期实抓（qa 静态期陷阱变体）**：qa_CLFAnsiParser 新用例最初调生产 CLFAnsi 包装 → 静态初始化期 s_enabled 恒 false → 包装退化为裸串 → 跨段用例 segs[1] 越界 Debug 弹窗 exit=3（用户实抓）。修法沿用项目惯例：qa 写**字面转义序列**（包装展开形态，既有"两段"用例注释背书）；probe 运行时验证已走真机生产链路
+- **待做**：~~用户实机验收~~ ✅（banner 显示正常 + 用户验收修订：版本号右对齐→紧随 tagline——宽终端视觉断开）→ ~~probe 清理~~ ✅（源文件 + CMake target + exe/ilk/pdb 零残留）→ ~~设计文档归档~~ ✅（三份移入 `设计/归档/归档-启动横幅Logo-*`，设计稿补 §10 实施记录，交叉引用批量更新）→ CHANGELOG v0.8.3 段 + VERSION bump ✅ → 最终回归 ✅（ctest 36/36 + --version v0.8.3/--help 冒烟）→ **提交推送 + tag v0.8.3（用户已授权）** → 用户发布
+- **用户待参与**：发布（Release 编译 + release.ps1 打包 + Gitee release 上传）
+
 ### ▶ QA 空壳残留与安装脚本加固 ✅ 实施完成（2026-09-22，待提交推送与用户实机验收）
 - **背景**：2026-09-21 用户发布自测事故——install.ps1 删安装目录时 clf_agent.log 被 14 个孤儿进程（findstr/cmd，父进程全死）锁住 → Stop 中止 → 半删残骸（config/会话历史靠 2.49MB 备份救回，哈希一致无损失）；善后发现 TEMP 43 个 clf_* 空壳目录（0 文件，跨 8/26–9/15）+ 10 个备份残留
 - **设计文档**：`设计/设计-空壳残留与安装脚本加固.md`（flash 出稿 → pro 复核拍板 §六 → 实施记录 §六.5）；判定门 A1：5 轮 ctest 36/36 全绿 + TEMP 计数 0→0（当前未复现，防御性实施）

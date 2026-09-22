@@ -79,6 +79,48 @@ suite qa_CLFTextUtil = [] {
         expect(CLFTextUtil::charWidth(static_cast<unsigned char>(0xE2)) == 2);  // ⎿/●/❯ 首字节仍计 2
         expect(CLFTextUtil::charWidth(static_cast<unsigned char>(0xAB)) == 0);  // 续字节 0
     };
+
+    // ---- 渲染口径折行（2026-09-22 启动横幅批次）----
+    // renderDisplayWidth/wrapLines 与 renderCharWidth 同表；charWidth 口径的
+    // displayWidth/substrByWidth 本体不动（上方钉子保持绿）。
+    "renderDisplayWidth：渲染口径与 charWidth 口径差异"_test = [] {
+        expect(CLFTextUtil::renderDisplayWidth("abc") == 3);
+        expect(CLFTextUtil::renderDisplayWidth("中文") == 4);   // 宽表 2×2（两口径一致）
+        expect(CLFTextUtil::renderDisplayWidth("⎿") == 1);      // 非宽多字节符号渲染 1 宽
+        expect(CLFTextUtil::displayWidth("⎿") == 2);            // charWidth 口径对照
+        expect(CLFTextUtil::renderDisplayWidth("❯ a") == 3);    // ❯(1) + 空格 + a
+        expect(CLFTextUtil::renderDisplayWidth("\033[36m⎿\033[0m") == 1);  // ANSI 跳过
+    };
+
+    "renderSubstrByWidth：渲染口径切分（不劈半多字节）"_test = [] {
+        expect(CLFTextUtil::renderSubstrByWidth("abcdef", 3) == "abc");
+        expect(CLFTextUtil::renderSubstrByWidth("中文abc", 4) == "中文");  // 2+2 不劈半
+        expect(CLFTextUtil::renderSubstrByWidth("⎿ 配置", 2) == "⎿ ");    // 渲染口径 1+1
+        expect(CLFTextUtil::substrByWidth("⎿ 配置", 2) == "⎿");           // charWidth 口径对照（钉子）
+        expect(CLFTextUtil::renderSubstrByWidth("abc", 0) == "");  // maxW=0 首字符即空串
+        expect(CLFTextUtil::renderSubstrByWidth("\033[36mabcdef\033[0m", 3)
+               == "\033[36mabc");                                   // ANSI 整体跳过不劈开
+    };
+
+    "wrapLines：渲染口径折行切分"_test = [] {
+        using L = std::vector<std::string>;
+        expect(CLFTextUtil::wrapLines("abc", 10) == L{"abc"});          // 不超宽整行
+        expect(CLFTextUtil::wrapLines("abcdef", 3) == L({"abc", "def"}));
+        expect(CLFTextUtil::wrapLines("中文ab", 4) == L({"中文", "ab"}));  // CJK 不劈半
+        expect(CLFTextUtil::wrapLines("⎿⎿⎿", 2) == L({"⎿⎿", "⎿"}));        // 渲染口径：每 ⎿ 1 宽
+        expect(CLFTextUtil::wrapLines("abc", 0) == L{"abc"});           // wrapW<=0 免折行
+        // 块字行（步骤 0 实测最宽 58）：80 列不折 / 40 列折行（验收 §8-3 断言）
+        const std::string blockLine =
+            "  ██████╗██╗     ███████╗ ██████╗ ██████╗ ██████╗ ███████╗";
+        expect(CLFTextUtil::renderDisplayWidth(blockLine) == 58);   // 与 ftxui::string_width 同值
+        expect(CLFTextUtil::wrapLines(blockLine, 80) == L{blockLine});
+        expect(CLFTextUtil::wrapLines(blockLine, 40).size() == 2);
+        // 单字符宽度超 wrapW → fallback 单字节段：不断言字节内容，只钉
+        // "已切分 + 每段非空"性质（防空段死循环；生产 wrapW 恒 ≥78 此路径不可达）
+        const auto fallbackParts = CLFTextUtil::wrapLines("中文", 1);
+        expect(fallbackParts.size() > 1);
+        for (const auto& p : fallbackParts) expect(!p.empty());
+    };
 };
 
 int main() {}

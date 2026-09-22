@@ -53,6 +53,13 @@ public:
     // 获取当前工作目录（用户启动 CLFCode 的目录，即 user's project root）
     static std::string getWorkingDir();
 
+    // 读取应用版本（VERSION 文件首行）——三态契约（启动横幅批次，2026-09-22）：
+    //   文件不存在 → "unknown"；存在但读取失败（打不开/空文件）→ ""；成功 → 首行。
+    // 不吞异常（resolvePath 抛异常时保持 set_terminate 语义——与既有 --version
+    // 行为一致）。两调用点（main.cpp printVersion / CLFCommands cmdVersion）
+    // 输出形制各自保留，逐字一致。
+    static std::string readVersionFile();
+
     // 上次 loadFromFileWithEnv 解析的 agent.allow_absolute_read（2.2b 静态缓存——
     // CLFHostApiImpl 宿主级键取值通道；loadFromFileWithEnv 末尾赋值，默认 false）
     static bool allowAbsoluteRead();

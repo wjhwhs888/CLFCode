@@ -274,22 +274,54 @@ int CLFRepl::run() {
 // submit / confirm / cycle / printBanner
 // ============================================================================
 
+namespace {
+// 品牌层块字（ANSI Shadow，"CLFCode" 7 字母；启动横幅批次 2026-09-22，
+// 设计定稿 §4.5）。步骤 0 实机验证：最宽行 58 列（渲染口径）、字体 1 格
+// 渲染、无缺字。仅 printBanner 消费。
+const char* kBlockLogo[] = {
+    "  ██████╗██╗     ███████╗ ██████╗ ██████╗ ██████╗ ███████╗",
+    " ██╔════╝██║     ██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝",
+    " ██║     ██║     █████╗  ██║     ██║   ██║██║  ██║█████╗",
+    " ██║     ██║     ██╔══╝  ██║     ██║   ██║██║  ██║██╔══╝",
+    " ╚██████╗███████╗██║     ╚██████╗╚██████╔╝██████╔╝███████╗",
+    "  ╚═════╝╚══════╝╚═╝      ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
+};
+// 块字最小终端宽度（最宽行 58 + 4 余量；w>0 且 w<62 时跳过块字。
+// getTerminalWidth 失败返回 -1 → 不降级，wrapW=78 兜底 > 58 不折行）
+constexpr int kBlockLogoMinWidth = 62;
+} // anonymous namespace
+
 void CLFRepl::printBanner() {
-    const auto& config = m_agent.getConfig();
-    std::string cwd = CLFConfigLoader::getWorkingDir();
-    if (m_output) m_output->emitContent(
-        CLFTerminal::bold("● CLFCode") + " — CLI Agent Framework for Code\n");
-    if (m_output) m_output->emitContent(
-        "  ⎿ " + CLFTerminal::gray(CLFTerminal::diagnosticInfo()) + "\n");
-    if (m_output) m_output->emitContent(
-        "  ⎿ 工作目录: " + CLFTerminal::cyan(cwd) + "\n");
-    if (m_output) m_output->emitContent(
-        "  ⎿ 配置: " + CLFTerminal::cyan(config.m_apiBaseUrl) + "\n");
-    if (m_output) m_output->emitContent(
-        "  ⎿ 模型: " + CLFTerminal::cyan(config.m_modelName) + "\n");
+    const std::string cwd = CLFConfigLoader::getWorkingDir();
+    if (!m_output) return;   // 空指针守卫（M3-a：早退式与逐行式等价）
+
+    // ---- 品牌层（定稿 §4.5 行 1-7）：块字 6 行 + tagline/版本 ----
+    // 块字逐行独立着色（SGR 不跨行——整体包色只有首行生效；颜色在外、
+    // 修饰在内的书写约定，§2.3）。窄终端降级：仅 tagline + 环境层。
+    const int termW = CLFTerminal::getTerminalWidth();
+    if (termW < 0 || termW >= kBlockLogoMinWidth) {
+        for (const char* line : kBlockLogo)
+            m_output->emitContent(
+                CLFTerminal::cyanLight(CLFTerminal::bold(line)) + "\n");
+    }
+    // tagline + 版本同行（用户验收定稿 2026-09-22：版本紧跟 tagline 而非
+    // 右对齐——宽终端下右对齐有 80+ 列空白，版本孤悬远端视觉断开）
+    std::string tagline = " CLI Agent Framework for Code";
+    tagline += " " + CLFTerminal::gray(CLFConfigLoader::readVersionFile());
+    m_output->emitContent(tagline + "\n");
+
+    // ---- 空行分隔（定稿 §4.5 行 8：品牌层与环境层的层级分离）----
+    m_output->emitContent("\n");
+
+    // ---- 环境层（定稿 §4.5 行 9-10）：完整路径 + skills 数 ----
+    // 路径语义 = 进程启动目录（M8 裁决：不从会话文件取工作区）
+    m_output->emitContent(CLFTerminal::gray(" ⎿ 工作目录: " + cwd) + "\n");
+    // Q4 裁决保留 skills 数（唯一"系统装好了"的正向信号；loadFromDir
+    // 调用必须保留——展示依赖该调用，M3-b）
     int sc = CLFSkillLoader::loadFromDir(CLFConfigLoader::resolvePath("data/skills"));
-    if (sc > 0) if (m_output) m_output->emitContent(
-        "  ⎿ 知识库: " + CLFTerminal::cyan(std::to_string(sc)) + " skills\n");
+    if (sc > 0)
+        m_output->emitContent(
+            CLFTerminal::gray(" ⎿ 知识库: " + std::to_string(sc) + " skills") + "\n");
 }
 
 void CLFRepl::submit(const std::string& input) {

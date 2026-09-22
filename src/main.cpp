@@ -40,16 +40,10 @@ void printHelp() {
 }
 
 void printVersion() {
-    std::error_code ec;
-    std::string verPath = CLF::CLFCore::CLFConfigLoader::resolvePath("VERSION");
-    if (std::filesystem::exists(verPath, ec)) {
-        std::ifstream f(verPath);
-        std::string v;
-        std::getline(f, v);
-        std::cout << v << std::endl;
-    } else {
-        std::cout << "unknown" << std::endl;
-    }
+    // 版本读取统一走 CLFConfigLoader::readVersionFile 三态契约（启动横幅批次，
+    // 2026-09-22）：不存在→"unknown"；打不开→空行（原 is_open 缺陷随契约
+    // 自然消失）；正常→首行。输出形制与改前逐字节一致。
+    std::cout << CLF::CLFCore::CLFConfigLoader::readVersionFile() << std::endl;
 }
 
 } // anonymous namespace

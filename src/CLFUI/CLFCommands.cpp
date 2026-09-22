@@ -317,15 +317,10 @@ bool cmdResume(const std::string&, const std::string& args,
 bool cmdVersion(const std::string&, const std::string&,
                 CLFAgentLoop&, const std::string&,
                 ICLFOutput* output) {
-    std::string verPath = CLFConfigLoader::resolvePath("VERSION");
-    std::error_code ec;
-    std::string version = "unknown";
-    if (std::filesystem::exists(verPath, ec)) {
-        std::ifstream file(verPath);
-        if (file.is_open()) {
-            std::getline(file, version);
-        }
-    }
+    // 三态契约：不存在→"unknown"；存在但读失败→""（此处保持现状兜底
+    // "unknown"）；正常→首行。输出形制与改前逐字一致（启动横幅批次）
+    std::string version = CLFConfigLoader::readVersionFile();
+    if (version.empty()) version = "unknown";
     if (output) output->emitContent("● CLFCode " + version + "\n");
     return true;
 }

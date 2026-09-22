@@ -40,7 +40,8 @@ public:
     // 续字节=0。共同局限（与旧实现一致）：emoji/组合字符计 2
     static int  charWidth(unsigned char c);
     static int  displayWidth(const std::string& s);
-    // 按显示宽度切分（不劈半多字节字符）；maxW<=0 返回原串
+    // 按显示宽度切分（不劈半多字节字符）；maxW<=0 时首字符即返回空串
+    // （2026-09-22 注释修正：原"返回原串"与实现不符——调用方须外层守卫 maxW>0）
     static std::string substrByWidth(const std::string& s, int maxW);
 
     // ============ 渲染宽度（2026-09-20 拖选列偏移根因修复）============
@@ -51,10 +52,30 @@ public:
     // 用户实机取证：'⎿ 配置: …' 行点击 k 命中左侧 e——charWidth 恒计 2
     // 而 FTXUI 渲染 1 宽）。displayWidth/substrByWidth 保持 charWidth 的
     // 项目规则口径（❯ 计 2 等 qa 钉子语义）不改——渲染视觉不受影响
-    // （FTXUI 布局一直按本表），仅选区换算对齐渲染。
+    // （FTXUI 布局一直按本表），仅选区换算对齐渲染。2026-09-22 起折行路径
+    // 亦切渲染口径（renderDisplayWidth/wrapLines，启动横幅批次），
+    // displayWidth/substrByWidth 本体仍保持 charWidth 口径不动（qa 钉子）。
     static int renderCharWidth(const std::string& s, size_t pos);
     // pos 处 UTF-8 字符的字节长度（1-4；非法首字节兜底 1）
     static size_t utf8CharLen(const std::string& s, size_t pos);
+
+    // ============ 渲染口径折行（2026-09-22 启动横幅批次）============
+
+    // 渲染口径整行宽度：逐字符 renderCharWidth 求和（ANSI 转义跳过）。
+    // 与 renderCharWidth 同表（FTXUI wcwidth）——⎿/●/❯/块字等非宽多字节符号
+    // 计 1 宽；charWidth 口径恒计 2 致折行点提前（含 ⎿ 长行折行位置错误的
+    // 既有缺陷）。中文仍在宽表（计 2），与 charWidth 口径一致——仅含非宽
+    // 多字节符号的行折行点右移，不存在"原来不折现在折"的回归。
+    static int renderDisplayWidth(const std::string& s);
+    // 按渲染宽度切分（不劈半多字节字符；ANSI 转义整体跳过不劈开）。
+    // maxW<=0 行为与 substrByWidth 同语义：首字符即返回空串
+    // （调用方须外层守卫 maxW>0）
+    static std::string renderSubstrByWidth(const std::string& s, int maxW);
+    // 折行切分：按渲染宽度把 s 切成 ≤wrapW 的段序列（CLFReplView 折行 +
+    // qa 三用）。wrapW<=0 → 返回 {s}（免折行——与 CLFReplView 折行外层
+    // 守卫 `wrapW > 0` 同语义）；宽度不足容纳单字符时返回单字节段
+    // （与 CLFReplView 折行 fallback 同语义，防空段死循环）。
+    static std::vector<std::string> wrapLines(const std::string& s, int wrapW);
 
     // ============ 消息内容截断 ============
 

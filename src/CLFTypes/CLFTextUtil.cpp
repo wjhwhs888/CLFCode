@@ -184,6 +184,47 @@ std::string CLFTextUtil::substrByWidth(const std::string& s, int maxW) {
     return s;
 }
 
+// ============ 渲染口径折行（2026-09-22 启动横幅批次）============
+// 与 renderCharWidth 同表（FTXUI wcwidth）：⎿/●/❯/块字等非宽多字节符号计
+// 1 宽——charWidth 口径恒计 2 致折行点提前（含 ⎿ 长行折行位置错误的既有
+// 缺陷）。中文仍在宽表（计 2）与 charWidth 口径一致，仅符号行折行点右移。
+// 折行与选区 colToByte（已用 renderCharWidth）口径自此统一。
+
+int CLFTextUtil::renderDisplayWidth(const std::string& s) {
+    int w = 0;
+    for (size_t i = 0; i < s.size();) {
+        if (skipAnsiEscape(s, i)) continue;   // ANSI 转义不占显示宽（i 已推进）
+        w += renderCharWidth(s, i);
+        i += utf8CharLen(s, i);               // 坏字节兜底 1，循环不卡续字节
+    }
+    return w;
+}
+
+std::string CLFTextUtil::renderSubstrByWidth(const std::string& s, int maxW) {
+    int w = 0;
+    for (size_t i = 0; i < s.size();) {
+        if (skipAnsiEscape(s, i)) continue;   // 转义整体跳过（切分点不落转义中间）
+        int cw = renderCharWidth(s, i);
+        if (w + cw > maxW) return s.substr(0, i);
+        w += cw;
+        i += utf8CharLen(s, i);
+    }
+    return s;
+}
+
+std::vector<std::string> CLFTextUtil::wrapLines(const std::string& s, int wrapW) {
+    std::vector<std::string> parts;
+    if (wrapW <= 0) { parts.push_back(s); return parts; }   // 免折行（外层守卫同语义）
+    std::string remaining = s;
+    while (!remaining.empty()) {
+        std::string part = renderSubstrByWidth(remaining, wrapW);
+        if (part.empty()) part = remaining.substr(0, 1);    // fallback（与 CLFReplView 折行同语义）
+        remaining = remaining.substr(part.size());
+        parts.push_back(std::move(part));
+    }
+    return parts;
+}
+
 std::string CLFTextUtil::replaceAll(std::string s, const std::string& from,
                                     const std::string& to) {
     size_t pos = 0;

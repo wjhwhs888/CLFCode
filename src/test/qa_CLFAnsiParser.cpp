@@ -91,6 +91,41 @@ suite qa_CLFAnsiParser = [] {
         expect(!CLFAnsiParser::isSgrSequence("abc"));
         expect(!CLFAnsiParser::isSgrSequence(""));
     };
+
+    // ---- 嵌套语义固化（2026-09-22 启动横幅批次，Q3 裁决：立书写约定）----
+    // F2 裁决：flush 先于 applyCode + 落段值快照 → 单段包裹双序等价；
+    // 真失效形态 = 外层包装内拼接多段（内层全清 reset 抹掉外层属性，
+    // 与真实终端一致）。
+    // ⚠ qa 静态期陷阱：套件在静态初始化期执行，CLFAnsi::s_enabled 恒 false，
+    // 生产包装会退化为裸串——必须写字面转义序列（CLFAnsi 包装的展开形态，
+    // 与上方"两段"用例注释一致；probe 运行时验证已走真机生产链路）。
+    "双序等价：cyan(bold(x)) ≡ bold(cyan(x))"_test = [] {
+        const std::string seqA = "\033[36m\033[1mx\033[0m\033[0m";  // cyan(bold(x)) 展开
+        const std::string seqB = "\033[1m\033[36mx\033[0m\033[0m";  // bold(cyan(x)) 展开
+        auto segsA = CLFAnsiParser::parse(seqA);
+        auto segsB = CLFAnsiParser::parse(seqB);
+        expect(segsA.size() == segsB.size());
+        if (segsA.size() == segsB.size()) {
+            for (size_t i = 0; i < segsA.size(); ++i) {
+                expect(segsA[i].text == segsB[i].text);
+                expect(segsA[i].bold == segsB[i].bold);
+                expect(segsA[i].fg == segsB[i].fg);
+            }
+        }
+        expect(segsA.size() == 1);
+        expect(segsA[0].text == "x" && segsA[0].bold && segsA[0].fg == 36);
+    };
+
+    "跨段拼接：外层属性不跨 reset 恢复（与真实终端一致）"_test = [] {
+        // bold(cyan(A)+gray(B)) 展开：内层全清 reset 抹掉外层 bold → B 丢 bold。
+        // 钉住现有行为 = 真实终端语义（修法是书写约定：包裹内不拼接多段，
+        // 而非改 parser——F2 裁决）
+        auto segs = CLFAnsiParser::parse(
+            "\033[1m\033[36mA\033[0m\033[90mB\033[0m\033[0m");
+        expect(segs.size() == 2);
+        expect(segs[0].text == "A" && segs[0].bold && segs[0].fg == 36);
+        expect(segs[1].text == "B" && !segs[1].bold && segs[1].fg == 90);
+    };
 };
 
 int main() {}

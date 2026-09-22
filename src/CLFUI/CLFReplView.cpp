@@ -183,16 +183,15 @@ ftxui::Element CLFReplView::render() {
                   : (s == CLF::CLFTypes::ICLFOutput::LineStyle::Remove) ? 2
                   : (s == CLF::CLFTypes::ICLFOutput::LineStyle::Context) ? 3 : 0;
         }
-        int lineW = Sel::displayWidth(l);
+        int lineW = CLFTextUtil::renderDisplayWidth(l);
         if (wrapW > 0 && lineW > wrapW) {
-            // CJK 感知硬换行：每个 part 是独立的渲染行（选区行映射的基本单元）
-            std::string remaining = l;
+            // CJK 感知硬换行（2026-09-22 渲染口径——与 FTXUI 布局同表）：
+            // 每个 part 是独立的渲染行（选区行映射的基本单元）。原 charWidth
+            // 口径对 ⎿/●/❯/块字等非宽多字节符号多算 1 宽致折行点提前，
+            // 渲染口径与选区 colToByte 自此统一（启动横幅批次 F0 修复）
             size_t partIdx = 0;
-            while (!remaining.empty()) {
-                std::string part = Sel::substrByWidth(remaining, wrapW);
-                if (part.empty()) part = remaining.substr(0, 1); // fallback
+            for (const auto& part : CLFTextUtil::wrapLines(l, wrapW)) {
                 addRow(part, RowKind::Content, i, partIdx++, style);
-                remaining = remaining.substr(part.size());
             }
         } else {
             addRow(l, RowKind::Content, i, 0, style);
@@ -201,15 +200,10 @@ ftxui::Element CLFReplView::render() {
     if (!snap.pendingLine.empty()) {
         const auto& pl = snap.pendingLine;
         if (wrapW > 0) {
-            // A2（R4）：字节 wrap → CJK 感知宽度切分（与主内容硬换行统一；
-            // 渲染行为变更：CJK 文本换行点不再劈半字符，T3 视觉回归覆盖）
-            std::string remaining = pl;
+            // CJK 感知宽度切分（与主内容硬换行统一——渲染口径，2026-09-22）
             size_t partIdx = 0;
-            while (!remaining.empty()) {
-                std::string part = Sel::substrByWidth(remaining, wrapW);
-                if (part.empty()) part = remaining.substr(0, 1);
+            for (const auto& part : CLFTextUtil::wrapLines(pl, wrapW)) {
                 addRow(part, RowKind::Pending, 0, partIdx++, 0);
-                remaining = remaining.substr(part.size());
             }
         } else {
             addRow(pl, RowKind::Pending, 0, 0, 0);
@@ -243,16 +237,13 @@ ftxui::Element CLFReplView::render() {
                RowKind::FoldSummary, 0, 0, 3);
         if (snap.foldedExpanded) {
             for (size_t i = 0; i < snap.foldedLines.size(); ++i) {
-                // 与主内容一致的 CJK 感知硬换行
-                std::string remaining = "  " + snap.foldedLines[i];
-                int lw = Sel::displayWidth(remaining);
+                // 与主内容一致的 CJK 感知硬换行（渲染口径，2026-09-22）
+                const std::string remaining = "  " + snap.foldedLines[i];
+                int lw = CLFTextUtil::renderDisplayWidth(remaining);
                 if (wrapW > 0 && lw > wrapW) {
                     size_t partIdx = 0;
-                    while (!remaining.empty()) {
-                        std::string part = Sel::substrByWidth(remaining, wrapW);
-                        if (part.empty()) part = remaining.substr(0, 1);
+                    for (const auto& part : CLFTextUtil::wrapLines(remaining, wrapW)) {
                         addRow(part, RowKind::FoldLine, i, partIdx++, 3);
-                        remaining = remaining.substr(part.size());
                     }
                 } else {
                     addRow(remaining, RowKind::FoldLine, i, 0, 3);

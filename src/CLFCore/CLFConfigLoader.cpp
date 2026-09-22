@@ -187,6 +187,16 @@ std::string CLFConfigLoader::getWorkingDir() {
     return fs::current_path().u8string();
 }
 
+std::string CLFConfigLoader::readVersionFile() {
+    std::error_code ec;
+    const std::string verPath = resolvePath("VERSION");
+    if (!fs::exists(verPath, ec)) return "unknown";
+    std::ifstream f(verPath);
+    std::string v;
+    std::getline(f, v);   // 打不开/空文件 → v 空串（与 printVersion 现状空行语义一致）
+    return v;
+}
+
 bool CLFConfigLoader::loadFromFile(const std::string& configPath, CLFAgentConfig& outConfig) {
     std::ifstream file(fs::u8path(configPath));
     if (!file.is_open()) {
