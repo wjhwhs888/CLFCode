@@ -15,6 +15,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 一行注册一个测试：clf_add_test(<target 名> <链接库...>)
 function(clf_add_test name)
     add_executable(${name} ${name}.cpp)
+    # 共享测试设施头（CLFTestTempDir.hpp 等，2026-09-22 引入）
+    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(${name} PRIVATE ${ARGN})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src")

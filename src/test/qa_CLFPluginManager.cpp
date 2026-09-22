@@ -9,6 +9,7 @@
 //   badinit / badabi / multisvc / loopA+loopB / svc1+svc2 / depA+depB / nosym
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -44,24 +45,14 @@ std::string pathToUtf8(const fs::path& p) {
     return std::string(reinterpret_cast<const char*>(s.data()), s.size());
 }
 
-// 每用例独立插件目录：临时目录 + 从 CLF_TEST_PLUGIN_DIR 复制所需变体 DLL。
-// 目录名含纳秒时间戳 + 原子计数，避免并行测试冲突
-std::atomic<int> g_dirCounter{0};
-std::string makePluginDir(std::initializer_list<const char*> dllNames) {
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    fs::path dir = fs::temp_directory_path() /
-                   ("clf_plugintest_" + std::to_string(stamp) + "_" +
-                    std::to_string(g_dirCounter.fetch_add(1)));
-    fs::create_directories(dir);
+// 每用例独立插件目录（RAII 统一设施：按值返回移动，离开作用域自动清理——
+// 作用域顺序保证 mgr 内层块先析构（DLL 卸载）→ 目录后析构）
+CLFTest::CLFTestTempDir makePluginDir(std::initializer_list<const char*> dllNames) {
+    CLFTest::CLFTestTempDir d("clf_plugintest_");
     for (const char* name : dllNames) {
-        fs::copy_file(fs::path(CLF_TEST_PLUGIN_DIR) / name, dir / name);
+        fs::copy_file(fs::path(CLF_TEST_PLUGIN_DIR) / name, d.path() / name);
     }
-    return pathToUtf8(dir);
-}
-
-void cleanupDir(const std::string& dirUtf8) {
-    std::error_code ec;
-    fs::remove_all(fs::u8path(dirUtf8), ec);   // manager 已析构（DLL 已卸载）后调用
+    return d;
 }
 
 std::string readFile(const fs::path& path) {
@@ -70,10 +61,9 @@ std::string readFile(const fs::path& path) {
 }
 
 // 日志文件（suite 开头 init 重定向；用例断言读此文件找子串）
-const fs::path kLogPath = [] {
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    return fs::temp_directory_path() / ("clf_plugintest_log_" + std::to_string(stamp) + ".log");
-}();
+// RAII 统一设施：静态期构造（声明早于 suite 对象 → 先构造）→ 静态析构期清理
+//（析构逆序：logger → suite → kLogPath → 哨兵，logger 句柄已释放后才删文件）
+CLFTest::CLFTestTempFile kLogPath("clf_plugintest_log_", ".log");
 std::string logContents() { return readFile(kLogPath); }
 
 // 从日志文件取某次断言区间的内容：返回距文件尾 n 字符（避免前序用例日志干扰）
@@ -95,7 +85,7 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
     // ========== P1 空目录 ==========
 
     "P1 空目录"_test = [] {
-        std::string dir = makePluginDir({});
+        auto dir = makePluginDir({});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 0_i);
@@ -104,13 +94,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             expect(mgr.getService("nonexistent") == nullptr);
             expect(mgr.toolProviders().empty());
         }
-        cleanupDir(dir);
     };
 
     // ========== P2 发现与加载 ==========
 
     "P2 发现与加载"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -125,13 +114,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
                 expect(entries[0].version == "1.0.0");
             }
         }
-        cleanupDir(dir);
     };
 
     // ========== P3 元数据 ==========
 
     "P3 元数据"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -149,13 +137,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             }
             expect(provider->toolMeta(1) == nullptr);                   // 越界 → nullptr
         }
-        cleanupDir(dir);
     };
 
     // ========== P4 服务路由 ==========
 
     "P4 服务路由"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -166,13 +153,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
                 expect(provider->toolCount() == 1_i);                   // downcast 后可用
             }
         }
-        cleanupDir(dir);
     };
 
     // ========== P5 callTool 往返 + 回调判空义务 ==========
 
     "P5 callTool 往返"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -196,13 +182,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             expect(provider->callTool("test_echo", "{}", &content, &nullCb));
             expect(content == "{\"x\":1}");    // 判空跳过回调 → 结果无处可送，content 保持旧值
         }
-        cleanupDir(dir);
     };
 
     // ========== P6 卸载 ==========
 
     "P6 卸载"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -210,13 +195,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             expect(mgr.getService("tool.provider") == nullptr);
             expect(mgr.listPluginNames().empty());
         }
-        cleanupDir(dir);
     };
 
     // ========== P7 热替换 ==========
 
     "P7 热替换"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -240,13 +224,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
                 expect(content == "reloaded");          // callTool 往返通
             }
         }
-        cleanupDir(dir);
     };
 
     // ========== P8 ABI 版本不符 ==========
 
     "P8 ABI 版本不符"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll", "clf.teststub.badabi.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll", "clf.teststub.badabi.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);           // 仅主 stub 成功
@@ -258,13 +241,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             expect(logTail(2000).find("ABI version mismatch") != std::string::npos);
             expect(logTail(2000).find("rebuild required") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     // ========== P9 init 失败隔离 ==========
 
     "P9 init 失败隔离"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll", "clf.teststub.badinit.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll", "clf.teststub.badinit.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);           // 主 stub 正常
@@ -275,27 +257,25 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             // 第二次 loadAll：禁用记录跳过（不重复 init）
             expect(mgr.loadAll() == 0_i);
         }
-        cleanupDir(dir);
     };
 
     // ========== P10 非插件 DLL ==========
 
     "P10a 缺符号 DLL"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.nosym.dll"});
+        auto dir = makePluginDir({"clf.teststub.nosym.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 0_i);           // 合法 DLL 无工厂导出 → 跳过
             expect(mgr.listPluginNames().empty());
             expect(logTail(2000).find("missing factory symbols") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     "P10b 坏 PE 文件"_test = [] {
-        std::string dir = makePluginDir({});        // 空目录
+        auto dir = makePluginDir({});        // 空目录
         {
             // 垃圾字节 .dll（测试运行时生成、用后删除）——LoadLibraryW 失败路径
-            std::ofstream bad(fs::u8path(dir) / "clf.bad.dll", std::ios::binary);
+            std::ofstream bad(dir.path() / "clf.bad.dll", std::ios::binary);
             bad << "this is not a PE file";
             bad.close();
 
@@ -304,26 +284,24 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             expect(mgr.listPluginNames().empty());
             expect(logTail(2000).find("LoadLibrary failed") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     // ========== P11 依赖缺失 ==========
 
     "P11 依赖缺失"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.loopA.dll"});   // requires "svc.loopB"（不存在）
+        auto dir = makePluginDir({"clf.teststub.loopA.dll"});   // requires "svc.loopB"（不存在）
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 0_i);
             expect(mgr.listPluginNames().empty());
             expect(logTail(2000).find("missing dependency service") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     // ========== P12 宿主 API ==========
 
     "P12 宿主 API"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -349,13 +327,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             // 服务查询经 host 转发
             expect(host->getService("tool.provider") != nullptr);
         }
-        cleanupDir(dir);
     };
 
     // ========== P13 多服务插件（多继承 CLFService 子对象约束） ==========
 
     "P13 多服务插件"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.multisvc.dll"});
+        auto dir = makePluginDir({"clf.teststub.multisvc.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -371,13 +348,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
                 expect(std::string(describeService(second)) == "second service ok");
             }
         }
-        cleanupDir(dir);
     };
 
     // ========== P14 多提供方歧义 ==========
 
     "P14 多提供方歧义"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.svc1.dll", "clf.teststub.svc2.dll"});
+        auto dir = makePluginDir({"clf.teststub.svc1.dll", "clf.teststub.svc2.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 2_i);
@@ -389,58 +365,54 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             }
             expect(logTail(2000).find("multiple plugins") != std::string::npos);   // warn 记录
         }
-        cleanupDir(dir);
     };
 
     // ========== P15 依赖环 ==========
 
     "P15 依赖环"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.loopA.dll", "clf.teststub.loopB.dll"});
+        auto dir = makePluginDir({"clf.teststub.loopA.dll", "clf.teststub.loopB.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 0_i);           // 环上全部禁用
             expect(mgr.listPluginNames().empty());
             expect(logTail(2000).find("dependency cycle") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     // ========== P16 reload 失败语义 ==========
 
     "P16 reload 失败"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
             expect(mgr.unload("clf.teststub"));
             // 模拟升级为不可用版本：删除 DLL（加载中文件被锁定，先卸载才能删）
             std::error_code ec;
-            fs::remove(fs::u8path(dir) / "clf.teststub.dll", ec);
+            fs::remove(dir.path() / "clf.teststub.dll", ec);
             expect(!ec);
             expect(!mgr.reload("clf.teststub"));    // 新插件失败 → 旧已卸载、服务已消失
             expect(mgr.getService("tool.provider") == nullptr);   // 调用方自兜底
             expect(mgr.listPluginNames().empty());
         }
-        cleanupDir(dir);
     };
 
     // ========== P17 析构自动卸载（析构顺序检测锚点） ==========
 
     "P17 析构自动卸载"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
         }   // 析构 → shutdown（调 host->apiVersion + log）→ Destroy → FreeLibrary
         // shutdown 确被调用（析构顺序错——host 先死——则当场崩，测试直接失败）
         expect(logTail(1000).find("clf.teststub shutdown") != std::string::npos);
-        cleanupDir(dir);
     };
 
     // ========== P18 依赖满足正向拓扑 ==========
 
     "P18 依赖满足正向拓扑"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.depA.dll", "clf.teststub.depB.dll"});
+        auto dir = makePluginDir({"clf.teststub.depA.dll", "clf.teststub.depB.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 2_i);           // depB（提供方）先 init，depA 后 init
@@ -450,13 +422,12 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             // depA 的 init 里 getService("svc.b") 非空才成功——加载成功即证明拓扑序正确
             expect(mgr.getService("svc.b") != nullptr);
         }
-        cleanupDir(dir);
     };
 
     // ========== P19 重复加载语义 ==========
 
     "P19 重复加载语义"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -470,11 +441,10 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             expect(mgr.load("clf.teststub"));                   // 可重新 load
             expect(mgr.listPluginNames().size() == 1_u);
         }
-        cleanupDir(dir);
     };
 
     "P20 状态表语义"_test = [] {
-        std::string dir = makePluginDir({"clf.teststub.dll"});
+        auto dir = makePluginDir({"clf.teststub.dll"});
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -507,7 +477,6 @@ const boost::ut::suite<"CLFPluginManager"> tests = [] {
             // 未知名：pluginState false
             expect(!mgr.pluginState("nonexistent", st));
         }
-        cleanupDir(dir);
     };
 };
 

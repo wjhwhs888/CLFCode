@@ -2,6 +2,7 @@
 // S1-S6: 文件创建/续写 / turn 差集追加 / summary 行 / 回显行收集
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -22,13 +23,9 @@ using CLF::CLFCore::CLFSessionEchoLine;
 
 namespace {
 
-// 唯一临时工作目录（时间戳后缀防并发冲突）；调用方负责删除
-std::string makeTempDir(const std::string& name) {
-    auto stamp = std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::path p = fs::temp_directory_path() / (name + "_" + stamp);
-    fs::create_directories(p);
-    return p.string();
+// 唯一临时工作目录（RAII 统一设施：离开作用域自动清理，失败重试 + 哨兵兜底）
+CLFTest::CLFTestTempDir makeTempDir(const std::string& name) {
+    return CLFTest::CLFTestTempDir(name);
 }
 
 CLFMessage makeMsg(const std::string& role, const std::string& content) {
@@ -60,13 +57,12 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
             CLFMessageCodec::parseHeaderLine(obj, &title);
             expect(title == std::string("first input"));
         }
-        fs::remove_all(fs::u8path(dir));
     };
 
     "S2 beginSessionFile 续写：复制源文件 + 清 resumedFrom + 续后缀"_test = [] {
         auto dir = makeTempDir("clf_qa_filectx_s2");
         // 源文件：header + turn 行（简化合法 jsonl）
-        fs::path src = fs::u8path(dir) / "src.jsonl";
+        fs::path src = dir.path() / "src.jsonl";
         {
             std::ofstream f(src, std::ios::binary);
             f << R"({"type":"header","title":"源会话","session_id":"sid-1","timestamp":"2026-09-07 10:00:00","model":"m","skills":[]})" << "\n";
@@ -86,7 +82,6 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
             expect(bool(std::getline(a, lineA)) && bool(std::getline(b, lineB)));
             expect(lineA == lineB);
         }
-        fs::remove_all(fs::u8path(dir));
     };
 
     "S3 appendTurn 差集：轮初计数后追加新消息"_test = [] {
@@ -120,7 +115,6 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
             }
         }
         expect(foundTurn);
-        fs::remove_all(fs::u8path(dir));
     };
 
     "S4 appendTurn 无新消息 → 跳过（空串）"_test = [] {
@@ -134,7 +128,6 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
         // 无活动文件也跳过
         CLFSessionFileCtx ctx2;
         expect(ctx2.appendTurn(msgs, nullptr).empty());
-        fs::remove_all(fs::u8path(dir));
     };
 
     "S5 appendSummaryLine：无效跳过 / 有效追加"_test = [] {
@@ -159,12 +152,11 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
             }
         }
         expect(found);
-        fs::remove_all(fs::u8path(dir));
     };
 
     "S6 collectEchoLines：jsonl 行级回显（turn+complete）与非 jsonl 投影"_test = [] {
         auto dir = makeTempDir("clf_qa_filectx_s6");
-        fs::path p = fs::u8path(dir) / "echo.jsonl";
+        fs::path p = dir.path() / "echo.jsonl";
         {
             std::ofstream f(p, std::ios::binary);
             // header 行（不回显）
@@ -193,11 +185,10 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
             makeMsg("system", "skip"), makeMsg("user", "u1"),
             makeMsg("assistant", "a2"), makeMsg("tool", "skip")};
         std::vector<CLFSessionEchoLine> echo2;
-        ctx.collectEchoLines(dir + "/old.json", msgs, echo2);
+        ctx.collectEchoLines(dir.string() + "/old.json", msgs, echo2);
         expect(echo2.size() == 2u);
         expect(echo2[0].m_kind == CLFSessionEchoLine::Kind::User);
         expect(echo2[1].m_kind == CLFSessionEchoLine::Kind::Assistant);
-        fs::remove_all(fs::u8path(dir));
     };
 };
 

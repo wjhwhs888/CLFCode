@@ -2,6 +2,19 @@
 
 ## 进行中
 
+### ▶ QA 空壳残留与安装脚本加固 ✅ 实施完成（2026-09-22，待提交推送与用户实机验收）
+- **背景**：2026-09-21 用户发布自测事故——install.ps1 删安装目录时 clf_agent.log 被 14 个孤儿进程（findstr/cmd，父进程全死）锁住 → Stop 中止 → 半删残骸（config/会话历史靠 2.49MB 备份救回，哈希一致无损失）；善后发现 TEMP 43 个 clf_* 空壳目录（0 文件，跨 8/26–9/15）+ 10 个备份残留
+- **设计文档**：`设计/设计-空壳残留与安装脚本加固.md`（flash 出稿 → pro 复核拍板 §六 → 实施记录 §六.5）；判定门 A1：5 轮 ctest 36/36 全绿 + TEMP 计数 0→0（当前未复现，防御性实施）
+- **核实（2 个 Explore agent + 亲验）**：qa 侧 9 条 + 脚本侧 14 条断言全部属实；**双根因机制**——① 删除失败被吞（ec 忽略 5 处）② **早退跳过清理**（PluginDomains `if (!p) return;` 早退在目录创建后清理前）；表外创建点 5 类（restore/domains/rules/git/plugin CWD 文件 + PluginManager kLogPath 从不清理）
+- **问题一（F1-F5）**：新建 `src/test/CLFTestTempDir.hpp`（CLFTestTempDir/File RAII + RemoveWithRetry 1/5/20ms + 登记制哨兵 `static` 每 TU 一份 + 析构 std::exit(1)——与 boost::ut ~runner 同款机制）；CMake clf_add_test 加 include 路径；8 套件改造（AgentLoop/SessionManager/SessionFileCtx/SystemComponents/SearchContent/PluginDomains/PluginFileOps/PluginManager——工厂按值返回 + 清理行删除 + 早退零改动 RAII 自动安全 + F8/G2 CWD 文件显式 parent）
+- **编译实抓**：隐式转换边界——MSVC `operator+`/`fs::u8path` 是函数模板，模板推导不做隐式转换 → `dir + "/x"`/`u8path(dir)` 报 C2676/C2672 → 模板实参位置改显式 `.string()`/`.path()`（11 处）；非模板参数隐式转换全部正常
+- **哨兵自证**：TextUtil 临时注入泄漏用例 → stderr 残留 + exit 1 → ctest 红 → 还原
+- **问题二（S1-S6）**：install.ps1 = 唯一权威实现（-Upgrade 开关 + 3 测试钩子 + S1 独占探测精确报告 + S2 `[System.IO.Directory]::Move` 原子改名 + S3 目标断言 + S4 备份清理收敛 + catch 回滚 + S6 uninstall 模板同名加固）；upgrade.ps1 = 薄壳（版本比较 → 拉 install → & -Upgrade）
+- **实施期实抓 3 处**：① **UTF-8 BOM 教训**——PS5.1 -File 执行无 BOM UTF-8 中文脚本按 GBK 误读破坏解析（V1 全败实证），两脚本加 BOM（irm | iex 无此问题）② **S2 假设证伪**——PowerShell Move-Item 目录 = 逐项移动（锁文件时半移+抛异常）；Directory.Move 真 rename 对含锁文件目录被 Windows 拒绝 → 两层设计：S1 精确报告 + S2 改名即探测（失败即退出零破坏）③ **S6 半删实抓**——初版只报错仍半删 → uninstall 同用改名后删
+- **验证**：V1-V4 + S6 全场景 **31/31 通过**（正常安装/占用三脚本零破坏/无嵌套/零残留，真实 Gitee 下载链路）+ ctest 36/36 ×2 轮 + 冒烟 exit 0 + TEMP 零残留
+- **待办**：提交推送（不打 tag——memory 规则）→ 用户实机验收（真机 install/upgrade/uninstall 三脚本 + 覆盖安装数据恢复）
+
+
 ### ▶ 命令候选面板与唯一维护 ✅（2026-09-21 全闭环，随 v0.8.1 发布）
 - **用户需求**：输入 `/` 时输入框上方（确认区）列出支持命令，前缀实时过滤（`/c` → `/clear`）；用户定案：纯展示（不劫持按键）+ 空格后收起面板
 - **用户核心约束**：命令列表唯一维护——触发调用与用户展示同一来源，加命令只改一处

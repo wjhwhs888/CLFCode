@@ -1,27 +1,34 @@
-# CLFCode 升级脚本
+﻿# CLFCode 升级脚本（薄壳，2026-09-22 S5）
 # 用法: irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex
 #
-# 保留用户配置，仅更新程序文件
+# 保留用户配置，仅更新程序文件。
+# 唯一权威实现 = install.ps1（含占用探测/改名后删/嵌套防御/回滚）——
+# 本薄壳只做：已装检查 + 版本比较 + 拉取 install.ps1 以 -Upgrade 执行。
 
 $ErrorActionPreference = "Stop"
 
 $REPO_OWNER = "sherlock0923"
 $REPO_NAME  = "CLFCode"
-$INSTALL_DIR = "$env:USERPROFILE\CLFCode"
+$INSTALL_DIR = if ($env:CLFCODE_TEST_INSTALL_DIR) { $env:CLFCODE_TEST_INSTALL_DIR }
+               else { "$env:USERPROFILE\CLFCode" }
+$BASE = "https://gitee.com/$REPO_OWNER/$REPO_NAME/raw/master"
+# 测试钩子（V3 验证用）：指向本地 install.ps1 副本（未设置时走远端 Gitee）
+$INSTALL_URL = if ($env:CLFCODE_TEST_INSTALL_URL) { $env:CLFCODE_TEST_INSTALL_URL }
+               else { "$BASE/install.ps1" }
 
 Write-Host "● CLFCode 升级程序" -ForegroundColor Cyan
 
 # ── 检查是否已安装 ──
 if (-not (Test-Path "$INSTALL_DIR\bin\Release\CLFCode.exe")) {
     Write-Host "  CLFCode 未安装，请先运行安装脚本:" -ForegroundColor Yellow
-    Write-Host "  irm https://gitee.com/$REPO_OWNER/$REPO_NAME/raw/master/install.ps1 | iex" -ForegroundColor White
+    Write-Host "  irm $BASE/install.ps1 | iex" -ForegroundColor White
     exit 1
 }
 
 # ── 获取最新版本 ──
 Write-Host "  正在查询最新版本..." -ForegroundColor Gray
 try {
-    $versionUrl = "https://gitee.com/$REPO_OWNER/$REPO_NAME/raw/master/VERSION"
+    $versionUrl = "$BASE/VERSION"
     $latestVersion = (Invoke-RestMethod -Uri $versionUrl -TimeoutSec 10).Trim()
 } catch {
     Write-Host "  ✗ 无法获取版本信息" -ForegroundColor Red
@@ -31,7 +38,7 @@ try {
 # ── 获取当前版本 ──
 $currentVersion = ""
 $versionFile = "$INSTALL_DIR\VERSION"
-if (Test-Path $versionFile) {
+if (Test-Path -LiteralPath $versionFile) {
     $currentVersion = (Get-Content $versionFile).Trim()
 }
 
@@ -42,84 +49,19 @@ if ($currentVersion -eq $latestVersion) {
 }
 
 Write-Host "  当前版本: $currentVersion  →  最新版本: $latestVersion" -ForegroundColor Yellow
-
-# ── 备份用户数据 ──
-# 保留：配置 / 会话历史 / 日志 / 崩溃转储（升级不丢数据）
-# GUID 唯一目录名：避免旧固定目录残留导致下次备份嵌套错乱
-$backupRoot = "$env:TEMP\CLFCode_backup_$([guid]::NewGuid().ToString('N'))"
-foreach ($rel in @("config", "doc\contextHistory", "doc\log", "doc\debug")) {
-    $srcPath = Join-Path $INSTALL_DIR $rel
-    if (Test-Path $srcPath) {
-        $dstPath = Join-Path $backupRoot $rel
-        New-Item -ItemType Directory -Path (Split-Path $dstPath) -Force | Out-Null
-        Copy-Item -Path $srcPath -Destination $dstPath -Recurse -Force
-    }
-}
-Write-Host "  用户数据已备份（配置/会话历史/日志）" -ForegroundColor Gray
-
-# ── 下载新版本 ──
-$zipUrl = "https://gitee.com/$REPO_OWNER/$REPO_NAME/releases/download/$latestVersion/CLFCode-$latestVersion-win64.zip"
-$zipPath = "$env:TEMP\CLFCode-$latestVersion-upgrade.zip"
-
-Write-Host "  正在下载 $latestVersion..." -ForegroundColor Gray
-try {
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -TimeoutSec 300
-} catch {
-    try {
-        $releaseApi = "https://gitee.com/api/v5/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
-        $releaseInfo = Invoke-RestMethod -Uri $releaseApi -TimeoutSec 10
-        $asset = $releaseInfo.assets | Where-Object { $_.name -like "*win64.zip" } | Select-Object -First 1
-        if ($asset) {
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -TimeoutSec 300
-        } else {
-            throw "找不到发布包"
-        }
-    } catch {
-        Write-Host "  ✗ 下载失败" -ForegroundColor Red
-        exit 1
-    }
-}
-
-# ── 替换安装 ──
-Write-Host "  正在升级..." -ForegroundColor Gray
-Remove-Item -Path $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
-
-$tempExtract = "$env:TEMP\CLFCode_extract"
-if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
-Expand-Archive -Path $zipPath -DestinationPath $tempExtract -Force
-Remove-Item -Path $zipPath -Force
-
-$innerDir = Get-ChildItem -Path $tempExtract -Directory | Select-Object -First 1
-if ($innerDir) {
-    Move-Item -Path $innerDir.FullName -Destination $INSTALL_DIR -Force
-} else {
-    Move-Item -Path $tempExtract -Destination $INSTALL_DIR -Force
-}
-if (Test-Path $tempExtract) { Remove-Item -Path $tempExtract -Recurse -Force }
-
-# 恢复用户数据（配置 / 会话历史 / 日志 / 崩溃转储）
-if ($backupRoot -and (Test-Path $backupRoot)) {
-    foreach ($rel in @("config", "doc\contextHistory", "doc\log", "doc\debug")) {
-        $srcPath = Join-Path $backupRoot $rel
-        if (Test-Path $srcPath) {
-            $dstPath = Join-Path $INSTALL_DIR $rel
-            New-Item -ItemType Directory -Path $dstPath -Force | Out-Null
-            # 管道形式：空目录时无条目，不会触发通配符无匹配报错
-            Get-ChildItem -Path $srcPath -Force | Copy-Item -Destination $dstPath -Recurse -Force
-        }
-    }
-    Remove-Item -Path $backupRoot -Recurse -Force
-    Write-Host "  用户数据已恢复（配置/会话历史/日志）" -ForegroundColor Green
-}
-
-# 确保 PATH
-$binDir = "$INSTALL_DIR\bin\Release"
-$currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($currentPath -notlike "*$binDir*") {
-    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$binDir", "User")
-    $env:Path = "$env:Path;$binDir"
-}
-
-# ── 完成 ──
 Write-Host ""
-Write-Host "✔ CLFCode 已升级到 $latestVersion" -ForegroundColor Green
+
+# ── 拉取 install.ps1 以 -Upgrade 执行（唯一权威实现） ──
+$tmp = Join-Path $env:TEMP "CLFCode-install-$([guid]::NewGuid().ToString('N')).ps1"
+try {
+    if ($env:CLFCODE_TEST_INSTALL_URL -and (Test-Path -LiteralPath $env:CLFCODE_TEST_INSTALL_URL)) {
+        # 测试钩子：本地文件副本（验证未推送改动用）
+        Copy-Item -Path $env:CLFCODE_TEST_INSTALL_URL -Destination $tmp -Force
+    } else {
+        Invoke-WebRequest -Uri $INSTALL_URL -OutFile $tmp -TimeoutSec 60
+    }
+    & $tmp -Upgrade
+    exit $LASTEXITCODE
+} finally {
+    Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+}

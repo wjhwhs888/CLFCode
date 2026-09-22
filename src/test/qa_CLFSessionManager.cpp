@@ -7,6 +7,7 @@
 // 本次无测试改动；save() 保留为测试设施（造 latest.json 供 list/load 用例）。
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -40,13 +41,9 @@ fs::path up(const std::string& s) {
     return fs::u8path(s);
 }
 
-// 唯一临时目录（测试结束自动清理）
-std::string makeTempDir() {
-    auto path = fs::temp_directory_path()
-              / ("clf_test_" + std::to_string(
-                     std::chrono::system_clock::now().time_since_epoch().count()));
-    fs::create_directories(path);
-    return u8ToString(path);
+// 唯一临时目录（RAII 统一设施：离开作用域自动清理，失败重试 + 哨兵兜底）
+CLFTest::CLFTestTempDir makeTempDir() {
+    return CLFTest::CLFTestTempDir("clf_test_");
 }
 
 // jsonl 会话文件路径（中文文件名——顺带验证 UTF-8 路径链路，08-31 修复防回归）
@@ -92,7 +89,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(loaded[1].m_toolCalls.size() == 1);
         expect(loaded[1].m_toolCalls[0].m_name == "read_file");
 
-        fs::remove_all(up(dir));
     };
 
     "load 不存在文件返回 false"_test = [] {
@@ -106,7 +102,7 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         messages.push_back({"user", "x"});
 
         // 造一个 31 天前的旧文件
-        std::string oldPath = dir + "/2026-01-01_00-00-00.json";
+        std::string oldPath = dir.string() + "/2026-01-01_00-00-00.json";
         {
             std::ofstream f(up(oldPath));
             f << "{\"version\":1,\"messages\":[{\"role\":\"user\",\"content\":\"old\"}]}";
@@ -121,7 +117,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(removed >= 1);
         expect(!fs::exists(up(oldPath)));
 
-        fs::remove_all(up(dir));
     };
 
     "list 覆盖式时代：finalize 归档（rename）后 latest.json 消失，归档可列出"_test = [] {
@@ -143,7 +138,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(!sessions[0].m_isLatest);        // 无活跃文件且 latest.json 已归档
         expect(sessions[0].m_title == "第二条会话");
 
-        fs::remove_all(up(dir));
     };
 
     // ========== J 系列：jsonl 追加式保存（设计-会话追加式保存.jsonl §3.9，2026-09-02） ==========
@@ -199,7 +193,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(header.m_title == std::string("测试会话"));
         expect(header.m_savedAt == std::string("2026-08-25_09-20-53"));
 
-        fs::remove_all(up(dir));
     };
 
     "J2 恢复优先级：最后 todo_snapshot 覆盖 turn 行快照"_test = [] {
@@ -222,7 +215,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(outTodos.size() == 1_ul);
         expect(outTodos[0].m_status == std::string("completed"));  // snapshot 胜出
 
-        fs::remove_all(up(dir));
     };
 
     "J3 clear 空快照：清单被清空状态正确恢复"_test = [] {
@@ -246,7 +238,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(CLFSessionManager::loadJsonl(path, msgs, nullptr, nullptr, &outTodos));
         expect(outTodos.empty());   // 清单已被清空，而非回退到 ts-1 的快照
 
-        fs::remove_all(up(dir));
     };
 
     "J4 撕裂行跳过：取前一条可解析快照，其余正常"_test = [] {
@@ -276,7 +267,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(outTodos.size() == 1_ul);
         expect(outTodos[0].m_content == std::string("任务B"));  // 取最后可解析快照
 
-        fs::remove_all(up(dir));
     };
 
     "J5 append 失败返回 false 不抛（路径为目录）"_test = [] {
@@ -286,7 +276,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(!CLFSessionManager::appendHeader(dir, "{\"type\":\"header\"}"));
         // 空行直接拒绝
         expect(!CLFSessionManager::appendTurn(dir, ""));
-        fs::remove_all(up(dir));
     };
 
     "J6 list 含 .jsonl + 活跃文件标 [当前] + 倒序"_test = [] {
@@ -318,7 +307,7 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         bool bIsLatest = false, latestIsLatest = false;
         for (const auto& s : sessions3) {
             if (s.m_path == pathB) bIsLatest = s.m_isLatest;
-            if (s.m_path == (dir + "/latest.json")) latestIsLatest = s.m_isLatest;
+            if (s.m_path == (dir.string() + "/latest.json")) latestIsLatest = s.m_isLatest;
         }
         expect(bIsLatest);          // 活跃文件才是 [当前]
         expect(!latestIsLatest);    // 旧 latest.json 作普通归档（有活跃文件时）
@@ -328,7 +317,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(sessions4.size() == 3_ul);           // latest + A + B
         expect(sessions4[0].m_isLatest);            // latest.json 最前标 [当前]
 
-        fs::remove_all(up(dir));
     };
 
     "J7 cleanupOld 清理旧 .jsonl 且保留活跃文件"_test = [] {
@@ -348,7 +336,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(!fs::exists(up(oldPath)));
         expect(fs::exists(up(activePath)));   // 活跃文件存活
 
-        fs::remove_all(up(dir));
     };
 
     "J8 header 无 skills 字段 → 空技能列表（旧 header 兼容）"_test = [] {
@@ -364,7 +351,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(CLFSessionManager::loadJsonl(path, msgs, &skills));
         expect(skills.empty());
 
-        fs::remove_all(up(dir));
     };
 
     "J9 无有效消息行 → 备份 .bak 并返回 false"_test = [] {
@@ -381,7 +367,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(fs::exists(up(path + ".bak")));    // 已备份
         expect(!fs::exists(up(path)));
 
-        fs::remove_all(up(dir));
     };
 
     "J10 loadJsonl 不存在文件返回 false"_test = [] {
@@ -416,7 +401,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(!CLFSessionManager::loadJsonl(badPath, msgs2));
         expect(fs::exists(up(badPath + ".bak")));
 
-        fs::remove_all(up(dir));
     };
 
     "J12 list 损坏首行 jsonl → 不崩 + stem fallback（A3-3，2026-09-03）"_test = [] {
@@ -431,7 +415,6 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(sessions.size() == 1_ul);                          // 仍列出，不崩
         expect(sessions[0].m_title.find("损坏标题会话") != std::string::npos);  // stem fallback
 
-        fs::remove_all(up(dir));
     };
 };
 

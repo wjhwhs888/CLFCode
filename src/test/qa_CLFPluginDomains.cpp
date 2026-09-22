@@ -3,6 +3,7 @@
 // 与 2.2a qa 同设施：每用例独立临时插件目录（复制 3 个生产 DLL）。
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -28,22 +29,14 @@ std::string pathToUtf8(const fs::path& p) {
     return std::string(reinterpret_cast<const char*>(s.data()), s.size());
 }
 
-std::atomic<int> g_dirCounter{0};
-std::string makePluginDir() {
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    fs::path dir = fs::temp_directory_path() /
-                   ("clf_domains_test_" + std::to_string(stamp) + "_" +
-                    std::to_string(g_dirCounter.fetch_add(1)));
-    fs::create_directories(dir);
+// 唯一临时插件目录（RAII 统一设施：按值返回移动，用例离开作用域自动清理——
+// 作用域顺序保证 mgr 内层块先析构（DLL 卸载）→ 目录后析构）
+CLFTest::CLFTestTempDir makePluginDir() {
+    CLFTest::CLFTestTempDir d("clf_domains_test_");
     for (const char* name : {"tools.command.dll", "tools.search.dll", "tools.web.dll"}) {
-        fs::copy_file(fs::path(CLF_PROD_PLUGIN_DIR) / name, dir / name);
+        fs::copy_file(fs::path(CLF_PROD_PLUGIN_DIR) / name, d.path() / name);
     }
-    return pathToUtf8(dir);
-}
-
-void cleanupDir(const std::string& dirUtf8) {
-    std::error_code ec;
-    fs::remove_all(fs::u8path(dirUtf8), ec);   // manager 已析构（DLL 已卸载）后调用
+    return d;
 }
 
 // callTool 便捷封装（onResult/onError 同收）
@@ -76,18 +69,17 @@ ICLFToolProvider* findProvider(CLFPluginManager& mgr, const std::string& toolNam
 
 const boost::ut::suite<"CLFPluginDomains"> tests = [] {
     "D1 三插件加载"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 3_i);
             const auto names = mgr.listPluginNames();
             expect(names.size() == 3_u);
         }
-        cleanupDir(dir);
     };
 
     "D2 元数据同值"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 3_i);
@@ -107,31 +99,27 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
             auto* w = findProvider(mgr, "web_fetch");
             expect(w != nullptr);
         }
-        cleanupDir(dir);
     };
 
     "D3 execute_command 往返"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 3_i);
             auto* p = findProvider(mgr, "execute_command");
-            if (!p) return;
+            if (!p) return;   // RAII：早退同样析构清理（dir 在外层作用域）
             nlohmann::json args{{"command", "echo clf-plugin-ok"}};
             const auto out = callToolText(p, "execute_command", args.dump());
             const auto parsed = nlohmann::json::parse(out);
             expect(parsed.value("success", false));
             expect(parsed.value("stdout", "").find("clf-plugin-ok") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     "D4 search_content 往返"_test = [] {
-        std::string dir = makePluginDir();
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        fs::path tmpDir = fs::temp_directory_path() / ("clf_search_test_" + std::to_string(stamp));
-        fs::create_directories(tmpDir);
-        { std::ofstream(tmpDir / "a.txt") << "needle in haystack\n"; }
+        auto dir = makePluginDir();
+        CLFTest::CLFTestTempDir tmpDir("clf_search_test_");
+        { std::ofstream(tmpDir.path() / "a.txt") << "needle in haystack\n"; }
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 3_i);
@@ -145,12 +133,10 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
             expect(parsed.value("success", false));
             expect(parsed.value("content", "").find("needle") != std::string::npos);
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove_all(tmpDir, ec);
     };
 
     "D5 web_fetch 错误路径不崩"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 3_i);
@@ -162,11 +148,10 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
             expect(!parsed.value("success", true));
             expect(parsed.value("error", "") == "url is required");
         }
-        cleanupDir(dir);
     };
 
     "D6 卸载"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 3_i);
@@ -175,7 +160,6 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
             expect(mgr.unload("tools.web"));
             expect(mgr.toolProviders().empty());
         }
-        cleanupDir(dir);
     };
 };
 

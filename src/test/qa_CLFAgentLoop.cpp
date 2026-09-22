@@ -2,6 +2,7 @@
 // 覆盖：tool-calling 循环、安全策略阻断、流式累积
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -164,22 +165,14 @@ private:
 
 // V 系列（J3，jsonl 会话文件上下文，2026-09-02）：临时目录 + mock + agent 组合
 struct VSetup {
-    std::filesystem::path dir;
+    CLFTest::CLFTestTempDir dir{"clf_agent_v_"};   // RAII 统一设施：析构自动清理（含重试 + 哨兵登记）
     std::shared_ptr<MockHttpClient> mock;
     std::unique_ptr<CLFAgentLoop> agent;
 
     VSetup() {
-        dir = std::filesystem::temp_directory_path()
-            / ("clf_agent_v_" + std::to_string(
-                   std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(dir);
         mock = std::make_shared<MockHttpClient>();
         agent = makeAgent(mock);
         agent->setHistoryDir(dir.string());   // temp 路径无中文，string() 安全
-    }
-    ~VSetup() {
-        std::error_code ec;
-        std::filesystem::remove_all(dir, ec);
     }
     void pushStop(const std::string& content = "回答") {
         const std::string body =
@@ -695,10 +688,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
     };
 
     "T7 /resume 回显走折叠块：历史不进滚动区（P2-1）"_test = [] {
-        auto dir = std::filesystem::temp_directory_path()
-                 / ("clf_restore_test_" + std::to_string(
-                        std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(dir);
+        CLFTest::CLFTestTempDir dir("clf_restore_test_");
 
         std::vector<CLFMessage> messages;
         messages.push_back({"user", "hello"});
@@ -735,9 +725,6 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         }
         expect(hasUser);
         expect(hasAssistant);
-
-        std::error_code ec;
-        std::filesystem::remove_all(dir, ec);
     };
 
     "T6c 中断于工具执行中：恰好一条中断消息 + Warn"_test = [] {
@@ -931,10 +918,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
     "V4 restoreSession .jsonl 分流：m_resumedFrom 置位 + 面板按快照"_test = [] {
         // 造一个 jsonl 会话：最后快照非全完成（1 completed + 1 in_progress）
-        auto dir = std::filesystem::temp_directory_path()
-                 / ("clf_agent_v4_" + std::to_string(
-                        std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(dir);
+        CLFTest::CLFTestTempDir dir("clf_agent_v4_");
         std::string srcPath = dir.string() + "/2026-08-25_10-00-00_旧会话.jsonl";  // 纯字符串拼接（UTF-8 字节），避免 path 窄构造按 CP936 解码
         {
             std::ofstream f(std::filesystem::u8path(srcPath), std::ios::binary);
@@ -968,17 +952,11 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         VSetup s2;
         expect(s2.agent->restoreSession(donePath));
         expect(s2.agent->isTodoPanelDone());   // 全完成 → 不显示
-
-        std::error_code ec;
-        std::filesystem::remove_all(dir, ec);
     };
 
     "V5 beginSessionFile 续写复制：源文件冻结 + resumedFrom 清除"_test = [] {
         // 造源文件（header + turn 共 2 行）
-        auto dir = std::filesystem::temp_directory_path()
-                 / ("clf_agent_v5_" + std::to_string(
-                        std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(dir);
+        CLFTest::CLFTestTempDir dir("clf_agent_v5_");
         std::string srcPath = dir.string() + "/2026-08-25_09-00-00_源会话.jsonl";
         {
             std::ofstream f(std::filesystem::u8path(srcPath), std::ios::binary);
@@ -1010,9 +988,6 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         s.agent->appendTurnLine();
         expect(VSetup::readLines(srcPath).size() == 2_ul);       // 源文件仍 2 行
         expect(VSetup::readLines(contPath).size() == 3_ul);      // 续文件 +1 行
-
-        std::error_code ec;
-        std::filesystem::remove_all(dir, ec);
     };
 
     // ========== W 系列：S3 摘要与模型切换（2026-09-02） ==========

@@ -4,6 +4,7 @@
 // 与 2.1 qa 同设施：每用例独立临时插件目录（复制 DLL）+ 管理器注入。
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -39,22 +40,13 @@ std::string pathToUtf8(const fs::path& p) {
     return std::string(reinterpret_cast<const char*>(s.data()), s.size());
 }
 
-// 每用例独立插件目录：临时目录 + 复制 tools.fileops.dll
-std::atomic<int> g_dirCounter{0};
-std::string makePluginDir() {
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    fs::path dir = fs::temp_directory_path() /
-                   ("clf_fileops_test_" + std::to_string(stamp) + "_" +
-                    std::to_string(g_dirCounter.fetch_add(1)));
-    fs::create_directories(dir);
+// 每用例独立插件目录（RAII 统一设施：按值返回移动，离开作用域自动清理——
+// 作用域顺序保证 mgr 内层块先析构（DLL 卸载）→ 目录后析构）
+CLFTest::CLFTestTempDir makePluginDir() {
+    CLFTest::CLFTestTempDir d("clf_fileops_test_");
     fs::copy_file(fs::path(CLF_FILEOPS_PLUGIN_DIR) / "tools.fileops.dll",
-                  dir / "tools.fileops.dll");
-    return pathToUtf8(dir);
-}
-
-void cleanupDir(const std::string& dirUtf8) {
-    std::error_code ec;
-    fs::remove_all(fs::u8path(dirUtf8), ec);   // manager 已析构（DLL 已卸载）后调用
+                  d.path() / "tools.fileops.dll");
+    return d;
 }
 
 std::string readFileText(const fs::path& path) {
@@ -62,14 +54,13 @@ std::string readFileText(const fs::path& path) {
     return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
-// 在临时目录建测试文件
-fs::path makeTempFile(const std::string& content) {
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    fs::path p = fs::temp_directory_path() / ("clf_fileops_" + std::to_string(stamp) + ".txt");
-    std::ofstream f(p, std::ios::binary | std::ios::trunc);
-    f << content;
-    f.close();
-    return p;
+// 在临时目录建测试文件（RAII 统一设施：析构自动清理）
+CLFTest::CLFTestTempFile makeTempFile(const std::string& content) {
+    CLFTest::CLFTestTempFile f("clf_fileops_", ".txt");
+    std::ofstream out(f.path(), std::ios::binary | std::ios::trunc);
+    out << content;
+    out.close();
+    return f;
 }
 
 // —— 回调接收器 ——
@@ -115,7 +106,7 @@ std::string callToolText(ICLFToolProvider* provider, const std::string& name,
 
 const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
     "F1 发现与加载"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -123,11 +114,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(names.size() == 1_u);
             expect(names[0] == "tools.fileops");
         }
-        cleanupDir(dir);
     };
 
     "F2 file 服务路由"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -139,12 +129,11 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
                 expect(fileSvc->getFileInfo("nonexistent").size == 0_ull);
             }
         }
-        cleanupDir(dir);
     };
 
     "F3 readFile 回调推送"_test = [] {
-        std::string dir = makePluginDir();
-        fs::path tmp = makeTempFile("hello fileops\nline2\n");
+        auto dir = makePluginDir();
+        auto tmp = makeTempFile("hello fileops\nline2\n");
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -161,12 +150,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(col.content == "hello fileops\nline2\n");
             expect(info.size == col.content.size());
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "F4 previewEdit 往返"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -187,11 +174,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(!fileSvc->previewEdit("aaa bbb", 7, "zzz", "ccc", &err2, &cb));
             expect(!err2.error.empty());
         }
-        cleanupDir(dir);
     };
 
     "F5 computeDiff 回调序列"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -209,12 +195,11 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(col.hunks == 1_i);
             expect(!col.lines.empty());
         }
-        cleanupDir(dir);
     };
 
     "F6 getFileInfo"_test = [] {
-        std::string dir = makePluginDir();
-        fs::path tmp = makeTempFile("abcdef");
+        auto dir = makePluginDir();
+        auto tmp = makeTempFile("abcdef");
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -228,12 +213,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(missing.size == 0_ull);
             expect(missing.mtime == 0_ull);
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "F7 tool.provider 路由 + 元数据"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -257,15 +240,13 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             }
             expect(provider->toolMeta(4) == nullptr);
         }
-        cleanupDir(dir);
     };
 
     "F8 read_file callTool 往返"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         // 2.2b：插件 init 经 host->config 取 workspace_root = 运行时 cwd——
         // 文件须建在 cwd 内（临时目录会被边界校验拒绝，qa cwd = 构建目录/src）
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        fs::path tmp = fs::current_path() / ("clf_plugin_read_" + std::to_string(stamp) + ".txt");
+        CLFTest::CLFTestTempFile tmp("clf_plugin_read_", ".txt", fs::current_path());
         {
             std::ofstream f(tmp, std::ios::trunc);
             f << "plugin read ok\n";
@@ -290,14 +271,11 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(!parsedOutside.value("success", true));
             expect(parsedOutside.value("error", "").find("工作区") != std::string::npos);
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "F9 write_file callTool 往返"_test = [] {
-        std::string dir = makePluginDir();
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        fs::path tmp = fs::temp_directory_path() / ("clf_plugin_write_" + std::to_string(stamp) + ".txt");
+        auto dir = makePluginDir();
+        CLFTest::CLFTestTempFile tmp("clf_plugin_write_", ".txt");
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -310,14 +288,11 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(parsed.value("success", false));
             expect(readFileText(tmp) == "written by plugin");   // 落盘内容核对
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "F10 edit_file callTool 往返"_test = [] {
-        std::string dir = makePluginDir();
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        fs::path tmp = fs::temp_directory_path() / ("clf_plugin_edit_" + std::to_string(stamp) + ".txt");
+        auto dir = makePluginDir();
+        CLFTest::CLFTestTempFile tmp("clf_plugin_edit_", ".txt");
         {
             std::ofstream f(tmp, std::ios::trunc);
             f << "before";
@@ -333,17 +308,13 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(nlohmann::json::parse(out).value("success", false));
             expect(readFileText(tmp) == "after");   // 改后内容核对
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "F11 list_directory callTool 往返"_test = [] {
-        std::string dir = makePluginDir();
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        fs::path tmpDir = fs::temp_directory_path() / ("clf_plugin_list_" + std::to_string(stamp));
-        fs::create_directories(tmpDir);
-        { std::ofstream(tmpDir / "a.txt") << "a"; }
-        { std::ofstream(tmpDir / "b.txt") << "b"; }
+        auto dir = makePluginDir();
+        CLFTest::CLFTestTempDir tmpDir("clf_plugin_list_");
+        { std::ofstream(tmpDir.path() / "a.txt") << "a"; }
+        { std::ofstream(tmpDir.path() / "b.txt") << "b"; }
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -358,12 +329,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(content.find("a.txt") != std::string::npos);
             expect(content.find("b.txt") != std::string::npos);
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove_all(tmpDir, ec);
     };
 
     "F12 卸载"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -371,13 +340,12 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(mgr.getService("file") == nullptr);
             expect(mgr.getService("tool.provider") == nullptr);
         }
-        cleanupDir(dir);
     };
 
     // ========== G 系列（2.2b 装配与转发代理） ==========
 
     "G1 装配注册"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -409,13 +377,11 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
                 }
             }
         }
-        cleanupDir(dir);
     };
 
     "G2 装配 handler 往返"_test = [] {
-        std::string dir = makePluginDir();
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        fs::path tmp = fs::current_path() / ("clf_plugin_asm_" + std::to_string(stamp) + ".txt");
+        auto dir = makePluginDir();
+        CLFTest::CLFTestTempFile tmp("clf_plugin_asm_", ".txt", fs::current_path());
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -436,12 +402,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(nlohmann::json::parse(out).value("success", false));
             expect(readFileText(tmp) == "assembled write");
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "G3 卸载后兜底"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -463,12 +427,11 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(!parsed.value("success", true));
             expect(parsed.value("error", "").find("插件已停用") != std::string::npos);
         }
-        cleanupDir(dir);
     };
 
     "G4 proxy 转发"_test = [] {
-        std::string dir = makePluginDir();
-        fs::path tmp = makeTempFile("proxy forward ok\n");
+        auto dir = makePluginDir();
+        auto tmp = makeTempFile("proxy forward ok\n");
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -483,12 +446,10 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(col.content == "proxy forward ok\n");
             expect(info.size == col.content.size());
         }
-        cleanupDir(dir);
-        std::error_code ec; fs::remove(tmp, ec);
     };
 
     "G5 proxy 停用兜底"_test = [] {
-        std::string dir = makePluginDir();
+        auto dir = makePluginDir();
         {
             CLFPluginManager mgr(dir);
             expect(mgr.loadAll() == 1_i);
@@ -503,7 +464,6 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
             expect(err.error.find("插件已停用") != std::string::npos);
             expect(proxy.getFileInfo("x").size == 0_ull);     // 元信息全 0
         }
-        cleanupDir(dir);
     };
 };
 

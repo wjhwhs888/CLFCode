@@ -4,6 +4,7 @@
 // S1-S2: CLFSubprocessRunner 基础封装
 
 #include <boost/ut.hpp>
+#include "CLFTestTempDir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -23,13 +24,9 @@ using CLF::CLFCore::CLFSystemInfoProvider;
 
 namespace {
 
-// 唯一临时工作目录（时间戳后缀防并发冲突）；调用方负责删除
-std::string makeTempDir(const std::string& name) {
-    auto stamp = std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::path p = fs::temp_directory_path() / (name + "_" + stamp);
-    fs::create_directories(p);
-    return p.string();
+// 唯一临时工作目录（RAII 统一设施：离开作用域自动清理，失败重试 + 哨兵兜底）
+CLFTest::CLFTestTempDir makeTempDir(const std::string& name) {
+    return CLFTest::CLFTestTempDir(name);
 }
 
 void writeFile(const std::string& path, const std::string& content) {
@@ -55,37 +52,33 @@ const boost::ut::suite<"CLFSystemComponents"> tests = [] {
 
     "R1 PROJECTRULES.md 优先加载（含头行）"_test = [] {
         auto dir = makeTempDir("clf_qa_rules_r1");
-        writeFile(dir + "/PROJECTRULES.md", "rule A\n");
-        writeFile(dir + "/CLAUDE.md", "rule B\n");
+        writeFile(dir.string() + "/PROJECTRULES.md", "rule A\n");
+        writeFile(dir.string() + "/CLAUDE.md", "rule B\n");
         auto rules = CLFProjectRulesLoader::loadProjectRules(dir);
         expect(rules.find("## 项目规则（来自 PROJECTRULES.md）") != std::string::npos);
         expect(rules.find("rule A") != std::string::npos);
         expect(rules.find("rule B") == std::string::npos);   // 不回退 CLAUDE.md
-        fs::remove_all(fs::u8path(dir));
     };
 
     "R2 PROJECTRULES 缺失 → 降级 CLAUDE.md"_test = [] {
         auto dir = makeTempDir("clf_qa_rules_r2");
-        writeFile(dir + "/CLAUDE.md", "fallback rule\n");
+        writeFile(dir.string() + "/CLAUDE.md", "fallback rule\n");
         auto rules = CLFProjectRulesLoader::loadProjectRules(dir);
         expect(rules.find("## 项目规则（来自 CLAUDE.md）") != std::string::npos);
         expect(rules.find("fallback rule") != std::string::npos);
-        fs::remove_all(fs::u8path(dir));
     };
 
     "R3 两文件均无 → 空串"_test = [] {
         auto dir = makeTempDir("clf_qa_rules_r3");
         expect(CLFProjectRulesLoader::loadProjectRules(dir).empty());
-        fs::remove_all(fs::u8path(dir));
     };
 
     "R4 超 5000 字符截断 + 标记（UTF-8 边界安全）"_test = [] {
         auto dir = makeTempDir("clf_qa_rules_r4");
-        writeFile(dir + "/PROJECTRULES.md", std::string(8000, 'x'));
+        writeFile(dir.string() + "/PROJECTRULES.md", std::string(8000, 'x'));
         auto rules = CLFProjectRulesLoader::loadProjectRules(dir);
         expect(rules.find("[…项目规则超过5000字符，已截断]") != std::string::npos);
         expect(rules.size() < 5600u);   // 截断生效（含头行+标记，远小于 8000）
-        fs::remove_all(fs::u8path(dir));
     };
 
     // ========== CLFSystemInfoProvider ==========
@@ -95,7 +88,6 @@ const boost::ut::suite<"CLFSystemComponents"> tests = [] {
         CLFSystemInfoProvider info;
         expect(info.captureGitStatus(dir).empty());
         expect(info.captureGitStatus(dir).empty());   // 二次调用仍空（缓存清空语义）
-        fs::remove_all(fs::u8path(dir));
     };
 
     "G2 git 仓库 → 非空 + TTL 内缓存命中（内容一致）"_test = [] {
