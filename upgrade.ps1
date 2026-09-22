@@ -1,4 +1,4 @@
-﻿# CLFCode 升级脚本（薄壳，2026-09-22 S5）
+# CLFCode 升级脚本（薄壳，2026-09-22 S5）
 # 用法: irm https://gitee.com/sherlock0923/CLFCode/raw/master/upgrade.ps1 | iex
 #
 # 保留用户配置，仅更新程序文件。
@@ -51,8 +51,12 @@ if ($currentVersion -eq $latestVersion) {
 Write-Host "  当前版本: $currentVersion  →  最新版本: $latestVersion" -ForegroundColor Yellow
 Write-Host ""
 
-# ── 拉取 install.ps1 以 -Upgrade 执行（唯一权威实现） ──
+# ── 拉取 install.ps1 执行（唯一权威实现） ──
+# 编码镜像约束：远端脚本为 irm|iex 兼容必须无 BOM；而 & 执行（-File 语义）
+# 在 PS5.1 下需要 BOM（无 BOM 中文按 GBK 误读破坏解析）——统一转写为
+# 带 BOM 临时文件后执行
 $tmp = Join-Path $env:TEMP "CLFCode-install-$([guid]::NewGuid().ToString('N')).ps1"
+$tmpBom = "$tmp.bom.ps1"
 try {
     if ($env:CLFCODE_TEST_INSTALL_URL -and (Test-Path -LiteralPath $env:CLFCODE_TEST_INSTALL_URL)) {
         # 测试钩子：本地文件副本（验证未推送改动用）
@@ -60,8 +64,11 @@ try {
     } else {
         Invoke-WebRequest -Uri $INSTALL_URL -OutFile $tmp -TimeoutSec 60
     }
-    & $tmp -Upgrade
+    $content = [System.IO.File]::ReadAllText($tmp, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($tmpBom, $content, [System.Text.UTF8Encoding]::new($true))
+    & $tmpBom
     exit $LASTEXITCODE
 } finally {
     Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $tmpBom -Force -ErrorAction SilentlyContinue
 }

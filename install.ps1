@@ -1,4 +1,4 @@
-﻿# CLFCode Windows 安装脚本
+# CLFCode Windows 安装脚本
 # 用法: irm https://gitee.com/sherlock0923/CLFCode/raw/master/install.ps1 | iex
 #
 # 安装到 %USERPROFILE%\CLFCode，自动添加到用户 PATH，无需管理员权限
@@ -10,8 +10,9 @@
 #   S3 安装 Move 前断言目标不存在（消除嵌套安装潜伏缺陷）
 #   S4 备份清理收敛：成功路径删除、失败路径保留 1 份并提示路径
 #   S6 卸载模板加固：Stop + 撞锁明确报错退出（不再"半删后假报完成"）
-
-param([switch]$Upgrade)
+#
+# ⚠ 本脚本执行路径：irm ... | iex（官方路径）。不含 BOM（iex 不兼容 BOM）、
+#   不含 param() 块（iex 不支持）——若需本地 -File 执行请用 PowerShell 7+。
 
 $ErrorActionPreference = "Stop"
 
