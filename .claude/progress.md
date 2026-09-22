@@ -18,6 +18,7 @@
   - **根因链**：① 我加的 UTF-8 BOM 破坏 irm|iex（iex 把 U+FEFF 顶在首行注释前 → 注释变命令）② `param()` 块在 iex 中非法（param 仅脚本文件开头合法）③ 薄壳 `& $tmp` 走 -File 语义又需要 BOM——**编码镜像约束**：irm|iex = 无 BOM + 无 param；`&` 文件执行 = 带 BOM
   - **修复**：install.ps1 去 BOM + 删 param 块（-Upgrade 开关装饰性无用）；upgrade.ps1 去 BOM + 薄壳把拉取内容**转写为带 BOM 临时文件**再执行（两条来源同处理）；uninstall.ps1 生成物走 -File 保持带 BOM
   - **复验**：V1-V4 + S6 全场景 **30/30 通过**（新增"无解析噪声"断言 + 占用零破坏断言全过）
+- **tag 重指 ✅（2026-09-22，用户拍板"重指 v0.8.2"）**：修复提交 519bdc9 推送后 tag v0.8.2 重指该 commit 并强推（此前 tag 已被用户实际下载引用，重指经 AskUserQuestion 明确授权后执行）
 - **待用户**：发布 + 实机复验（重跑 irm install.ps1——应先看到干净输出；退出 CLFCode 后安装）
 
 
