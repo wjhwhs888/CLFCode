@@ -12,7 +12,8 @@
 - **问题二（S1-S6）**：install.ps1 = 唯一权威实现（-Upgrade 开关 + 3 测试钩子 + S1 独占探测精确报告 + S2 `[System.IO.Directory]::Move` 原子改名 + S3 目标断言 + S4 备份清理收敛 + catch 回滚 + S6 uninstall 模板同名加固）；upgrade.ps1 = 薄壳（版本比较 → 拉 install → & -Upgrade）
 - **实施期实抓 3 处**：① **UTF-8 BOM 教训**——PS5.1 -File 执行无 BOM UTF-8 中文脚本按 GBK 误读破坏解析（V1 全败实证），两脚本加 BOM（irm | iex 无此问题）② **S2 假设证伪**——PowerShell Move-Item 目录 = 逐项移动（锁文件时半移+抛异常）；Directory.Move 真 rename 对含锁文件目录被 Windows 拒绝 → 两层设计：S1 精确报告 + S2 改名即探测（失败即退出零破坏）③ **S6 半删实抓**——初版只报错仍半删 → uninstall 同用改名后删
 - **验证**：V1-V4 + S6 全场景 **31/31 通过**（正常安装/占用三脚本零破坏/无嵌套/零残留，真实 Gitee 下载链路）+ ctest 36/36 ×2 轮 + 冒烟 exit 0 + TEMP 零残留
-- **待办**：提交推送（不打 tag——memory 规则）→ 用户实机验收（真机 install/upgrade/uninstall 三脚本 + 覆盖安装数据恢复）
+- **收尾 ✅（2026-09-22）**：已提交推送（8311d0c）+ 版本定稿（7203aac，CHANGELOG v0.8.2 正式段 + VERSION v0.8.2）+ **tag v0.8.2 已打推送**（用户授权）→ **用户已接手发布**（重点实测安装脚本）
+- **待用户**：发布 + 实机验收（真机 install/upgrade/uninstall 三脚本 + 覆盖安装数据恢复；已装机器的旧 uninstall.ps1 等下次安装/升级后更新为新版）
 
 
 ### ▶ 命令候选面板与唯一维护 ✅（2026-09-21 全闭环，随 v0.8.1 发布）
