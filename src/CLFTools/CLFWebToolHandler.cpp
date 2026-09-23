@@ -10,9 +10,10 @@
 
 namespace CLF::CLFTools {
 
-std::string webFetchToolHandler(const std::string& args) {
+std::string webFetchToolHandler(const std::string& args,
+                                const std::function<bool()>& isCancelled) {
     return CLF::CLFCapabilities::withHandlerScaffold(
-        args, [](const nlohmann::json& params, nlohmann::json& result) {
+        args, [&isCancelled](const nlohmann::json& params, nlohmann::json& result) {
             CLFWebRequest req;
             req.m_url        = params.value("url", "");
             req.m_method     = params.value("method", "GET");
@@ -31,7 +32,7 @@ std::string webFetchToolHandler(const std::string& args) {
                 return;
             }
 
-            const auto resp = CLF::CLFTools::webFetch(req);
+            const auto resp = CLF::CLFTools::webFetch(req, isCancelled);
             result["success"] = resp.m_success;
             if (!resp.m_success) {
                 result["error"] = resp.m_error;

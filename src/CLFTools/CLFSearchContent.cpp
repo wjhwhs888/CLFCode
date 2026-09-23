@@ -109,18 +109,27 @@ void searchDir(const fs::path& dir, const std::string& pattern,
                int depth, int& resultCount,
                std::vector<std::string>& headLines,
                std::vector<std::string>& tailRing,
-               std::vector<std::pair<std::string, std::string>>& skippedLarge) {
-    if (depth > kMaxDepth || resultCount >= kMaxResults) return;
+               std::vector<std::pair<std::string, std::string>>& skippedLarge,
+               const std::function<bool()>& isCancelled,
+               bool& interrupted) {
+    if (interrupted || depth > kMaxDepth || resultCount >= kMaxResults) return;
 
     std::error_code ec;
     for (auto it = fs::directory_iterator(dir, ec); it != fs::directory_iterator(); ++it) {
-        if (resultCount >= kMaxResults) return;
+        if (interrupted || resultCount >= kMaxResults) return;
+        // A2 取消检查点（2026-09-23 中断时效性 §十二）：每个目录项一次——
+        // 搜索无时间上限（目录树遍历 + 逐行扫描），这是唯一止损点
+        if (isCancelled && isCancelled()) {
+            interrupted = true;
+            return;
+        }
 
         const auto& entry = *it;
         if (entry.is_directory(ec)) {
             if (!isIgnoredDir(entry.path())) {
                 searchDir(entry.path(), pattern, fileTypes,
-                          depth + 1, resultCount, headLines, tailRing, skippedLarge);
+                          depth + 1, resultCount, headLines, tailRing,
+                          skippedLarge, isCancelled, interrupted);
             }
         } else if (entry.is_regular_file(ec)) {
             if (!matchesExtension(entry.path(), fileTypes)) continue;
@@ -138,6 +147,11 @@ void searchDir(const fs::path& dir, const std::string& pattern,
             std::string line;
             int lineNum = 0;
             while (std::getline(file, line) && resultCount < kMaxResults) {
+                // A2：每行一次（单文件行扫描同样可能很长）
+                if (isCancelled && isCancelled()) {
+                    interrupted = true;
+                    break;
+                }
                 ++lineNum;
                 if (line.find(pattern) != std::string::npos) {
                     // S2-4: 命中行若非合法 UTF-8（GBK 文本 / 二进制残留）则跳过——
@@ -165,7 +179,8 @@ void searchDir(const fs::path& dir, const std::string& pattern,
 
 std::string searchContent(const std::string& pattern,
                           const std::string& directory,
-                          const std::string& fileTypes) {
+                          const std::string& fileTypes,
+                          const std::function<bool()>& isCancelled) {
     if (pattern.empty()) return "[Error] pattern is required";
 
     fs::path dir(directory);
@@ -180,8 +195,10 @@ std::string searchContent(const std::string& pattern,
     std::vector<std::string> headLines;
     std::vector<std::string> tailRing;
     std::vector<std::pair<std::string, std::string>> skippedLarge;
+    bool interrupted = false;
 
-    searchDir(dir, pattern, exts, 0, resultCount, headLines, tailRing, skippedLarge);
+    searchDir(dir, pattern, exts, 0, resultCount, headLines, tailRing,
+              skippedLarge, isCancelled, interrupted);
 
     if (resultCount == 0 && headLines.empty()) {
         output << "(no matches)";
@@ -208,6 +225,9 @@ std::string searchContent(const std::string& pattern,
             output << "\n  ... 共 " << skippedLarge.size() << " 个";
         }
         output << "]";
+    }
+    if (interrupted) {
+        output << "\n[搜索被用户中断，以上为已找到的部分结果]";
     }
 
     return output.str();

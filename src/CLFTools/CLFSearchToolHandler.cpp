@@ -10,14 +10,15 @@
 
 namespace CLF::CLFTools {
 
-std::string searchContentToolHandler(const std::string& args) {
+std::string searchContentToolHandler(const std::string& args,
+                                     const std::function<bool()>& isCancelled) {
     return CLF::CLFCapabilities::withHandlerScaffold(
-        args, [](const nlohmann::json& params, nlohmann::json& result) {
+        args, [&isCancelled](const nlohmann::json& params, nlohmann::json& result) {
             std::string pattern   = params.value("pattern", "");
             std::string directory = params.value("directory", ".");
             std::string fileTypes = params.value("fileTypes", "");
             result["success"] = true;
-            result["content"] = searchContent(pattern, directory, fileTypes);
+            result["content"] = searchContent(pattern, directory, fileTypes, isCancelled);
         });
 }
 

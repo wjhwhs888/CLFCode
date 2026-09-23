@@ -74,8 +74,15 @@ std::string formatHeaders(const httplib::Headers& headers) {
 
 } // anonymous namespace
 
-CLFWebResponse webFetch(const CLFWebRequest& request) {
+CLFWebResponse webFetch(const CLFWebRequest& request,
+                        const std::function<bool()>& isCancelled) {
     CLFWebResponse result;
+
+    // A2 入口检查（2026-09-23 中断时效性 §十二）：请求发出前已取消 → 立即返回
+    if (isCancelled && isCancelled()) {
+        result.m_error = "请求被用户中断";
+        return result;
+    }
 
     std::string base, path;
     if (!detail::splitUrl(request.m_url, base, path)) {
@@ -101,19 +108,43 @@ CLFWebResponse webFetch(const CLFWebRequest& request) {
     std::transform(method.begin(), method.end(), method.begin(),
                    [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
+    // A2：content receiver 累积 body（1MB 上限随读随裁）+ 每块取消检查——
+    // 传输期可中断（返回 false 中止接收）；等首字节窗口由 read_timeout 兜底
+    std::string body;
+    bool interrupted = false;
+    auto receiver = [&](const char* data, size_t len) -> bool {
+        if (isCancelled && isCancelled()) {
+            interrupted = true;
+            return false;
+        }
+        if (body.size() < kMaxResponseBytes) {
+            const size_t room = kMaxResponseBytes - body.size();
+            body.append(data, std::min(len, room));
+            if (len > room) result.m_truncated = true;
+        } else if (len > 0) {
+            result.m_truncated = true;
+        }
+        return true;
+    };
+
     httplib::Result res(nullptr, httplib::Error::Unknown);
     if (method == "GET") {
-        res = cli.Get(path, headers);
+        res = cli.Get(path, headers, receiver);
     } else if (method == "HEAD") {
-        res = cli.Head(path, headers);
+        res = cli.Head(path, headers);   // HEAD 无响应体，无 receiver 重载
     } else if (method == "POST") {
         res = cli.Post(path, headers, request.m_body,
-                       request.m_body.empty() ? "text/plain" : "application/json");
+                       request.m_body.empty() ? "text/plain" : "application/json",
+                       receiver);
     } else {
         result.m_error = "不支持的 method（仅 GET/POST/HEAD）: " + request.m_method;
         return result;
     }
 
+    if (interrupted) {
+        result.m_error = "请求被用户中断";
+        return result;
+    }
     if (!res) {
         result.m_error = "请求失败: " + httplib::to_string(res.error());
         return result;
@@ -122,12 +153,6 @@ CLFWebResponse webFetch(const CLFWebRequest& request) {
     result.m_success = true;
     result.m_status  = res->status;
     result.m_headers = formatHeaders(res->headers);
-
-    std::string body = res->body;
-    if (body.size() > kMaxResponseBytes) {
-        body.resize(kMaxResponseBytes);
-        result.m_truncated = true;
-    }
 
     if (detail::looksBinary(body)) {
         result.m_binary = true;

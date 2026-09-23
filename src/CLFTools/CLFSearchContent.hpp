@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace CLF::CLFTools {
@@ -11,8 +12,11 @@ namespace CLF::CLFTools {
 // pattern:  纯文本匹配
 // directory: 搜索根目录
 // fileTypes: 逗号分隔扩展名（如 ".cpp,.h"），空则不过滤
+// isCancelled：取消查询（2026-09-23 中断时效性 A2）——每个目录项/每行一个
+// 检查点；为空 = 不可取消（向后兼容）；命中 → 停止遍历并带中断标记
 std::string searchContent(const std::string& pattern,
                           const std::string& directory,
-                          const std::string& fileTypes);
+                          const std::string& fileTypes,
+                          const std::function<bool()>& isCancelled = {});
 
 } // namespace CLF::CLFTools

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 
@@ -36,10 +37,14 @@ struct CLFWebResponse {
 //发起 HTTP 请求并返回截断后的响应
 // 约束：响应读取上限 1MB；正文按 head 8KB + tail 2KB 截断（UTF-8 边界安全）；
 //      检测到 NUL 字节则判定为二进制并跳过正文
+// isCancelled：取消查询（2026-09-23 中断时效性 A2）——入口检查 + content
+// receiver 每块检查（传输期可中断；等首字节窗口由 read_timeout 兜底）；
+// 为空 = 不可取消（向后兼容）
 // example:
 //   CLFWebRequest req; req.m_url = "https://example.com";
 //   auto resp = webFetch(req);
-CLFWebResponse webFetch(const CLFWebRequest& request);
+CLFWebResponse webFetch(const CLFWebRequest& request,
+                        const std::function<bool()>& isCancelled = {});
 
 // ============================================================================
 // 内部辅助——暴露仅为单测可达

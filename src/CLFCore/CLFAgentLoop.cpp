@@ -86,12 +86,22 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     // 设计 §S3-1）——生成（同步 LLM，失败自动规则降级）→ 落盘 summary 行
     // → 重建系统提示（摘要经 Builder 段落注入，system 永不截断）
     static constexpr int kSummaryCooldownTurns = 10;
+    // A2（2026-09-23 中断时效性 §十二）：摘要入口检查——摘要同步 LLM 期间按
+    // ESC：请求本身可被 abort（onInterrupt → httpClient->abort），但入口与
+    // 返回后原本无中断检查
     if (m_config.m_contextCompression
+        && !m_interrupted
         && m_summaryCache.turnsSinceLast() >= kSummaryCooldownTurns
         && shouldSummarize()) {
         CLFLogger::instance().info("[Summary] auto trigger (remaining window below "
             + std::to_string(m_config.m_autoSummaryThreshold) + ")");
         generateAndCacheSummary();
+        // A2：返回后检查——摘要期间的中断在此被观察到；user 消息尚未入库，
+        // 提前返回不产生会话残留
+        if (m_interrupted) {
+            emitInterrupted();
+            return std::string("[Interrupted]");
+        }
         appendSummaryLineNow();
         rebuildSystemMessage();
         m_summaryCache.resetCooldown();

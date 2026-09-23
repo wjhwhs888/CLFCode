@@ -161,6 +161,46 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
             expect(mgr.toolProviders().empty());
         }
     };
+
+    "D7 ABI 取消通道：execute_command 长命令中途取消 → interrupted 结果"_test = [] {
+        auto dir = makePluginDir();
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 3_i);
+            auto* p = findProvider(mgr, "execute_command");
+            expect(p != nullptr);
+
+            // 取消查询 ctx（对齐宿主 CLFToolCallCtx 形态：out 指针 + 取消状态；
+            // 轮询计数——第 N 次查询后返回 true，≈750ms 后取消）
+            struct CancelCtx { int polls = 0; std::string* out = nullptr; };
+            std::string content;
+            CancelCtx cctx;
+            cctx.out = &content;
+            CLFToolCallbacks cb{};
+            cb.onResult = [](void* ctx, const char* s, size_t n) {
+                static_cast<CancelCtx*>(ctx)->out->assign(s, n);
+            };
+            cb.onError = [](void* ctx, const char* s) {
+                static_cast<CancelCtx*>(ctx)->out->assign(s);
+            };
+            cb.isCancelled = [](void* ctx) -> bool {
+                return ++static_cast<CancelCtx*>(ctx)->polls > 15;
+            };
+            nlohmann::json args{
+                {"command", "powershell -NoProfile -Command \"Start-Sleep 30\""},
+                {"timeout", 60}};
+            const auto t0 = std::chrono::steady_clock::now();
+            p->callTool("execute_command", args.dump().c_str(), &cctx, &cb);
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+
+            auto r = nlohmann::json::parse(content);
+            // 中断语义（设计-中断时效性 A.4）：success=false + interrupted=true
+            expect(r.value("success", true) == false);
+            expect(r.value("interrupted", false) == true);
+            expect(elapsedMs < 5000);   // 30s 睡眠命令被 ≤5s 取消（含 powershell 启动）
+        }
+    };
 };
 
 int main() {}

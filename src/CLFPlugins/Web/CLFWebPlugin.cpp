@@ -45,7 +45,13 @@ public:
         try {
             std::string out;
             if (std::strcmp(name, "web_fetch") == 0) {
-                out = CLF::CLFTools::webFetchToolHandler(argsJson);
+                // 取消查询组装（中断时效性 A2，2026-09-23）：同 command/search
+                // 模式——ABI cb.isCancelled → 轻量查询下传；ctx 不透明只回传
+                std::function<bool()> cancelQuery;
+                if (cb && cb->isCancelled) {
+                    cancelQuery = [cb, ctx] { return cb->isCancelled(ctx); };
+                }
+                out = CLF::CLFTools::webFetchToolHandler(argsJson, cancelQuery);
             } else {
                 out = std::string("{\"success\":false,\"error\":\"unknown tool: ") + name + "\"}";
             }
