@@ -188,6 +188,11 @@ struct FTXUI_EXPORT(COMPONENT) InputOption {
   /// Called when the user presses enter.
   std::function<void()> on_enter = [] {};
 
+  // CLFCode patch（2026-09-23）：拖选复制回调——左键拖选松手且选区非空时
+  // 触发；参数 = 选中文本（UTF-8 字节串，自 content 提取）。nullptr =
+  // 不启用拖选复制（拖选仅定位光标，原行为）
+  std::function<void(std::string)> on_select = nullptr;
+
   // The char position of the cursor:
   Ref<int> cursor_position = 0;
 };

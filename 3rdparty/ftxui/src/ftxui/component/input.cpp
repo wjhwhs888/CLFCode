@@ -153,41 +153,30 @@ class InputBase : public ComponentBase, public InputOption {
     }
 
     elements.reserve(lines.size());
+    // CLFCode patch（2026-09-23）：行渲染走通用拆段（选区反色 + 光标装饰
+    // 叠加）——原三分支（非光标行 / 行尾光标 / 行内光标）语义逐一保真
+    int line_offset = 0;
     for (size_t i = 0; i < lines.size(); ++i) {
       const std::string& line = lines[i];
 
-      // This is not the cursor line.
       if (int(i) != cursor_line) {
-        elements.push_back(Text(line));
-        continue;
+        AddLineWithDecorations(elements, line, line_offset, 0, 0,
+                               false, is_focused, focused);
+      } else if (cursor_char_index >= (int)line.size()) {
+        // 光标在行尾（原语义：聚焦时空格 cell 承载光标框）
+        AddLineWithDecorations(elements, line, line_offset,
+                               static_cast<int>(line.size()),
+                               static_cast<int>(line.size()),
+                               true, is_focused, focused);
+      } else {
+        // 光标在行内（原语义：光标 glyph 承载光标框）
+        const int glyph_start = cursor_char_index;
+        const int glyph_end = static_cast<int>(GlyphNext(line, glyph_start));
+        AddLineWithDecorations(elements, line, line_offset,
+                               glyph_start, glyph_end, true, is_focused,
+                               focused);
       }
-
-      // The cursor is at the end of the line.
-      const std::string cursor_cell = is_focused ? " " : "";
-      if (cursor_char_index >= (int)line.size()) {
-        elements.push_back(
-            hbox({
-                Text(line),
-                text(cursor_cell) | focused | reflect(cursor_box_),
-            }) |
-            xflex);
-        continue;
-      }
-
-      // The cursor is on this line.
-      const int glyph_start = cursor_char_index;
-      const int glyph_end = static_cast<int>(GlyphNext(line, glyph_start));
-      const std::string part_before_cursor = line.substr(0, glyph_start);
-      const std::string part_at_cursor =
-          line.substr(glyph_start, glyph_end - glyph_start);
-      const std::string part_after_cursor = line.substr(glyph_end);
-      auto element = hbox({
-                         Text(part_before_cursor),
-                         Text(part_at_cursor) | focused | reflect(cursor_box_),
-                         Text(part_after_cursor),
-                     }) |
-                     xflex;
-      elements.push_back(element);
+      line_offset += static_cast<int>(line.size()) + 1;
     }
 
     auto element = vbox(std::move(elements)) | frame;
@@ -210,6 +199,71 @@ class InputBase : public ComponentBase, public InputOption {
       out += "•";
     }
     return text(out);
+  }
+
+  // CLFCode patch（2026-09-23）：带选区高亮与光标装饰的行渲染——按字节
+  // 边界通用拆段：选区区间反色（inverted）、光标 cell 保持 focused +
+  // reflect(cursor_box_)（IME 组合窗口定位依赖 cursor_box_）。无选区无
+  // 光标的行走原样 Text(line) 快速路径。
+  void AddLineWithDecorations(Elements& elements, const std::string& line,
+                              int line_start, int cursor_begin_in_line,
+                              int cursor_end_in_line, bool has_cursor,
+                              bool is_focused, Decorator cursor_dec) {
+    // 选区在本行的交集（字节区间；无选区 → 空）
+    int sel_begin = -1, sel_end = -1;
+    if (selection_begin_ >= 0 && selection_end_ > selection_begin_) {
+      const int s = std::min(selection_begin_, selection_end_) - line_start;
+      const int e = std::max(selection_begin_, selection_end_) - line_start;
+      sel_begin = std::max(s, 0);
+      sel_end   = std::min(e, static_cast<int>(line.size()));
+      if (sel_begin >= sel_end) {
+        sel_begin = -1;
+        sel_end = -1;
+      }
+    }
+    if (sel_begin < 0 && !has_cursor) {
+      elements.push_back(Text(line));
+      return;
+    }
+    // 边界集合拆段：选区反色与光标装饰可叠加
+    struct Mark {
+      int pos;
+      bool sel_toggle;
+      bool cur_toggle;
+    };
+    std::vector<Mark> marks{{0, false, false}};
+    if (sel_begin >= 0) {
+      marks.push_back({sel_begin, true, false});
+      marks.push_back({sel_end, false, false});
+    }
+    if (has_cursor) {
+      marks.push_back({cursor_begin_in_line, false, true});
+      marks.push_back({cursor_end_in_line, false, false});
+    }
+    std::stable_sort(marks.begin(), marks.end(),
+                     [](const Mark& a, const Mark& b) { return a.pos < b.pos; });
+    Elements segments;
+    bool sel_on = false, cur_on = false;
+    for (size_t k = 0; k < marks.size(); ++k) {
+      if (marks[k].sel_toggle) sel_on = !sel_on;
+      if (marks[k].cur_toggle) cur_on = !cur_on;
+      const int to = (k + 1 < marks.size())
+                         ? marks[k + 1].pos
+                         : static_cast<int>(line.size());
+      if (to < marks[k].pos) continue;
+      if (to == marks[k].pos) {
+        // 空段 = 行尾光标空格 cell（仅聚焦时渲染；IME 定位依赖）
+        if (cur_on && is_focused) {
+          segments.push_back(text(" ") | cursor_dec | reflect(cursor_box_));
+        }
+        continue;
+      }
+      Element el = Text(line.substr(marks[k].pos, to - marks[k].pos));
+      if (sel_on) el = el | inverted;
+      if (cur_on) el = el | cursor_dec | reflect(cursor_box_);
+      segments.push_back(std::move(el));
+    }
+    elements.push_back(hbox(std::move(segments)) | xflex);
   }
 
   bool HandleBackspace() {
@@ -392,6 +446,12 @@ class InputBase : public ComponentBase, public InputOption {
   bool OnEvent(Event event) override {
     cursor_position() = util::clamp(cursor_position(), 0, (int)content->size());
 
+    // CLFCode patch（2026-09-23）：非鼠标事件清除拖选选区（编辑动作/光标
+    // 移动后选区失效——编辑器惯例；鼠标事件走 HandleMouse 自行管理）
+    if (!event.is_mouse() && selection_begin_ >= 0) {
+      ClearSelection();
+    }
+
     if (event == Event::Return) {
       return HandleReturn();
     }
@@ -486,26 +546,12 @@ class InputBase : public ComponentBase, public InputOption {
     return true;
   }
 
-  bool HandleMouse(Event event) {
-    hovered_ = box_.Contain(event.mouse().x,  //
-                            event.mouse().y) &&
-               CaptureMouse(event);
-    if (!hovered_) {
-      return false;
-    }
-
-    if (event.mouse().button != Mouse::Left) {
-      return false;
-    }
-    if (event.mouse().motion != Mouse::Pressed) {
-      return false;
-    }
-
-    TakeFocus();
-
+  // CLFCode patch（2026-09-23）：把组件内坐标 (mouse_x, mouse_y) 换算为光标
+  // 字节偏移——自原 HandleMouse 点击定位逻辑原样抽取（列→字节与点击定位
+  // 同源，拖选换算复用同一口径：多行折行/宽字符宽度天然一致）。
+  int PositionToCursor(int mouse_x, int mouse_y) {
     if (content->empty()) {
-      cursor_position() = 0;
-      return true;
+      return 0;
     }
 
     // Find the line and index of the cursor.
@@ -525,8 +571,8 @@ class InputBase : public ComponentBase, public InputOption {
             ? GlyphCount(lines[cursor_line].substr(0, cursor_char_index))
             : string_width(lines[cursor_line].substr(0, cursor_char_index));
 
-    int new_cursor_column = cursor_column + event.mouse().x - cursor_box_.x_min;
-    int new_cursor_line = cursor_line + event.mouse().y - cursor_box_.y_min;
+    int new_cursor_column = cursor_column + mouse_x - cursor_box_.x_min;
+    int new_cursor_line = cursor_line + mouse_y - cursor_box_.y_min;
 
     // Fix the new cursor position:
     new_cursor_line = std::max(std::min(new_cursor_line, (int)lines.size()), 0);
@@ -539,29 +585,77 @@ class InputBase : public ComponentBase, public InputOption {
         util::clamp(new_cursor_column, 0,
                     password() ? GlyphCount(line) : string_width(line));
 
-    if (new_cursor_column == cursor_column &&  //
-        new_cursor_line == cursor_line) {
-      return false;
-    }
-
     // Convert back the new_cursor_{line,column} toward cursor_position:
-    cursor_position() = 0;
+    int pos = 0;
     for (int i = 0; i < new_cursor_line; ++i) {
-      cursor_position() += static_cast<int>(lines[i].size() + 1);
+      pos += static_cast<int>(lines[i].size() + 1);
     }
     while (new_cursor_column > 0) {
       if (password()) {
         new_cursor_column -= 1;
       } else {
-        new_cursor_column -=
-            static_cast<int>(GlyphWidth(content(), cursor_position()));
+        new_cursor_column -= static_cast<int>(GlyphWidth(content(), pos));
       }
-      cursor_position() =
-          static_cast<int>(GlyphNext(content(), cursor_position()));
+      pos = static_cast<int>(GlyphNext(content(), pos));
+    }
+    return pos;
+  }
+
+  // CLFCode patch（2026-09-23）：拖选复制（copy-on-select——与显示区同机制
+  // 同手感）。原 HandleMouse 仅 Pressed 定位光标、Moved/Released 忽略；
+  // 改造：Pressed 定位 + 选区开始；Moved 扩展选区（消费）；Released 触发
+  // on_select 回调并清除。on_select 为空时选区机制不激活（原行为）。
+  bool HandleMouse(Event event) {
+    hovered_ = box_.Contain(event.mouse().x,  //
+                            event.mouse().y) &&
+               CaptureMouse(event);
+    if (!hovered_) {
+      return false;
     }
 
-    App::PostEventOrExecute(on_change);
-    return true;
+    if (event.mouse().button != Mouse::Left) {
+      return false;
+    }
+
+    const auto motion = event.mouse().motion;
+    if (motion == Mouse::Pressed) {
+      TakeFocus();
+      const int pos = PositionToCursor(event.mouse().x, event.mouse().y);
+      cursor_position() = pos;
+      if (on_select) {   // 拖选复制启用 → 选区开始（锚点 = 新光标）
+        selection_begin_ = pos;
+        selection_end_ = pos;
+      }
+      App::PostEventOrExecute(on_change);
+      return true;
+    }
+
+    if (motion == Mouse::Moved) {
+      if (selection_begin_ < 0) {
+        return false;   // 未在拖选（on_select 未启用/无选区）→ 原行为
+      }
+      selection_end_ = PositionToCursor(event.mouse().x, event.mouse().y);
+      return true;
+    }
+
+    if (motion == Mouse::Released) {
+      if (selection_begin_ < 0) {
+        return false;
+      }
+      const int begin = std::min(selection_begin_, selection_end_);
+      const int end   = std::max(selection_begin_, selection_end_);
+      if (begin < end && on_select) {
+        on_select(content->substr(begin, end - begin));
+      }
+      ClearSelection();
+      return true;
+    }
+    return false;
+  }
+
+  void ClearSelection() {
+    selection_begin_ = -1;
+    selection_end_ = -1;
   }
 
   bool HandleInsert() {
@@ -572,6 +666,10 @@ class InputBase : public ComponentBase, public InputOption {
   bool Focusable() const final { return true; }
 
   bool hovered_ = false;
+
+  // CLFCode patch（2026-09-23）：拖选选区（content 字节区间，-1 = 无选区）
+  int selection_begin_ = -1;
+  int selection_end_ = -1;
 
   Box box_;
   Box cursor_box_;

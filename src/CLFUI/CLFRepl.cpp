@@ -196,6 +196,15 @@ int CLFRepl::run() {
         };
 
         std::string inputText;
+        // 拖选复制（2026-09-23 输入框 copy-on-select）：与显示区同机制同
+        // 手感——左键拖选 → 反色高亮 → 松手自动复制，消除"一个界面两套
+        // 复制逻辑"；键盘 Ctrl+C 继续作"busy 中断"用，互不冲突
+        inputOpt.on_select = [&inputText](std::string selected) {
+            if (!selected.empty()) {
+                CLFClipboard::write(selected);
+            }
+        };
+
         auto input = ftxui::Input(&inputText, "❯ ", inputOpt);
         auto root  = ftxui::Container::Vertical({input});
         root->SetActiveChild(input);
