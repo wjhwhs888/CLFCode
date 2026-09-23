@@ -44,6 +44,9 @@ clf_add_test(qa_CLFContextWindow    clf_core)
 clf_add_test(qa_CLFSystemComponents clf_core)
 clf_add_test(qa_CLFConfigLoader     clf_core)
 
+# —— clf_ui 渲染级（ftxui 组件 + Screen）——
+clf_add_test(qa_CLFInputSelection clf_ui)
+
 # —— clf_core + clf_ui ——
 clf_add_test(qa_CLFContext          clf_core clf_ui)
 clf_add_test(qa_CLFProtocolAdapter  clf_core clf_ui)

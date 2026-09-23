@@ -176,6 +176,11 @@ class InputBase : public ComponentBase, public InputOption {
                                glyph_start, glyph_end, true, is_focused,
                                focused);
       }
+      // CLFCode patch：第一行 reflect——行 box 的 x_min/y_min 即文本原点
+      // （行渲染左对齐、行高 1；拖选坐标换算的锚点基准）
+      if (i == 0) {
+        elements.back() = elements.back() | reflect(first_line_box_);
+      }
       line_offset += static_cast<int>(line.size()) + 1;
     }
 
@@ -216,7 +221,18 @@ class InputBase : public ComponentBase, public InputOption {
     if (selection_begin_ >= 0 && selection_end_ >= 0
         && selection_end_ != selection_begin_) {
       const int s = std::min(selection_begin_, selection_end_) - line_start;
-      const int e = std::max(selection_begin_, selection_end_) - line_start;
+      int e = std::max(selection_begin_, selection_end_) - line_start;
+      // 反向拖选 + 锚点落在字符格内 → 锚点端补含入（与 Released 回调同一
+      // 规则——高亮与复制区间必须同值；实抓：反向全选复制含末字符而高亮
+      // 缺）。GlyphNext 不跨 '\n'（行尾字符的锚点不补）
+      if (selection_end_ < selection_begin_ && anchor_inside_
+          && selection_begin_ < static_cast<int>(content->size())
+          && content->at(selection_begin_) != '\n') {
+        const int anchor_incl =
+            static_cast<int>(GlyphNext(content(), selection_begin_));
+        e = std::min(anchor_incl,
+                     line_start + static_cast<int>(line.size())) - line_start;
+      }
       sel_begin = std::max(s, 0);
       sel_end   = std::min(e, static_cast<int>(line.size()));
       if (sel_begin >= sel_end) {
@@ -237,11 +253,13 @@ class InputBase : public ComponentBase, public InputOption {
     std::vector<Mark> marks{{0, false, false}};
     if (sel_begin >= 0) {
       marks.push_back({sel_begin, true, false});
-      marks.push_back({sel_end, false, false});
+      marks.push_back({sel_end, true, false});   // 关闭 toggle（实抓：漏写
+                                                 // 致 sel_on 一路到行尾——
+                                                 // "整行高亮"根因）
     }
     if (has_cursor) {
       marks.push_back({cursor_begin_in_line, false, true});
-      marks.push_back({cursor_end_in_line, false, false});
+      marks.push_back({cursor_end_in_line, false, true});   // 关闭 toggle（同上）
     }
     std::stable_sort(marks.begin(), marks.end(),
                      [](const Mark& a, const Mark& b) { return a.pos < b.pos; });
@@ -550,54 +568,64 @@ class InputBase : public ComponentBase, public InputOption {
   }
 
   // CLFCode patch（2026-09-23）：把鼠标坐标 (mouse_x, mouse_y)（全局屏幕
-  // 坐标）换算为字节偏移。**绝对基准**（组件 box）——不依赖光标位置：
-  // 组件内行 = mouse_y - box_.y_min（行渲染左对齐、行高 1）、组件内列 =
-  // mouse_x - box_.x_min。原 HandleMouse 的"光标相对基准"（cursor_box_）
-  // 在拖选场景失效：Press 后光标立即跳到点击处，而 cursor_box_ 仍是上一
-  // 帧的旧位置——Moved/Released 换算基准错位（实机实抓：向上拖选失效、
-  // 行内列算错被 clamp 到行边界致"整行或全不选"、末行丢一半）。
+  // 坐标）换算为字节偏移。**锚点绝对基准**——Pressed 时刻从第一行 reflect
+  // 的 box（first_line_box_）快照文本原点锚点（anchor_x_/anchor_y_），
+  // Moved/Released 以锚点换算（帧稳定、零光标耦合）。组件 box / vbox 的
+  // reflect 记录的是 frame 分配的**区域**而非内容位置（渲染级取证：文本
+  // 垂直居中时 box_.y_min 与文本行不一致——直接 box 基准致高亮错位）。
   //
-  // inclusive 语义（2026-09-23 实机二轮实抓）：false = 格起点（点击定位
-  // 光标——点在字符格上光标在该字符前，FTXUI 原生语义）；true = 含入
-  // （拖选——鼠标所在字符计入选区，与显示区"游标含入鼠标所在字符"一致。
-  // 实抓：拖选"123"实际得"12"——少含最后一个字符）
-  int PositionToCursor(int mouse_x, int mouse_y, bool inclusive) {
+  // 两种 snap 语义（实机三轮实抓逐步收敛）：
+  //   kStart     点击定位光标——格起点（FTXUI 原生语义）
+  //   kInclusive 拖选扩展/松手——恒含入（鼠标所在字符计入选区，与显示区
+  //              "游标含入鼠标所在字符"一致。实抓：拖选"123"得"12"）
+  enum class SnapMode { kStart, kInclusive };
+  int PositionToCursor(int mouse_x, int mouse_y, SnapMode mode) {
     if (content->empty()) {
       return 0;
     }
+    if (anchor_x_ < 0 || anchor_y_ < 0) {
+      return cursor_position();   // 无锚点（未 Press）→ 兜底（不应发生）
+    }
 
     std::vector<std::string> lines = SplitLines(*content);
-    int line_idx = mouse_y - box_.y_min;
+    int line_idx = mouse_y - anchor_y_;
     line_idx = std::max(std::min(line_idx, (int)lines.size()), 0);
 
     const std::string empty_string;
     const std::string& line = line_idx < (int)lines.size()
                                   ? lines[line_idx]
                                   : empty_string;
-    int column = mouse_x - box_.x_min;
+    int column = mouse_x - anchor_x_;
     column = util::clamp(column, 0,
                          password() ? GlyphCount(line) : string_width(line));
 
-    // 列 → 字节偏移（GlyphWidth 宽字符口径——与渲染/点击定位同表）
+    // 列 → 字节偏移（GlyphWidth 宽字符口径——与渲染/点击定位同表）。
+    // 循环在 column 落入某 glyph 内（或恰在左边界减到 0）时退出——
+    // column 保留为"glyph 内偏移"（半格判定用）
+    const int original_column = column;
     int pos = 0;
     for (int i = 0; i < line_idx; ++i) {
       pos += static_cast<int>(lines[i].size() + 1);
     }
     while (column > 0) {
-      if (password()) {
-        column -= 1;
-      } else {
-        column -= static_cast<int>(GlyphWidth(content(), pos));
+      const int gw = password() ? 1
+                                : static_cast<int>(GlyphWidth(content(), pos));
+      if (column < gw) {
+        break;   // 鼠标落在该 glyph 格内
       }
+      column -= gw;
       pos = static_cast<int>(GlyphNext(content(), pos));
     }
-    // 含入：鼠标在字符格内（列 > 0）且未到行尾（下一字符非 '\n'/结尾）
-    // → 前进一个 glyph——该字符计入选区（与显示区"游标含入"语义一致）
-    if (inclusive && column > 0 && pos < static_cast<int>(content->size())
-        && content->at(pos) != '\n') {
-      pos = static_cast<int>(GlyphNext(content(), pos));
+
+    // inside：鼠标在某个 glyph 格内（原始列 > 0 且 pos 指向的 glyph 非行
+    // 尾/结尾）——column 恰减到 0（glyph 左边界）仍属格内
+    const bool inside = original_column > 0
+                        && pos < static_cast<int>(content->size())
+                        && content->at(pos) != '\n';
+    if (!inside || mode == SnapMode::kStart) {
+      return pos;
     }
-    return pos;
+    return static_cast<int>(GlyphNext(content(), pos));   // kInclusive：含入
   }
 
   // CLFCode patch（2026-09-23）：拖选复制（copy-on-select——与显示区同机制
@@ -619,12 +647,23 @@ class InputBase : public ComponentBase, public InputOption {
     const auto motion = event.mouse().motion;
     if (motion == Mouse::Pressed) {
       TakeFocus();
+      // CLFCode patch：锚点 = Press 时刻的文本原点快照——第一行 reflect 的
+      // box 起点（行渲染左对齐、行高 1，行 box 的 x_min/y_min 即文本原点；
+      // 快照保证拖选期间帧稳定）
+      anchor_x_ = first_line_box_.x_min;
+      anchor_y_ = first_line_box_.y_min;
       // 点击定位：格起点语义（光标在鼠标所在字符之前——FTXUI 原生行为）
-      const int pos = PositionToCursor(event.mouse().x, event.mouse().y, false);
+      const int pos = PositionToCursor(event.mouse().x, event.mouse().y,
+                                       SnapMode::kStart);
       cursor_position() = pos;
-      if (on_select) {   // 拖选复制启用 → 选区开始（锚点 = 新光标）
+      if (on_select) {   // 拖选复制启用 → 锚点 = 格起点；记录锚点是否落在
+                         // 字符格内（反向拖时该字符补含入——"从字符上按下
+                         // 向左拖"的用户直觉；正向拖锚点不含——编辑器惯例）
         selection_begin_ = pos;
-        selection_end_ = pos;
+        anchor_inside_ =
+            PositionToCursor(event.mouse().x, event.mouse().y,
+                             SnapMode::kInclusive) > pos;
+        selection_end_ = selection_begin_;
       }
       App::PostEventOrExecute(on_change);
       return true;
@@ -636,7 +675,7 @@ class InputBase : public ComponentBase, public InputOption {
       }
       // 拖选扩展：含入语义（鼠标所在字符计入选区）
       selection_end_ =
-          PositionToCursor(event.mouse().x, event.mouse().y, true);
+          PositionToCursor(event.mouse().x, event.mouse().y, SnapMode::kInclusive);
       return true;
     }
 
@@ -647,9 +686,16 @@ class InputBase : public ComponentBase, public InputOption {
       // 松手补一次含入换算（松手点可能没有对应 Moved 事件——与显示区
       // "松手先含入最终位置"同款语义）
       selection_end_ =
-          PositionToCursor(event.mouse().x, event.mouse().y, true);
+          PositionToCursor(event.mouse().x, event.mouse().y, SnapMode::kInclusive);
       const int begin = std::min(selection_begin_, selection_end_);
-      const int end   = std::max(selection_begin_, selection_end_);
+      int end         = std::max(selection_begin_, selection_end_);
+      // 反向拖选（游标退到锚点左侧/上方）且锚点落在字符格内 → 锚点补含入
+      // （不跨 '\n'——行尾字符的锚点不补；与渲染层同规则）
+      if (selection_end_ < selection_begin_ && anchor_inside_
+          && end < static_cast<int>(content->size())
+          && content->at(end) != '\n') {
+        end = static_cast<int>(GlyphNext(content(), end));
+      }
       if (begin < end && on_select) {
         on_select(content->substr(begin, end - begin));
       }
@@ -662,6 +708,9 @@ class InputBase : public ComponentBase, public InputOption {
   void ClearSelection() {
     selection_begin_ = -1;
     selection_end_ = -1;
+    anchor_x_ = -1;
+    anchor_y_ = -1;
+    anchor_inside_ = false;
   }
 
   bool HandleInsert() {
@@ -679,6 +728,12 @@ class InputBase : public ComponentBase, public InputOption {
 
   Box box_;
   Box cursor_box_;
+  // CLFCode patch（2026-09-23）：第一行 box（文本原点基准）+ 拖选坐标
+  // 换算锚点（Pressed 时刻快照；-1 = 无锚点）
+  Box first_line_box_;
+  int anchor_x_ = -1;
+  int anchor_y_ = -1;
+  bool anchor_inside_ = false;   // Press 锚点是否落在字符格内（反向拖补含入）
 };
 
 }  // namespace
