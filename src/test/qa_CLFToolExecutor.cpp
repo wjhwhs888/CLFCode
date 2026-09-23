@@ -63,6 +63,19 @@ CLFToolExecutor makeExecutor(std::vector<CLFTool>& tools, MockOutput& out,
                            &out, &out, &interruptFlag, &labels, &thinkingSec);
 }
 
+// 构造带可注入中断标志的 executor（协议闭合用例 I1a/I1b 需可控 flag）
+CLFToolExecutor makeInterruptibleExecutor(std::vector<CLFTool>& tools,
+                                          MockOutput& out,
+                                          std::atomic<int>& thinkingSec,
+                                          CLF::CLFCore::ToolStats& stats,
+                                          std::atomic<bool>& interruptFlag) {
+    static CLF::CLFCore::CLFTimerLabels labels;
+    static CLFSecurityPolicy policy(CLFSecurityMode::Auto);
+    static CLF::CLFCapabilities::CLFFileServiceImpl fileService;
+    return CLFToolExecutor(tools, policy, nullptr, stats, &fileService,
+                           &out, &out, &interruptFlag, &labels, &thinkingSec);
+}
+
 } // anonymous namespace
 
 const boost::ut::suite<"CLFToolExecutor"> tests = [] {
@@ -245,6 +258,65 @@ const boost::ut::suite<"CLFToolExecutor"> tests = [] {
         auto results = executor.execute({c1});
         expect(results.size() == 1_ul);
         expect(!results[0].m_concludesTurn);   // 失败不提前结束回合（§四 T2）
+    };
+
+    // ========== 协议闭合（设计-中断时效性 §十一，2026-09-23） ==========
+
+    "I1a 中断协议闭合：入口即中断——所有调用补未执行结果（声明数 == 结果数）"_test = [] {
+        std::vector<CLFTool> tools;
+        CLFTool t;
+        t.m_name = "read_file";
+        t.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        t.m_handler = [](const std::string&) { return "{\"success\":true,\"content\":\"data\"}"; };
+        tools.push_back(t);
+
+        MockOutput out;
+        std::atomic<int> thinkingSec{2};
+        CLF::CLFCore::ToolStats stats;
+        std::atomic<bool> interrupted{true};   // 入口即中断
+        auto executor = makeInterruptibleExecutor(tools, out, thinkingSec, stats, interrupted);
+
+        CLF::CLFCore::CLFToolCall c1; c1.m_id = "call_a"; c1.m_name = "read_file";
+        CLF::CLFCore::CLFToolCall c2; c2.m_id = "call_b"; c2.m_name = "read_file";
+        auto results = executor.execute({c1, c2});
+        // 不变量 I1：任何时刻 tool_calls 声明数 == tool 结果数（否则下一次
+        // 请求被 API 拒绝——"providers reject dangling assistant calls"）
+        expect(results.size() == 2_ul);
+        expect(results[0].m_toolCallId == "call_a");
+        expect(results[1].m_toolCallId == "call_b");
+        // [interrupted] 稳定前缀为 qa 锚点；不得是 [Denied by user]（另一语义）
+        expect(results[0].m_content.find("[interrupted]") != std::string::npos);
+        expect(results[1].m_content.find("[interrupted]") != std::string::npos);
+        expect(results[0].m_content.find("未执行") != std::string::npos);
+    };
+
+    "I1b 中断协议闭合：执行中途中断——已执行保留真实结果、剩余补未执行"_test = [] {
+        std::vector<CLFTool> tools;
+        CLFTool t;
+        t.m_name = "read_file";
+        t.m_risk = CLF::CLFCore::CLFToolRisk::Read;
+        std::atomic<bool> interrupted{false};
+        // 第一个工具执行时置位中断（模拟执行中途按 ESC）→ 第二个被批内检查拦下
+        t.m_handler = [&interrupted](const std::string&) {
+            interrupted = true;
+            return "{\"success\":true,\"content\":\"data\"}";
+        };
+        tools.push_back(t);
+
+        MockOutput out;
+        std::atomic<int> thinkingSec{2};
+        CLF::CLFCore::ToolStats stats;
+        auto executor = makeInterruptibleExecutor(tools, out, thinkingSec, stats, interrupted);
+
+        CLF::CLFCore::CLFToolCall c1; c1.m_id = "call_a"; c1.m_name = "read_file";
+        CLF::CLFCore::CLFToolCall c2; c2.m_id = "call_b"; c2.m_name = "read_file";
+        auto results = executor.execute({c1, c2});
+        expect(results.size() == 2_ul);
+        // 已执行的真实结果保留；被跳过的补"未执行"文案
+        expect(results[0].m_toolCallId == "call_a");
+        expect(results[0].m_content.find("data") != std::string::npos);
+        expect(results[1].m_toolCallId == "call_b");
+        expect(results[1].m_content.find("[interrupted]") != std::string::npos);
     };
 };
 

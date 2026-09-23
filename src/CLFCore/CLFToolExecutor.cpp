@@ -353,6 +353,29 @@ void renderDiff(CLF::CLFTypes::ICLFContentOutput* output, const WritePreview& pr
 } // anonymous namespace
 
 // ============================================================================
+// 协议闭合（设计-中断时效性 §十一，2026-09-23）
+// ============================================================================
+
+// 中断 break 后为剩余未执行调用补合成结果——不变量 I1：任何时刻上下文中
+// tool_calls 声明数 == tool 结果数（OpenAI 兼容协议要求每条声明必须有配对
+// tool 消息，否则下一次请求被 API 拒绝——dsh repair.ts "providers reject
+// dangling assistant calls"）。文案前缀 [interrupted] 为 qa 断言锚点
+// （不得改用 [Denied by user]——那是"用户否决操作"的另一语义，§11.9）
+void appendNotExecutedResults(const std::vector<CLFToolCall>& calls,
+                              size_t fromIndex,
+                              std::vector<CLFToolResult>& results) {
+    for (size_t i = fromIndex; i < calls.size(); ++i) {
+        CLFToolResult skipped;
+        skipped.m_toolCallId = calls[i].m_id;
+        skipped.m_name       = calls[i].m_name;
+        skipped.m_content =
+            "[interrupted] 该工具调用因用户中断而未执行，未产生任何副作用。"
+            "如仍需要，请重新调用。";
+        results.push_back(std::move(skipped));
+    }
+}
+
+// ============================================================================
 // CLFToolExecutor 构造
 // ============================================================================
 
@@ -403,7 +426,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
     std::vector<std::string> detailLines;
     detailLines.reserve(calls.size());
 
-    for (const auto& call : calls) {
+    for (size_t callIdx = 0; callIdx < calls.size(); ++callIdx) {
+        const auto& call = calls[callIdx];
         // T3: 每次迭代末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
         // 工具返回即重绘（原仅靠 turnTimer 1Hz 兜底，最长延迟 1 秒）。
         // RAII 保证 :376/:387 等 continue 提前退出分支也被覆盖
@@ -415,6 +439,9 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         // 中断检查
         if (m_interruptFlag && m_interruptFlag->load()) {
             if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⏹ 已中断\n");
+            // 协议闭合：当前及剩余调用全部补"未执行"结果（§11.4）——
+            // AgentLoop 落库后声明数 == 结果数恒成立，零差集逻辑
+            appendNotExecutedResults(calls, callIdx, results);
             break;
         }
 
@@ -544,7 +571,11 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
                     if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
                     results.push_back(std::move(result));
-                    if (m_interruptFlag && m_interruptFlag->load()) break;
+                    if (m_interruptFlag && m_interruptFlag->load()) {
+                        // 协议闭合：当前 call 已有 denied 结果，补剩余（§11.4）
+                        appendNotExecutedResults(calls, callIdx + 1, results);
+                        break;
+                    }
                     continue;
                 }
             }
@@ -574,7 +605,11 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
                     if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
                     results.push_back(std::move(result));
-                    if (m_interruptFlag && m_interruptFlag->load()) break;
+                    if (m_interruptFlag && m_interruptFlag->load()) {
+                        // 协议闭合：当前 call 已有 denied 结果，补剩余（§11.4）
+                        appendNotExecutedResults(calls, callIdx + 1, results);
+                        break;
+                    }
                     continue;
                 }
             }
