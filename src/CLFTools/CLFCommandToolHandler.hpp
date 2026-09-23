@@ -3,9 +3,12 @@
 // 只依赖能力（CLFCommandExec）+ clf_types + nlohmann json——不依赖 core/UI。
 // example:
 //   std::string out = CLF::CLFTools::executeCommandToolHandler(args, workspaceRoot);
+//   std::string out2 = CLF::CLFTools::executeCommandToolHandler(
+//       args, workspaceRoot, [] { return interrupted.load(); });
 
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace CLF::CLFTools {
@@ -16,7 +19,9 @@ bool exitCodeMeansSuccess(const std::string& command, int exitCode);
 
 // execute_command：workspaceRootUtf8 为空串 = cwd 校验跳过
 // （2.3 参数化——插件经 host->config 取根；CLFBuiltinTools 传 ConfigLoader 值）
+// isCancelled 为空 = 不可取消（向后兼容）；命中 → 结果含 interrupted=true
 std::string executeCommandToolHandler(const std::string& args,
-                                      const std::string& workspaceRootUtf8);
+                                      const std::string& workspaceRootUtf8,
+                                      const std::function<bool()>& isCancelled = {});
 
 } // namespace CLF::CLFTools

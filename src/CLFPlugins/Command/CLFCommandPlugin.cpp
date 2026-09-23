@@ -53,7 +53,15 @@ public:
         try {
             std::string out;
             if (std::strcmp(name, "execute_command") == 0) {
-                out = CLF::CLFTools::executeCommandToolHandler(argsJson, m_workspaceRoot);
+                // 取消查询组装（中断时效性 A 批步骤 5）：ABI cb.isCancelled → 轻量
+                // 查询下传 handler → 执行器。ctx 不透明只回传；同步契约下
+                // ctx/cb 在调用栈存活期内有效（callTool 返回前 handler 已返回）
+                std::function<bool()> cancelQuery;
+                if (cb && cb->isCancelled) {
+                    cancelQuery = [cb, ctx] { return cb->isCancelled(ctx); };
+                }
+                out = CLF::CLFTools::executeCommandToolHandler(
+                    argsJson, m_workspaceRoot, cancelQuery);
             } else {
                 out = std::string("{\"success\":false,\"error\":\"unknown tool: ") + name + "\"}";
             }

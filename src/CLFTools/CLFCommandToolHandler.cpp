@@ -41,9 +41,10 @@ bool exitCodeMeansSuccess(const std::string& command, int exitCode) {
 }
 
 std::string executeCommandToolHandler(const std::string& args,
-                                      const std::string& workspaceRootUtf8) {
+                                      const std::string& workspaceRootUtf8,
+                                      const std::function<bool()>& isCancelled) {
     return CLF::CLFCapabilities::withHandlerScaffold(
-        args, [&workspaceRootUtf8](const nlohmann::json& params, nlohmann::json& result) {
+        args, [&workspaceRootUtf8, &isCancelled](const nlohmann::json& params, nlohmann::json& result) {
             std::string command = params.value("command", "");
             int timeout = params.value("timeout", 30);
             std::string cwd = params.value("cwd", "");
@@ -60,7 +61,20 @@ std::string executeCommandToolHandler(const std::string& args,
                 }
             }
 
-            auto cmdResult = CLF::CLFTools::executeCommand(command, timeout, cwd);
+            auto cmdResult = CLF::CLFTools::executeCommand(command, timeout, cwd, isCancelled);
+            if (cmdResult.m_interrupted) {
+                // 中断语义（设计-中断时效性 A.4）：不假装成功/失败——success=false +
+                // interrupted=true + 已有输出保留；"结果未知"由协议闭合层承接
+                // （被立即强杀的可能有半截副作用——模型需知"结果未知"不盲目重试）
+                result["success"]     = false;
+                result["interrupted"] = true;
+                result["exitCode"]    = cmdResult.m_exitCode;
+                result["stdout"]      = cmdResult.m_stdout;
+                std::string err = cmdResult.m_stderr;
+                if (!err.empty()) err += "\n";
+                result["stderr"] = err + "命令被用户中断（已终止进程树）";
+                return;
+            }
             result["success"]  = exitCodeMeansSuccess(command, cmdResult.m_exitCode);
             result["exitCode"] = cmdResult.m_exitCode;
             result["stdout"]   = cmdResult.m_stdout;
