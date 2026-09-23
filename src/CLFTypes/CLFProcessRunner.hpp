@@ -22,12 +22,18 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace CLF::CLFCore {
 
 // 执行请求（宿主内部结构，不进插件 ABI）
 struct CLFExecSpec {
     std::string m_command;          // shell 模式命令字符串（经平台 shell 解释）
+    // argv 模式（2026-09-23 命令执行层 §九）：非空时优先，不经 shell——
+    // "argv 用于程序知道自己要跑什么；shell 字符串只留给模型想干什么"
+    // （2>nul 类重定向缺陷的整类消除）。argv[0] = 程序名（PATH 搜索，
+    // .cmd/.bat shim 不支持——辅助命令均为 exe）
+    std::vector<std::string> m_argv;
     std::string m_cwdUtf8;          // 子进程工作目录（UTF-8；空 = 继承）
     int         m_timeoutSec = 120; // 请求超时；执行器内 clamp 到 [1, 硬顶]
     // G2（2026-09-23）：执行器层输出限额（stdout/stderr 各一份预算）——

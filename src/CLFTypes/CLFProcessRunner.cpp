@@ -20,6 +20,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <fcntl.h>   // [未验证] argv 模式 dup2 重定向（open/O_*）
 #include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>  // [未验证] SIGKILL（平台层收敛 E 类缺陷补齐——原缺显式包含）
@@ -56,6 +57,37 @@ std::wstring utf8ToWide(const std::string& s) {
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
                         w.data(), n);
     return w;
+}
+
+// argv → 单命令行字符串转义（CreateProcess* 只接受单串；qargs 算法——
+// 命令执行层 §七.3：空格/引号/尾反斜杠，原样到达子进程）
+std::string buildArgvCommandLine(const std::vector<std::string>& argv) {
+    std::string out;
+    for (size_t i = 0; i < argv.size(); ++i) {
+        if (i) out += ' ';
+        const std::string& a = argv[i];
+        if (a.find_first_of(" \t\n\v\"") == std::string::npos) {
+            out += a;
+            continue;
+        }
+        out += '"';
+        size_t backslashes = 0;
+        for (char c : a) {
+            if (c == '\\') { ++backslashes; continue; }
+            if (c == '"') {
+                out.append(backslashes * 2 + 1, '\\');
+                out += '"';
+                backslashes = 0;
+                continue;
+            }
+            out.append(backslashes, '\\');
+            backslashes = 0;
+            out += c;
+        }
+        out.append(backslashes * 2, '\\');
+        out += '"';
+    }
+    return out;
 }
 #endif
 
@@ -199,11 +231,17 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
     SetHandleInformation(hOutRead, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(hErrRead, HANDLE_FLAG_INHERIT, 0);
 
-    // 匹配 std::system 行为：cmd.exe /s /c "..."；chcp 65001 源头 UTF-8 化
-    // （2.2b 修根：中文 Windows 命令输出 GBK 与 UTF-8 混合 → 单次 CP_ACP
-    // 转换不可靠；chcp 输出重定向 nul 不留痕、& 保证原命令照常执行）
-    const std::string wrapped = "chcp 65001 >nul & " + spec.m_command;
-    std::wstring cmdLine = L"cmd.exe /s /c \"" + utf8ToWide(wrapped) + L"\"";
+    // 命令构造分流（命令执行层 §九）：argv 模式不经 shell（2>nul 类重定向
+    // 缺陷整类消除；程序名经 PATH 搜索——lpApplicationName=null，首 token
+    // 搜 PATH + .exe）；shell 模式保留 chcp 65001 源头 UTF-8 化（2.2b 修根：
+    // 中文 Windows 命令输出 GBK 与 UTF-8 混合 → 单次 CP_ACP 转换不可靠）
+    std::wstring cmdLine;
+    if (!spec.m_argv.empty()) {
+        cmdLine = utf8ToWide(buildArgvCommandLine(spec.m_argv));
+    } else {
+        const std::string wrapped = "chcp 65001 >nul & " + spec.m_command;
+        cmdLine = L"cmd.exe /s /c \"" + utf8ToWide(wrapped) + L"\"";
+    }
 
     STARTUPINFOW si = {};
     si.cb = sizeof(si);
@@ -369,10 +407,27 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
 
     const pid_t child = fork();
     if (child == 0) {
-        // 子进程：切到指定工作目录后通过 sh 执行命令
+        // 子进程：切到指定工作目录后执行（argv 模式直接 execvp，不经 shell）
         (void)setsid();  // [未验证] 独立进程组——kill(-pgid) 杀树的基础
         if (!spec.m_cwdUtf8.empty() && chdir(spec.m_cwdUtf8.c_str()) != 0) {
             _exit(126);  // 与 shell 的"命令不可执行"退出码一致
+        }
+        if (!spec.m_argv.empty()) {
+            // [未验证] argv 模式：dup2 重定向 /tmp → execvp（输出捕获口径
+            // 与 shell 模式一致；管道直读属命令执行层 §八 第二期）
+            const int fdOut = open(stdoutFile.c_str(),
+                                   O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            const int fdErr = open(stderrFile.c_str(),
+                                   O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fdOut >= 0) { dup2(fdOut, STDOUT_FILENO); close(fdOut); }
+            if (fdErr >= 0) { dup2(fdErr, STDERR_FILENO); close(fdErr); }
+            std::vector<char*> cargv;
+            cargv.reserve(spec.m_argv.size() + 1);
+            for (const auto& a : spec.m_argv)
+                cargv.push_back(const_cast<char*>(a.c_str()));
+            cargv.push_back(nullptr);
+            execvp(cargv[0], cargv.data());
+            _exit(127);
         }
         execl("/bin/sh", "sh", "-c", cmdWithRedirect.c_str(), nullptr);
         _exit(127);

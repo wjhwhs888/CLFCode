@@ -105,16 +105,18 @@ const boost::ut::suite<"CLFSystemComponents"> tests = [] {
         expect(second == first);
     };
 
-    // ========== CLFSubprocessRunner ==========
+    // ========== CLFSubprocessRunner（命令执行层 §九 argv 化，2026-09-23） ==========
 
     "S1 run：正常命令返回 stdout（去尾换行）"_test = [] {
-        auto out = CLFSubprocessRunner::run("echo clf_subproc_test");
+        // argv 模式：echo 是 cmd 内建 → 显式经 cmd.exe（argv 化 ≠ 无 shell 工具）
+        auto out = CLFSubprocessRunner::run({"cmd", "/d", "/c", "echo clf_subproc_test"});
         expect(out.find("clf_subproc_test") != std::string::npos);
         expect(out.back() != '\n');
     };
 
     "S2 run：命令不存在 → 空串"_test = [] {
-        auto out = CLFSubprocessRunner::run("__clf_no_such_command_xyz__ 2>nul");
+        // argv 模式：launch 失败（not_found）→ stdout 空（不再需要 2>nul）
+        auto out = CLFSubprocessRunner::run({"__clf_no_such_command_xyz__"});
         expect(out.empty());
     };
 };

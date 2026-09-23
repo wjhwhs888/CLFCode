@@ -139,6 +139,52 @@ const boost::ut::suite<"CLFProcessRunner"> tests = [] {
         expect(r.m_errorKind == "not_found");   // cmd"不是内部或外部命令"文案归一
         expect(!r.m_stderr.empty());            // 原始 stderr 保留（快信号非替代）
     };
+
+    "C7 argv 模式（G4）：git --version 正常——不经 shell 的辅助命令通道"_test = [] {
+        CLFExecSpec spec;
+        spec.m_argv = {"git", "--version"};
+        const CLFExecResult r = CLFProcessRunner::run(spec);
+        expect(r.m_exitCode == 0);
+        expect(r.m_stdout.find("git version") != std::string::npos);
+        expect(r.m_stdout.find("chcp") == std::string::npos);  // 无 shell 包装痕迹
+    };
+
+    "C8 引号边界：含空格与尾反斜杠参数原样到达子进程（qargs 转义）"_test = [] {
+        auto dir = CLFTest::CLFTestTempDir("clf_qa_proc_c8");
+        {
+            std::ofstream f(fs::u8path(dir.string() + "/t.txt"), std::ios::binary);
+            f << "hello world path\\\n";   // 含空格 + 尾反斜杠的内容
+        }
+        CLFExecSpec spec;
+        spec.m_cwdUtf8 = dir.string();
+        // pattern 含空格与反斜杠：转义错误则被切碎 → 不匹配（exitCode 1）
+        spec.m_argv = {"findstr", "/c:hello world path\\\\", "t.txt"};
+        const CLFExecResult r = CLFProcessRunner::run(spec);
+        expect(r.m_exitCode == 0);   // 匹配成功 = 参数原样到达
+    };
+
+    "C9 nul 回归：辅助命令 argv 路径不再产生 nul 文件（W-5 缺陷）"_test = [] {
+        auto dir = CLFTest::CLFTestTempDir("clf_qa_proc_c9");
+        CLFExecSpec spec;
+        spec.m_cwdUtf8 = dir.string();
+        spec.m_argv = {"git", "-C", dir.string(), "status", "--short"};
+        const CLFExecResult r = CLFProcessRunner::run(spec);
+        (void)r;
+        // 旧 shell 路径 2>nul 会在 POSIX 下生成名为 nul 的文件；argv 路径
+        // stderr 单独捕获——工作目录无 nul 文件。
+        // Windows 下 "nul" 是保留设备名（fs::exists 抛异常/设错误码）——
+        // 改目录列举检查（跨平台安全）
+        std::error_code ec;
+        bool foundNul = false;
+        for (auto it = fs::directory_iterator(fs::u8path(dir.string()), ec);
+             it != fs::directory_iterator(); ++it) {
+            if (it->path().filename().string() == "nul") {
+                foundNul = true;
+                break;
+            }
+        }
+        expect(!foundNul);
+    };
 };
 
 int main() {}
