@@ -33,7 +33,10 @@ namespace {
 class MockHttpClient : public ICLFHttpClient {
 public:
     void setTimeout(int) override {}
-    void abort() override {}
+    // W5 修复（2026-09-23 批C-4）：abort 做实——与真实 CLFHttpClient 同语义：
+    // ① 入口先查待决中断再重置（pendingAbort → 不发请求、不消费队列、不计数）
+    // ② 流式循环中检查（"abort 在请求进行中"时序）
+    void abort() override { m_aborted = true; }
 
     // 预设同步响应（顺序消费）
     void pushResponse(const std::string& body, const std::string& error = "") {
@@ -49,6 +52,12 @@ public:
     int streamCallCount() const { return m_streamCalls; }
 
     CLFHttpResponse postJson(const std::string&, const std::string& body) override {
+        const bool pendingAbort = m_aborted.exchange(false);
+        if (pendingAbort) {
+            CLFHttpResponse resp;
+            resp.m_wasAborted = true;
+            return resp;
+        }
         ++m_syncCalls;
         lastBodies.push_back(body);  // T10d 不污染上下文断言
         // 预设不足必须抛异常，不能只 expect 后继续：boost::ut 的 expect 只记录
@@ -67,6 +76,12 @@ public:
     CLFHttpResponse postJsonStream(
         const std::string&, const std::string& body,
         std::function<void(const std::string&)> onLine) override {
+        const bool pendingAbort = m_aborted.exchange(false);
+        if (pendingAbort) {
+            CLFHttpResponse resp;
+            resp.m_wasAborted = true;
+            return resp;
+        }
         ++m_streamCalls;
         lastBodies.push_back(body);  // T10d 不污染上下文断言
         if (m_streamResponses.empty()) {  // 同 postJson：空队列 front() 是 UB
@@ -77,6 +92,12 @@ public:
         m_streamResponses.pop_front();
         int idx = 0;
         for (const auto& line : lines) {
+            // W5：请求进行中 abort → 停止喂行、返回 wasAborted
+            if (m_aborted) {
+                CLFHttpResponse resp;
+                resp.m_wasAborted = true;
+                return resp;
+            }
             onLine(line);
             // T6a: 喂到 hookAfterLine 行后触发注入的中断回调
             if (idx == hookAfterLine && onLineHook) onLineHook();
@@ -97,6 +118,7 @@ private:
     std::deque<std::vector<std::string>> m_streamResponses;
     int m_syncCalls = 0;
     int m_streamCalls = 0;
+    std::atomic<bool> m_aborted{false};   // W5：abort 做实（真实客户端同字段语义）
 };
 
 // 构造带 Mock 的 Agent + 注册 echo 工具
@@ -376,6 +398,51 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(result == "[Interrupted]");
         expect(out.interruptEmissions() == 1);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    // ========== W5: HTTP 中断语义（批C-4，2026-09-23） ==========
+
+    "W5a abort 先于请求开始：请求从未发出，直接中断收尾"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = true;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->abort();  // 仅 HTTP 层 abort（不置 m_interrupted）——上一请求
+                       // 返回后、本请求入口前发生的待决中断
+        std::string result = agent->runTurn("hi");
+
+        // 入口先查待决中断：请求从未发出（不计数、不消费队列）+ wasAborted
+        // → AgentLoop 流式收尾路径 emitInterrupted
+        expect(result == "[Interrupted]");
+        expect(mock->streamCallCount() == 0);
+        expect(out.interruptEmissions() == 1);
+    };
+
+    "W5b abort 在请求进行中：流式中途停止喂行，中断收尾"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = true;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->hookAfterLine = 1;  // 第 2 行之后触发 abort（仅 HTTP 层）
+        mock->onLineHook = [&] { mock->abort(); };
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}",
+            "data: [DONE]"
+        });
+
+        std::string result = agent->runTurn("hi");
+        expect(result == "[Interrupted]");
+        expect(mock->streamCallCount() == 1);
+        expect(out.interruptEmissions() == 1);
     };
 
     // ========== T4: 状态点状态机（P1-1 接线全表） ==========

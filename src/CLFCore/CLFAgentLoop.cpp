@@ -234,7 +234,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Interrupted]");
                 }
                 if (response.m_wasAborted) {
-                    // libcurl 层检测到中断 → 直接返回，不重试
+                    // httplib 层检测到中断（abort → stop → 阻塞读返回）→ 直接返回，不重试
                     emitInterrupted();
                     return std::string("[Interrupted]");
                 }
@@ -792,6 +792,9 @@ CLFAgentLoop::HttpErrorAction CLFAgentLoop::handleHttpError(
 void CLFAgentLoop::emitInterrupted() {
     // P0-5: 统一文案（原 9 处两版文案）+ clearThinking + Warn 状态点
     // 所有调用点后立即 return——一轮内不可重复发射（F17 裁决）
+    // W2 修复（2026-09-23 中断时效性 批C-3）：中断路径零日志痕迹——
+    // 补日志（本次破案曾靠 ToolExec 日志间接判别，中断自身不可判读）
+    CLFLogger::instance().info("[Turn] interrupted");
     if (!m_output) return;
     m_output->emitContent("\n⏹ 已中断\n");
     m_output->clearThinking();

@@ -32,7 +32,14 @@ CLFHttpClient::CLFHttpClient(const std::string& baseUrl, const std::string& apiK
 
 CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::string& jsonBody) {
     CLFHttpResponse result;
-    m_aborted = false;  // 新请求开始，重置中断标志（与 postJsonStream 对称）
+    // W1 修复（2026-09-23 中断时效性 批C-1 最小版）：先查待决中断再重置——
+    // 上一请求返回后、本请求入口前发生的 abort 不得被入口重置抹掉；
+    // exchange 原子完成"查 + 清"（m_aborted 为 atomic，abort 与请求线程并发安全）
+    const bool pendingAbort = m_aborted.exchange(false);
+    if (pendingAbort) {
+        result.m_wasAborted = true;
+        return result;
+    }
 
     auto cli = std::make_shared<httplib::Client>(m_baseUrl);
     cli->set_connection_timeout(10, 0);
@@ -75,7 +82,12 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     std::function<void(const std::string& line)> onLine
 ) {
     CLFHttpResponse result;
-    m_aborted = false;  // 新请求开始，重置中断标志
+    // W1 修复（批C-1 最小版，同 postJson）：入口先查待决中断再重置
+    const bool pendingAbort = m_aborted.exchange(false);
+    if (pendingAbort) {
+        result.m_wasAborted = true;
+        return result;
+    }
 
     auto cli = std::make_shared<httplib::Client>(m_baseUrl);
     cli->set_connection_timeout(10, 0);
