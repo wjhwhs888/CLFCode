@@ -2,6 +2,25 @@
 
 ## 进行中
 
+### ▶ 中断修复与平台收敛阶段性任务 ⏳ 审查完成、排期四波定稿（2026-09-23，待开工）
+- **背景**：用户与 flash 2026-09-22~23 头脑风暴产出四份设计文档，pro 按 `agent协作规范.md` v1.0（审查门开工前必填、证据高于结论）完成全量审查
+- **指导总纲**：`设计/设计-中断修复与平台收敛总排期.md`（本任务的唯一权威：审查门结论 + 排期四波 + 裁剪决策）
+- **四文档**：`设计/设计-中断时效性.md`（ESC/Ctrl+C 无法立即中断的根因修复，P0）/ `设计/设计-命令执行层.md`（执行器内部实现唯一权威）/ `设计/设计-平台层收敛.md`（Windows 平台耦合治理，第一期 = Windows 11）/ `设计/设计-启动横幅窄窗口渲染异常.md`（观察任务，用户定"先不动"——不入队列）
+- **取证**：42 条断言**零证伪**——pro 亲验核心根因链（56 秒日志铁证 / `CLFCommandExec.cpp:102-129` 零检查点 / `:125` 超时只杀父 / `CLFToolApi.hpp:13` 无取消通道 / `CLFAgentLoop.cpp:366-369` 悬空产生点 / jsonl 16 声明 15 结果 1 悬空实证）+ 2 个 Explore agent 清单核实（6 处行号细节偏移，无方向性错误）
+- **排期四波**：① 中断根因闭环（A 批 10 步 + 协议闭合 + A2 三慢点 + B2/W6/B4 上提 + W1 世代号 + repair-on-load + 命令层 G1/超时 120s·600 配置——验收门：node test_ai.js 中途 ESC ≤1s 停 + 无残留 + 继续对话不 400）→ ② 命令层收尾（G2 限额头尾截断 / G3 错误归一化 / argv 化消 2>nul）→ ③ 平台层收敛（步骤 0-7 零行为变更基建）→ ④ P1 收尾（B3 Ctrl+C 收尾统一 / W-usage / quiesce 回归）
+- **pro 裁剪**（已入总纲）：批C-2 砍（httplib open_stream 改造风险高收益不明）、批C-5 砍（三权威收敛重构）、B2/W6/B4 上提第一波（不随 A 同批会引入连按 ESC 误退新烦恼）
+- **用户拍板项全部保留**：D1 立即强杀 / D2 协议闭合 / D3 全域可中断 / D5 用量计入 / D6 半截不入库 / D7 选区 ESC / D8 待办面板 / D10 术语 / 超时 120s+600 配置
+- **审查门回填 ✅**：三份文档审查门表已填（方向成立、裁剪、疑问、接口风险——详见总排期 §二）
+- **▶ 第一波实施完成 ✅（2026-09-23，9 个提交，ctest 37/37 全绿 + --version 冒烟）**：
+  - A 批 10 步全落地：ABI v2 取消通道（bef5c81）→ 宿主接线 interruptFlag + CLFToolCallCtx 化（89b70b1）→ CLFProcessRunner 落地 CLFTypes + 取消检查 + Job Object 杀树（超时同改，W-2 孤儿缺陷同修）+ handler/插件壳下传（685a239）→ 协议闭合（CLFToolExecutor 内产出"未执行"结果，声明数==结果数恒成立，AgentLoop 零差集——总排期细化 5 裁剪落地）（a477f6a）→ qa_CLFProcessRunner C1-C5（C3 心跳探针实证杀树）+ I1a/I1b（a477f6a）
+  - 步骤 8 日志 + 批C-1（W1 exchange 最小版）/批C-3（W3 注释 + W2 emitInterrupted 日志）/批C-4（W5 mock abort 做实 + 两时序用例）（654cac7）；批C-2（open_stream）砍、批C-5 砍
+  - B 批子集：B2 双击退出 (a)+(b)、W6 状态行单写（setStatusHold 高优先级方案，不加接口）、B4 去 clear（81d9673）；B3/W-usage 留第四波
+  - repair-on-load 内存闭合（b54e8ca，J13/J14 用例）
+  - 命令层步骤 6 超时配置 120s/600（1c80dce，用户拍板项；handler 层 min clamp + 执行器硬顶 3600）
+  - A2 三慢点：search_content（每目录项+每行检查点）、web_fetch（content receiver 逐块取消）、自动摘要（入口/返回后检查）（0d082a7，D7 真插件取消全链路用例）
+  - 实施记录已回填两份文档（中断 §十四 / 命令层 §十六，含裁剪落地说明与实抓问题）
+- **待办**：① **用户实机验收五门**——node test_ai.js 中途 ESC ≤1 秒停 / 无 node 残留 / 中断后继续对话不 400 / 状态不被刷掉 / 模型看到中断结果自适应 ② 第二波（命令层 G2 限额头尾截断 / G3 错误归一化 / argv 化消 2>nul）③ 第三波（平台层收敛步骤 0-7）④ 第四波（B3 / W-usage / quiesce 回归）
+
 ### ▶ 启动横幅 Logo 改版 ✅✅ 全闭环（2026-09-22 用户已发布 v0.8.3）
 - **背景**：用户与 flash 完成前期调研，产出三份文档（决策简报 / 设计稿讨论稿 / 审查报告——5 致命 + 11 中等 + 8 轻微）；pro 任主审 + 执行官
 - **主审亲验**：审查报告全部关键断言逐条实读证实——F0 折行口径（charWidth 多字节恒 2 → 块字 58 字符算 110 列，80 列终端必被劈）+ F2（bold(cyan(x)) 不丢 bold，flush 先于 applyCode；真失效形态 = 外层包装内拼接多段，根因在生成侧）+ F0b（行首 `|` 被表格检测吞噬）+ F3（版本读取两份三处差异）+ qa 钉子（charWidth(0xE2)==2 刻意保留）全部属实
@@ -20,7 +39,7 @@
 
 ### ▶ QA 空壳残留与安装脚本加固 ✅ 实施完成（2026-09-22，待提交推送与用户实机验收）
 - **背景**：2026-09-21 用户发布自测事故——install.ps1 删安装目录时 clf_agent.log 被 14 个孤儿进程（findstr/cmd，父进程全死）锁住 → Stop 中止 → 半删残骸（config/会话历史靠 2.49MB 备份救回，哈希一致无损失）；善后发现 TEMP 43 个 clf_* 空壳目录（0 文件，跨 8/26–9/15）+ 10 个备份残留
-- **设计文档**：`设计/设计-空壳残留与安装脚本加固.md`（flash 出稿 → pro 复核拍板 §六 → 实施记录 §六.5）；判定门 A1：5 轮 ctest 36/36 全绿 + TEMP 计数 0→0（当前未复现，防御性实施）
+- **设计文档**：`设计/归档/归档-空壳残留与安装脚本加固.md`（flash 出稿 → pro 复核拍板 §六 → 实施记录 §六.5；2026-09-23 归档）；判定门 A1：5 轮 ctest 36/36 全绿 + TEMP 计数 0→0（当前未复现，防御性实施）
 - **核实（2 个 Explore agent + 亲验）**：qa 侧 9 条 + 脚本侧 14 条断言全部属实；**双根因机制**——① 删除失败被吞（ec 忽略 5 处）② **早退跳过清理**（PluginDomains `if (!p) return;` 早退在目录创建后清理前）；表外创建点 5 类（restore/domains/rules/git/plugin CWD 文件 + PluginManager kLogPath 从不清理）
 - **问题一（F1-F5）**：新建 `src/test/CLFTestTempDir.hpp`（CLFTestTempDir/File RAII + RemoveWithRetry 1/5/20ms + 登记制哨兵 `static` 每 TU 一份 + 析构 std::exit(1)——与 boost::ut ~runner 同款机制）；CMake clf_add_test 加 include 路径；8 套件改造（AgentLoop/SessionManager/SessionFileCtx/SystemComponents/SearchContent/PluginDomains/PluginFileOps/PluginManager——工厂按值返回 + 清理行删除 + 早退零改动 RAII 自动安全 + F8/G2 CWD 文件显式 parent）
 - **编译实抓**：隐式转换边界——MSVC `operator+`/`fs::u8path` 是函数模板，模板推导不做隐式转换 → `dir + "/x"`/`u8path(dir)` 报 C2676/C2672 → 模板实参位置改显式 `.string()`/`.path()`（11 处）；非模板参数隐式转换全部正常
