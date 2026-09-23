@@ -1,4 +1,4 @@
-# ����������� Debug/Release ���ݣ����� README��
+# 构建产物（bin/ 与 lib/ 的 Debug/Release 输出；保留各自 README）
 bin/*
 !bin/README.md
 lib/*
@@ -8,17 +8,17 @@ build_rel/
 cmake-build-debug/
 cmake-build-release/
 
-# IDE ����
+# IDE 配置
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Claude Code �������ã����ύ��
+# Claude Code 本地配置（不提交）
 .claude/settings.json
 .claude/settings.local.json
 
-# ������������
+# 本地配置（含 API Key，不提交）
 config/agent_settings.local.json
 
 # 运行日志
