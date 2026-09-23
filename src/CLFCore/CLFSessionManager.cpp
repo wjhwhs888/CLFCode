@@ -548,6 +548,42 @@ bool CLFSessionManager::loadJsonl(const std::string& filePath,
         return false;
     }
 
+    // —— 中断协议闭合 repair-on-load（设计-中断时效性 §11.7，2026-09-23）——
+    // 历史会话中的悬空 tool_call（工具批中途中断产生：addAssistantToolCalls
+    // 已落库、被跳过的调用永不回填）载入后仍是非法上下文 → 下一次请求可能
+    // 被 API 拒绝（"providers reject dangling assistant calls"）。
+    // 内存闭合（幂等）：为无结果配对的声明补合成 tool 结果；不写盘——
+    // append-only 语义不动，修复仅作用于本次载入。合成结果紧跟其声明
+    // （不变量 I3：tool 结果紧随声明之后）
+    {
+        std::vector<std::string> answeredIds;
+        answeredIds.reserve(messages.size());
+        for (const auto& m : messages) {
+            if (!m.m_toolCallId.empty()) answeredIds.push_back(m.m_toolCallId);
+        }
+        std::vector<CLFMessage> repaired;
+        repaired.reserve(messages.size());
+        for (const auto& m : messages) {
+            repaired.push_back(m);
+            if (m.m_role != "assistant" || m.m_toolCalls.empty()) continue;
+            for (const auto& tc : m.m_toolCalls) {
+                const bool answered = std::find(answeredIds.begin(), answeredIds.end(),
+                                                tc.m_id) != answeredIds.end();
+                if (answered) continue;
+                CLFMessage toolMsg;
+                toolMsg.m_role       = "tool";
+                toolMsg.m_toolCallId = tc.m_id;
+                toolMsg.m_content =
+                    "[interrupted] 该工具调用因用户中断而未执行，未产生任何副作用。"
+                    "如仍需要，请重新调用。";
+                repaired.push_back(std::move(toolMsg));
+                CLFLogger::instance().warn("[LoadJsonl] repaired dangling tool_call: "
+                                           + tc.m_id + " in " + filePath);
+            }
+        }
+        messages = std::move(repaired);
+    }
+
     outMessages = std::move(messages);
     if (outSummary)       *outSummary       = latestSummary;
     if (outTodos)         *outTodos         = hasSnapshot ? latestSnapshot : lastTurnTodos;

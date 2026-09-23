@@ -416,6 +416,73 @@ const boost::ut::suite<"CLFSessionManager"> tests = [] {
         expect(sessions[0].m_title.find("损坏标题会话") != std::string::npos);  // stem fallback
 
     };
+
+    // ========== 中断协议闭合 repair-on-load（设计-中断时效性 §11.7，2026-09-23） ==========
+
+    "J13 悬空 tool_call 修复：载入时补合成结果（声明数 == 结果数）"_test = [] {
+        auto dir = makeTempDir();
+        const std::string path = u8ToString(up(dir) / up("悬空会话.jsonl"));
+        CLFSessionManager::appendHeader(path, CLFMessageCodec::serializeHeaderLine(
+            "悬空会话", "2026-09-23_00-00-00", "sid", "model"));
+        // 一轮含 2 个声明的 tool_calls、只有 1 个结果（历史中断悬空形态）
+        std::vector<CLFMessage> turn{{"user", "帮我查"}};
+        CLFMessage assistant;
+        assistant.m_role = "assistant";
+        CLFToolCall tc1; tc1.m_id = "call_1"; tc1.m_name = "read_file"; tc1.m_arguments = "{}";
+        CLFToolCall tc2; tc2.m_id = "call_2"; tc2.m_name = "read_file"; tc2.m_arguments = "{}";
+        assistant.m_toolCalls = {tc1, tc2};
+        turn.push_back(assistant);
+        CLFMessage tool1;
+        tool1.m_role       = "tool";
+        tool1.m_toolCallId = "call_1";
+        tool1.m_content    = "ok";
+        turn.push_back(tool1);
+        expect(CLFSessionManager::appendTurn(path,
+            CLFMessageCodec::serializeTurnLine(turn, "ts-1")));
+
+        std::vector<CLFMessage> msgs;
+        expect(CLFSessionManager::loadJsonl(path, msgs));
+        // 声明 2 / 结果 1 → 修复后 2/2（不变量 I1）
+        int declared = 0, answered = 0;
+        bool sawRepairMark = false;
+        for (const auto& m : msgs) {
+            declared += static_cast<int>(m.m_toolCalls.size());
+            if (!m.m_toolCallId.empty()) {
+                ++answered;
+                // 合成结果紧跟声明（I3），位于 assistant 与既有结果之间
+                if (m.m_content.find("[interrupted]") != std::string::npos)
+                    sawRepairMark = true;
+            }
+        }
+        expect(declared == 2);
+        expect(answered == 2);
+        // 合成结果带 [interrupted] 锚点文案（qa 断言锚点）
+        expect(sawRepairMark);
+    };
+
+    "J14 悬空修复幂等：无悬空的会话载入零改动"_test = [] {
+        auto dir = makeTempDir();
+        const std::string path = u8ToString(up(dir) / up("完整会话.jsonl"));
+        CLFSessionManager::appendHeader(path, CLFMessageCodec::serializeHeaderLine(
+            "完整会话", "2026-09-23_00-00-00", "sid", "model"));
+        std::vector<CLFMessage> turn;
+        CLFMessage assistant;
+        assistant.m_role = "assistant";
+        CLFToolCall tc1; tc1.m_id = "call_1"; tc1.m_name = "read_file"; tc1.m_arguments = "{}";
+        assistant.m_toolCalls = {tc1};
+        turn.push_back(assistant);
+        CLFMessage tool1;
+        tool1.m_role       = "tool";
+        tool1.m_toolCallId = "call_1";
+        tool1.m_content    = "ok";
+        turn.push_back(tool1);
+        expect(CLFSessionManager::appendTurn(path,
+            CLFMessageCodec::serializeTurnLine(turn, "ts-1")));
+
+        std::vector<CLFMessage> msgs;
+        expect(CLFSessionManager::loadJsonl(path, msgs));
+        expect(msgs.size() == 2_ul);   // 零改动（幂等——不产生额外消息）
+    };
 };
 
 // Boost.UT：测试在静态初始化时注册，cfg 析构时自动运行并输出报告
