@@ -29,7 +29,14 @@
   - G3 错误归一化（41b0cf5）：m_errorKind（interrupted/timeout/not_found/permission/launch_failed/non_zero_exit）+ JSON errorKind 字段（双语文案识别，原始 stderr 保留）；qa C6/D8
   - 步骤 5 argv 化（b24dd01）：CLFExecSpec.m_argv 双模（qargs 转义）+ CLFSubprocessRunner argv 门面 + git 三条 argv 化 + ver 定案 RtlGetVersion 原语（nullDevice 需求消解——冲突 A 销号）；qa C7/C8/C9 + S1/S2
   - 实施记录已回填命令执行层 §十六（第二波列）
-- **待办**：① 第三波（平台层收敛步骤 0-7——注：步骤 5 缩减为销号、E 类 SIGKILL 已由第一波补）② 第四波（B3 / W-usage / quiesce 回归）③ 第二波实机验收（长输出尾部结论可见 / not_found 归一化 / 系统提示 OS·git 信息正常）④ 文案强化（待用户拍板）
+- **▶ 第三波平台层收敛实施完成 ✅（2026-09-23，2 个提交，ctest 38/38 全绿）**：
+  - 步骤 0-2（9293eb5）：CLFPlatform 骨架（clf_types，六组原语 + 错误弹窗抑制；nullDevice 按冲突 A 裁剪）+ executableDir 双实现合一 + .dll 硬编码 ×2 收敛 + SetErrorMode 下沉
+  - 步骤 3-7（16d4736）：控制台原语下沉（enable/尺寸/输入模式/编码/光标——算式与 JediTerm 补偿原样保留，origin 公式幂等验证）+ calibratePoint 补非 Windows 分支 + 剪贴板转调门面 + CLFTerminal 死 include 删除 + CLFRepl 清理死循环删除（缺陷 1 双向错位修根）+ POSIX /tmp → makeTempFilePath + qa_CLFPlatform P1-P5
+  - 判定门核销：ctest 38/38 ✅ 冒烟 ✅ [未验证] 标记 29 处 ✅ 缺陷 1/2 消失 ✅；#ifdef 数值 37 未达"≤10"但意图达成（分布 = 平台层 13 + 执行器/编码桥/能力域结构性残留，平台层外无可收敛点——已按设计意图核销）；**实机验收待用户**（拖选/复制/中文输入/四域插件）
+  - 实施记录已回填平台层收敛 §十六（含判定门核销说明）
+- **▶ 第四波 P1 收尾完成 ✅（2026-09-23，c7cd579）**：B3 Ctrl+C 收尾统一（doInterruptCleanup 共用）+ W-usage 中断用量计入（accumulateUsage helper，流式/同步早退点均累计）+ M9 quiesce 回归钉
+- **▶ 四波全部完成 ✅（2026-09-23）**：中断时效性 §十四 实施记录全表回填；CHANGELOG 未发布段（暂定 v0.9.0）已写（用户视角：命令可立即中断/超时可配置/长输出看结论/错误归类/中断反馈可信/孤儿进程修复/历史会话修复/resume 清单）
+- **待办**：① 实机验收（第二/三波——长输出尾部结论 / not_found 归一化 / 系统提示 OS·git 信息 / 拖选 / 复制粘贴 / 中文输入 / 四域插件）② 设计文档归档（验收通过后：总排期 + 中断 + 命令层 + 平台层 → 设计/归档/）③ 版本号/发布由用户定（tag 需用户授权）④ 文案强化（中断文案加"先询问用户"——待用户拍板）
 
 ### ▶ 启动横幅 Logo 改版 ✅✅ 全闭环（2026-09-22 用户已发布 v0.8.3）
 - **背景**：用户与 flash 完成前期调研，产出三份文档（决策简报 / 设计稿讨论稿 / 审查报告——5 致命 + 11 中等 + 8 轻微）；pro 任主审 + 执行官
