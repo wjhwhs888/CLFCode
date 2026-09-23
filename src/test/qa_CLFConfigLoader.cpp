@@ -56,6 +56,8 @@ const boost::ut::suite<"CLFConfigLoader"> tests = [] {
                 "auto_summary_threshold": 8000,
                 "model_max_tokens": { "deepseek-v4-pro": 65536, "deepseek-v4-flash": 8192 },
                 "max_response_delay_sec": 120,
+                "command_default_timeout_sec": 90,
+                "command_max_timeout_sec": 900,
                 "interaction_language": "en-US",
                 "security_mode": "auto",
                 "allow_absolute_read": true,
@@ -92,6 +94,8 @@ const boost::ut::suite<"CLFConfigLoader"> tests = [] {
         expect(cfg.m_modelMaxTokens["deepseek-v4-pro"] == 65536);
         expect(cfg.m_modelMaxTokens["deepseek-v4-flash"] == 8192);
         expect(cfg.m_maxResponseDelaySec == 120);
+        expect(cfg.m_commandDefaultTimeoutSec == 90);
+        expect(cfg.m_commandMaxTimeoutSec == 900);
         expect(cfg.m_interactionLanguage == std::string("en-US"));
         expect(cfg.m_securityMode == std::string("auto"));
         expect(cfg.m_allowAbsoluteRead);

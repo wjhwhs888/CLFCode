@@ -64,9 +64,16 @@ public:
     // CLFHostApiImpl 宿主级键取值通道；loadFromFileWithEnv 末尾赋值，默认 false）
     static bool allowAbsoluteRead();
 
+    // 命令执行超时配置（2026-09-23 命令执行层 §10.2）：同 allowAbsoluteRead
+    // 静态缓存模式——CLFHostApiImpl 宿主级键取值通道；默认 120 / 600
+    static int commandDefaultTimeoutSec();
+    static int commandMaxTimeoutSec();
+
 private:
     static std::string s_projectRoot;
     static bool        s_allowAbsoluteRead;
+    static int         s_commandDefaultTimeoutSec;
+    static int         s_commandMaxTimeoutSec;
 };
 
 } // namespace CLF::CLFCore

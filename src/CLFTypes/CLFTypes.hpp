@@ -106,6 +106,12 @@ struct CLFAgentConfig {
     // 不内置猜值——由用户配置文件显式声明，程序零瞎猜）
     std::map<std::string, int> m_modelMaxTokens;
     int         m_maxResponseDelaySec   = 300;
+    // 命令执行超时（2026-09-23 命令执行层 §10.2 用户拍板）：默认 120s
+    // （对齐 Claude Code Bash 2 分钟默认）；上限 = 配置项——有效超时 =
+    // min(模型请求值, 上限) 在 handler 层做，执行器硬顶 3600 兜底。
+    // 与 m_maxResponseDelaySec 是不同故障域（一个管"等模型响应"，一个管"跑命令"）
+    int         m_commandDefaultTimeoutSec = 120;
+    int         m_commandMaxTimeoutSec     = 600;
     std::string m_interactionLanguage   = "zh-CN";
     std::string m_securityMode          = "edit";
     // S2-1: 允许 read_file 读取工作区之外的绝对路径（默认关闭，逃生口）

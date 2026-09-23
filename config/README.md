@@ -72,6 +72,8 @@ CLFCode 自身的运行行为参数，**不传给 API**。
 | `max_tool_call_iterations` | int | `16` | 单轮对话中 tool-calling 最大循环次数。防止模型持续请求工具形成死循环 |
 | `context_compression` | bool | `false` | 是否启用上下文压缩。`true`：当上下文接近窗口上限时，调用 `sub_model` 对历史消息进行摘要压缩（**功能待实现**） |
 | `max_response_delay_sec` | int | `300` | 单次 API 请求最大等待时间（秒）。300 = 5 分钟。超时后返回错误信息 |
+| `command_default_timeout_sec` | int | `120` | execute_command 默认超时（秒）。模型未传 `timeout` 参数时使用；对齐 Claude Code Bash 的 2 分钟默认 |
+| `command_max_timeout_sec` | int | `600` | execute_command 超时上限（秒）。有效超时 = min(模型请求值, 上限)。与 `max_response_delay_sec` 是不同故障域（一个管"跑命令"，一个管"等模型响应"） |
 | `interaction_language` | string | `zh-CN` | 默认交互语言。用于 system prompt 中的语言指令，指导模型用目标语言回复 |
 | `security_mode` | string | `edit` | 安全模式：`auto`（全放行）/ `analyze`（写/命令阻断）/ `edit`（写/命令确认）/ `manual`（每步确认）。运行时可用 `/mode` 切换 |
 
@@ -125,6 +127,8 @@ CLFCode 自身的运行行为参数，**不传给 API**。
         "max_tool_call_iterations": 16,
         "context_compression": false,
         "max_response_delay_sec": 300,
+        "command_default_timeout_sec": 120,
+        "command_max_timeout_sec": 600,
         "interaction_language": "zh-CN",
         "security_mode": "edit"
     },

@@ -71,6 +71,8 @@ constexpr ConfigField kConfigFields[] = {
     {"agent", "auto_summary_threshold",   ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_autoSummaryThreshold},
     {"agent", "model_max_tokens",         ConfigFieldType::IntMap, nullptr, nullptr, nullptr, nullptr, nullptr, &CLFAgentConfig::m_modelMaxTokens},
     {"agent", "max_response_delay_sec",   ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxResponseDelaySec},
+    {"agent", "command_default_timeout_sec", ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_commandDefaultTimeoutSec},
+    {"agent", "command_max_timeout_sec",     ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_commandMaxTimeoutSec},
     {"agent", "interaction_language",     ConfigFieldType::String, &CLFAgentConfig::m_interactionLanguage},
     {"agent", "security_mode",            ConfigFieldType::String, &CLFAgentConfig::m_securityMode},
     {"agent", "allow_absolute_read",      ConfigFieldType::Bool, nullptr, nullptr, nullptr, &CLFAgentConfig::m_allowAbsoluteRead},
@@ -130,6 +132,8 @@ void applyConfigFields(const json& cfg, CLFAgentConfig& outConfig) {
 
 std::string CLFConfigLoader::s_projectRoot;
 bool        CLFConfigLoader::s_allowAbsoluteRead = false;
+int         CLFConfigLoader::s_commandDefaultTimeoutSec = 120;
+int         CLFConfigLoader::s_commandMaxTimeoutSec     = 600;
 
 std::string CLFConfigLoader::findProjectRoot() {
     if (!s_projectRoot.empty()) return s_projectRoot;
@@ -235,12 +239,24 @@ bool CLFConfigLoader::loadFromFileWithEnv(const std::string& configPath, CLFAgen
     // 2.2b：缓存 allow_absolute_read（宿主级配置键的取值通道——CLFHostApiImpl::
     // config 经此供插件读取；getWorkingDir 同款"静态缓存"先例）
     s_allowAbsoluteRead = outConfig.m_allowAbsoluteRead;
+    // 命令执行超时（2026-09-23 命令执行层 §10.2）：同款静态缓存——插件 init
+    // 经 host->config 读取（CLFCommandPlugin 成员缓存，不在每次 callTool 查询）
+    s_commandDefaultTimeoutSec = outConfig.m_commandDefaultTimeoutSec;
+    s_commandMaxTimeoutSec     = outConfig.m_commandMaxTimeoutSec;
 
     return fileOk;
 }
 
 bool CLFConfigLoader::allowAbsoluteRead() {
     return s_allowAbsoluteRead;
+}
+
+int CLFConfigLoader::commandDefaultTimeoutSec() {
+    return s_commandDefaultTimeoutSec;
+}
+
+int CLFConfigLoader::commandMaxTimeoutSec() {
+    return s_commandMaxTimeoutSec;
 }
 
 } // namespace CLF::CLFCore

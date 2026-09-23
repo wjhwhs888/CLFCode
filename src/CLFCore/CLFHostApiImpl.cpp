@@ -58,6 +58,15 @@ const char* CLFHostApiImpl::config(const char* pluginId, const char* key) const 
                 : (CLFConfigLoader::allowAbsoluteRead() ? "true" : "false");
         return v.c_str();
     }
+    // 命令执行超时（2026-09-23 命令执行层 §10.2）：宿主级键——插件 init 经此
+    // 取配置默认/上限（缺配置文件时静态缓存即内置默认 120/600）
+    if (keyStr == "command_default_timeout_sec" || keyStr == "command_max_timeout_sec") {
+        std::string& v = m_configCache[std::string("host:") + keyStr];
+        v = keyStr == "command_default_timeout_sec"
+                ? std::to_string(CLFConfigLoader::commandDefaultTimeoutSec())
+                : std::to_string(CLFConfigLoader::commandMaxTimeoutSec());
+        return v.c_str();
+    }
 
     // —— 插件键（复合键缓存：plugin:key——防不同插件同 key 串值）——
     const std::string cacheKey = plugin + ":" + keyStr;

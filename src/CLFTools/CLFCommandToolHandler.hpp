@@ -20,8 +20,13 @@ bool exitCodeMeansSuccess(const std::string& command, int exitCode);
 // execute_command：workspaceRootUtf8 为空串 = cwd 校验跳过
 // （2.3 参数化——插件经 host->config 取根；CLFBuiltinTools 传 ConfigLoader 值）
 // isCancelled 为空 = 不可取消（向后兼容）；命中 → 结果含 interrupted=true
+// defaultTimeoutSec/maxTimeoutSec：配置默认/上限（命令执行层 §10.2）——
+// 有效超时 = min(模型请求值, maxTimeoutSec)，请求值缺省用 defaultTimeoutSec；
+// handler 层单一 clamp 点（执行器只留 3600 硬顶）
 std::string executeCommandToolHandler(const std::string& args,
                                       const std::string& workspaceRootUtf8,
-                                      const std::function<bool()>& isCancelled = {});
+                                      const std::function<bool()>& isCancelled = {},
+                                      int defaultTimeoutSec = 120,
+                                      int maxTimeoutSec = 600);
 
 } // namespace CLF::CLFTools

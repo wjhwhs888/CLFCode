@@ -42,11 +42,18 @@ bool exitCodeMeansSuccess(const std::string& command, int exitCode) {
 
 std::string executeCommandToolHandler(const std::string& args,
                                       const std::string& workspaceRootUtf8,
-                                      const std::function<bool()>& isCancelled) {
+                                      const std::function<bool()>& isCancelled,
+                                      int defaultTimeoutSec,
+                                      int maxTimeoutSec) {
     return CLF::CLFCapabilities::withHandlerScaffold(
-        args, [&workspaceRootUtf8, &isCancelled](const nlohmann::json& params, nlohmann::json& result) {
+        args, [&workspaceRootUtf8, &isCancelled,
+               defaultTimeoutSec, maxTimeoutSec](const nlohmann::json& params, nlohmann::json& result) {
             std::string command = params.value("command", "");
-            int timeout = params.value("timeout", 30);
+            // 命令执行层 §10.2（2026-09-23）：请求值缺省用配置默认；有效超时 =
+            // min(请求值, 配置上限)——handler 层单一 clamp 点（执行器只留硬顶）
+            int timeout = params.value("timeout", defaultTimeoutSec);
+            if (timeout < 1) timeout = 1;
+            if (timeout > maxTimeoutSec) timeout = maxTimeoutSec;
             std::string cwd = params.value("cwd", "");
 
             // cwd 须位于工作区内（复用 S2-1 边界校验；根参数化——空根跳过校验，
