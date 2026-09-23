@@ -112,6 +112,22 @@ const boost::ut::suite<"CLFProcessRunner"> tests = [] {
         expect(!r.m_interrupted);
         expect(r.m_stdout.find("compat") != std::string::npos);
     };
+
+    "C4 头尾截断（G2）：输出超限额 → 头部与尾部都在 + m_truncated + 中段省略"_test = [] {
+        CLFExecSpec spec;
+        // 头标记 + ~140KB 填充 + 尾标记（限额 128KB = 头尾各 64KB）
+        spec.m_command =
+            "powershell -NoProfile -Command \"Write-Output 'HEAD_MARKER'; "
+            "1..20000 | ForEach-Object { 'filler line data padding' }; "
+            "Write-Output 'TAIL_MARKER'\"";
+        spec.m_maxOutputBytes = 128 * 1024;
+        const CLFExecResult r = CLFProcessRunner::run(spec);
+        expect(r.m_truncated);
+        expect(r.m_stdout.find("HEAD_MARKER") != std::string::npos);  // 头部保留
+        expect(r.m_stdout.find("TAIL_MARKER") != std::string::npos);  // 尾部结论保留
+        expect(r.m_stdout.find("中间输出省略") != std::string::npos); // 中段标记
+        expect(r.m_stdout.size() < 160 * 1024);   // 限额生效（128KB + 标记余量）
+    };
 };
 
 int main() {}

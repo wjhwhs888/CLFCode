@@ -237,11 +237,18 @@ std::string CLFTextUtil::replaceAll(std::string s, const std::string& from,
 
 std::string CLFTextUtil::truncateToolResult(const std::string& content) {
     // C2b：自 CLFContext::truncateContent 原样搬移（8000 阈值 + 标记语义保真；
-    // A2 已将字节级 substr 换为 utf8SafeHead——不劈半多字节）
-    constexpr size_t kMaxMessageChars = 8000;
-    if (content.size() <= kMaxMessageChars) return content;
-    return utf8SafeHead(content, kMaxMessageChars)
-           + "\n\n[truncated, original: " + std::to_string(content.size()) + " chars]";
+    // A2 已将字节级 substr 换为 utf8SafeHead——不劈半多字节）。
+    // G2（2026-09-23 命令执行层 §6.4）：仅保头 → 头+尾各 8000——命令结论
+    // 常在尾部，长输出时模型必须能看到尾部结论（W-6 缺陷修根）。
+    // 标记保留原格式（qa T2 钉子："[truncated, original: N chars]"）
+    constexpr size_t kHeadChars = 8000;
+    constexpr size_t kTailChars = 8000;
+    if (content.size() <= kHeadChars + kTailChars) return content;
+    return utf8SafeHead(content, kHeadChars)
+           + "\n\n...[中间省略 "
+           + std::to_string(content.size() - kHeadChars - kTailChars) + " chars]...\n\n"
+           + utf8SafeTail(content, kTailChars)
+           + "\n[truncated, original: " + std::to_string(content.size()) + " chars]";
 }
 
 std::vector<std::string> CLFTextUtil::splitLines(const std::string& text,

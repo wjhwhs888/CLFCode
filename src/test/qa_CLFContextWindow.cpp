@@ -80,6 +80,18 @@ const boost::ut::suite<"CLFContextWindow"> tests = [] {
         expect(r.find("[truncated") != std::string::npos);
         expect(r.find("20000 chars") != std::string::npos);
     };
+
+    "T3 truncateToolResult：头尾都在 + 中段省略（G2，2026-09-23）"_test = [] {
+        const std::string headPart(8000, 'h');
+        const std::string midPart(20000, 'm');
+        const std::string tailPart(8000, 't');
+        auto r = CLFTextUtil::truncateToolResult(headPart + midPart + tailPart);
+        expect(r.find("hhhhh") != std::string::npos);   // 头部结论保留
+        expect(r.find("ttttt") != std::string::npos);   // 尾部结论保留
+        expect(r.find("mmmmm") == std::string::npos);   // 中段省略
+        expect(r.find("省略") != std::string::npos);    // 省略标记
+        expect(r.find("36000 chars") != std::string::npos);  // 原始长度
+    };
 };
 
 int main() {}

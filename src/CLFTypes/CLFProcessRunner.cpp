@@ -27,6 +27,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -57,6 +58,87 @@ std::wstring utf8ToWide(const std::string& s) {
     return w;
 }
 #endif
+
+// ============================================================================
+// G2 输出限额器（2026-09-23 命令执行层 §6.4）：头+尾保留、中段丢弃——
+// 命令结论常在尾部，只保头会让模型看不到结论（W-6 缺陷修根）。
+// 行粒度环形切分：\n 是 ASCII（0x0A）——GBK 双字节 0x81-0xFE / 0x40-0xFE
+// 均不含 0x0A，行边界切割零劈半风险（劈半字节进 toUtf8 会原样返回、
+// 污染 JSON——2.2b type_error.316 事故）。单行超尾预算时按字节切尾 +
+// GBK 边界回退（切点落在次字节则前进 1）。
+// ============================================================================
+struct OutputLimiter {
+    std::string              head;        // 头部累积（≤ headBudget 字节）
+    std::vector<std::string> tailLines;   // 尾部环形（行粒度）
+    std::string              pendingLine; // 跨块半行
+    size_t                   tailBytes = 0;
+    bool                     overflow  = false;   // 中段被丢弃
+    const size_t             headBudget;
+    const size_t             tailBudget;
+
+    explicit OutputLimiter(size_t totalBudget)
+        : headBudget(totalBudget / 2), tailBudget(totalBudget / 2) {
+        head.reserve(headBudget);
+    }
+
+    // 批量切行累积（memchr 找 \n 而非逐字节——大输出性能）
+    void append(const char* data, size_t len) {
+        size_t pos = 0;
+        while (pos < len) {
+            const void* hit = std::memchr(data + pos, '\n', len - pos);
+            if (!hit) {
+                pendingLine.append(data + pos, len - pos);
+                return;
+            }
+            const size_t lineEnd = static_cast<const char*>(hit) - data;
+            pendingLine.append(data + pos, lineEnd - pos + 1);  // 含 \n
+            pushLine(std::move(pendingLine));
+            pendingLine.clear();
+            pos = lineEnd + 1;
+        }
+    }
+
+    void pushLine(std::string line) {
+        if (head.size() + line.size() <= headBudget) {
+            head += line;
+            return;
+        }
+        // 头预算满 → 进入尾环形（中段开始丢弃）
+        overflow = true;
+        tailBytes += line.size();
+        tailLines.push_back(std::move(line));
+        while (tailBytes > tailBudget && tailLines.size() > 1) {
+            tailBytes -= tailLines.front().size();
+            tailLines.erase(tailLines.begin());
+        }
+        if (tailBytes > tailBudget && tailLines.size() == 1) {
+            // 单行超尾预算：字节切尾 + GBK 边界回退
+            std::string& only = tailLines.front();
+            size_t keep = tailBudget;
+            const size_t cut = only.size() - keep;
+            if (cut > 0 && cut < only.size()) {
+                const unsigned char prev = static_cast<unsigned char>(only[cut - 1]);
+                const unsigned char cur  = static_cast<unsigned char>(only[cut]);
+                if (prev >= 0x81 && prev <= 0xFE && cur >= 0x40 && cur <= 0xFE
+                    && cur != 0x7F) {
+                    ++keep;   // 切点劈半 GBK 双字节 → 前进 1
+                }
+                only = only.substr(only.size() - keep);
+            }
+            tailBytes = only.size();
+        }
+    }
+
+    std::string result() const {
+        std::string out = head;
+        if (overflow) {
+            out += "\n...[中间输出省略]...\n";
+            for (const auto& l : tailLines) out += l;
+        }
+        out += pendingLine;  // 尾部半行（head 模式下为 head 的自然延续）
+        return out;
+    }
+};
 
 } // anonymous namespace
 
@@ -152,7 +234,9 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
     };
 
     // 轮询读取管道 + 取消/超时检测（WaitForSingleObject 50ms 即取消检查粒度）
-    std::string outBuf, errBuf;
+    // G2：输出限额器（头+尾保留、中段丢弃——防内存膨胀 + 保尾部结论）
+    OutputLimiter outLimiter(spec.m_maxOutputBytes);
+    OutputLimiter errLimiter(spec.m_maxOutputBytes);
     char buf[4096];
     DWORD available, bytesRead;
     auto deadline = std::chrono::steady_clock::now()
@@ -169,13 +253,13 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
 
         const DWORD waitResult = WaitForSingleObject(pi.hProcess, 50);
 
-        // 读取 stdout
+        // 读取 stdout（limiter 超限后仍继续 drain 管道——不读会写满死锁子进程）
         while (PeekNamedPipe(hOutRead, nullptr, 0, nullptr, &available, nullptr)
                && available > 0) {
             const DWORD toRead = (available > sizeof(buf) - 1)
                                ? sizeof(buf) - 1 : available;
             if (ReadFile(hOutRead, buf, toRead, &bytesRead, nullptr) && bytesRead > 0) {
-                outBuf.append(buf, bytesRead);
+                outLimiter.append(buf, bytesRead);
             }
         }
         // 读取 stderr
@@ -184,7 +268,7 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
             const DWORD toRead = (available > sizeof(buf) - 1)
                                ? sizeof(buf) - 1 : available;
             if (ReadFile(hErrRead, buf, toRead, &bytesRead, nullptr) && bytesRead > 0) {
-                errBuf.append(buf, bytesRead);
+                errLimiter.append(buf, bytesRead);
             }
         }
 
@@ -203,13 +287,13 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
            && available > 0) {
         const DWORD toRead = (available > sizeof(buf) - 1) ? sizeof(buf) - 1 : available;
         if (ReadFile(hOutRead, buf, toRead, &bytesRead, nullptr) && bytesRead > 0)
-            outBuf.append(buf, bytesRead);
+            outLimiter.append(buf, bytesRead);
     }
     while (PeekNamedPipe(hErrRead, nullptr, 0, nullptr, &available, nullptr)
            && available > 0) {
         const DWORD toRead = (available > sizeof(buf) - 1) ? sizeof(buf) - 1 : available;
         if (ReadFile(hErrRead, buf, toRead, &bytesRead, nullptr) && bytesRead > 0)
-            errBuf.append(buf, bytesRead);
+            errLimiter.append(buf, bytesRead);
     }
 
     if (result.m_timedOut) {
@@ -225,9 +309,10 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
     CloseHandle(hOutRead);
     CloseHandle(hErrRead);
 
-    result.m_stdout = CLFEncoding::toUtf8(outBuf);
+    result.m_truncated = outLimiter.overflow || errLimiter.overflow;
+    result.m_stdout = CLFEncoding::toUtf8(outLimiter.result());
     if (result.m_stderr.empty()) {
-        result.m_stderr = CLFEncoding::toUtf8(errBuf);
+        result.m_stderr = CLFEncoding::toUtf8(errLimiter.result());
     }
 
 #else
@@ -290,8 +375,19 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
         result.m_stderr = "Fork failed";
     }
 
-    result.m_stdout = CLFEncoding::toUtf8(readFileContent(stdoutFile));
-    result.m_stderr = CLFEncoding::toUtf8(readFileContent(stderrFile));
+    // G2 限额（[未验证]：读全量后按同一口径截——内存膨胀未防；管道直读
+    // 属命令执行层 §八 第二期）
+    OutputLimiter outLimiter(spec.m_maxOutputBytes);
+    OutputLimiter errLimiter(spec.m_maxOutputBytes);
+    {
+        const std::string rawOut = readFileContent(stdoutFile);
+        outLimiter.append(rawOut.data(), rawOut.size());
+        const std::string rawErr = readFileContent(stderrFile);
+        errLimiter.append(rawErr.data(), rawErr.size());
+    }
+    result.m_truncated = outLimiter.overflow || errLimiter.overflow;
+    result.m_stdout = CLFEncoding::toUtf8(outLimiter.result());
+    result.m_stderr = CLFEncoding::toUtf8(errLimiter.result());
 
     auto tryRemove = [](const std::string& path) {
         for (int attempt = 0; attempt < 3; ++attempt) {
