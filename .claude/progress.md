@@ -24,7 +24,12 @@
   - **修根（b9777e3，已推送）**：abort() 只在有在途请求时置位/stop（同锁防竞态）——无在途 no-op（m_interrupted 通道兜底）；入口恢复无条件重置；W5a 重写为回归钉（abort 先于请求 → 请求必须正常发出）
   - **复验通过（用户）**：① 中断后继续提问正常响应 ✓ ② tasklist 实证：被中断的 node 进程消失（4→3，剩下为用户常驻）✓ ③ 中断命令即时生效"命令被用户中断（已终止进程树）"✓ ④ 状态行"⏹ 已中断"正常显示 ✓
   - 观察项：模型被中断后 29s 又重试同一命令（用户连按 ESC 拦下）——文案强化（"先询问用户"）已提议待用户定
-- **待办**：① 第二波（命令层 G2 限额头尾截断 / G3 错误归一化 / argv 化消 2>nul）② 第三波（平台层收敛步骤 0-7）③ 第四波（B3 / W-usage / quiesce 回归）④ 文案强化（待用户拍板）
+- **▶ 第二波实施完成 ✅（2026-09-23，3 个提交，ctest 37/37 全绿）**：
+  - G2 限额头尾截断（2e49619）：OutputLimiter 头+尾各半行粒度环形（\n 是 ASCII 切点零劈半 GBK）+ 入库 truncateToolResult 改头尾 8000×2（所有工具统一头尾口径，长命令尾部结论可见——W-6 缺陷修根）；qa C4/T3
+  - G3 错误归一化（41b0cf5）：m_errorKind（interrupted/timeout/not_found/permission/launch_failed/non_zero_exit）+ JSON errorKind 字段（双语文案识别，原始 stderr 保留）；qa C6/D8
+  - 步骤 5 argv 化（b24dd01）：CLFExecSpec.m_argv 双模（qargs 转义）+ CLFSubprocessRunner argv 门面 + git 三条 argv 化 + ver 定案 RtlGetVersion 原语（nullDevice 需求消解——冲突 A 销号）；qa C7/C8/C9 + S1/S2
+  - 实施记录已回填命令执行层 §十六（第二波列）
+- **待办**：① 第三波（平台层收敛步骤 0-7——注：步骤 5 缩减为销号、E 类 SIGKILL 已由第一波补）② 第四波（B3 / W-usage / quiesce 回归）③ 第二波实机验收（长输出尾部结论可见 / not_found 归一化 / 系统提示 OS·git 信息正常）④ 文案强化（待用户拍板）
 
 ### ▶ 启动横幅 Logo 改版 ✅✅ 全闭环（2026-09-22 用户已发布 v0.8.3）
 - **背景**：用户与 flash 完成前期调研，产出三份文档（决策简报 / 设计稿讨论稿 / 审查报告——5 致命 + 11 中等 + 8 轻微）；pro 任主审 + 执行官
