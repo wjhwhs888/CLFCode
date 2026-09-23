@@ -33,10 +33,12 @@ namespace {
 class MockHttpClient : public ICLFHttpClient {
 public:
     void setTimeout(int) override {}
-    // W5 修复（2026-09-23 批C-4）：abort 做实——与真实 CLFHttpClient 同语义：
-    // ① 入口先查待决中断再重置（pendingAbort → 不发请求、不消费队列、不计数）
-    // ② 流式循环中检查（"abort 在请求进行中"时序）
-    void abort() override { m_aborted = true; }
+    // W5 修复（2026-09-23 批C-4）+ W1 修根（实机验收实抓）：与真实
+    // CLFHttpClient 同语义——abort 只对"在途请求"置位（无在途时 no-op，
+    // 防残留误伤下一回合首个请求）；流式循环中检查（"abort 在请求进行中"时序）
+    void abort() override {
+        if (m_inFlight) m_aborted = true;
+    }
 
     // 预设同步响应（顺序消费）
     void pushResponse(const std::string& body, const std::string& error = "") {
@@ -52,12 +54,10 @@ public:
     int streamCallCount() const { return m_streamCalls; }
 
     CLFHttpResponse postJson(const std::string&, const std::string& body) override {
-        const bool pendingAbort = m_aborted.exchange(false);
-        if (pendingAbort) {
-            CLFHttpResponse resp;
-            resp.m_wasAborted = true;
-            return resp;
-        }
+        m_aborted = false;   // W1 修根对齐：入口无条件重置
+        struct InFlightGuard { std::atomic<bool>& f;
+                               ~InFlightGuard() { f.store(false); } } inFlight{m_inFlight};
+        m_inFlight.store(true);
         ++m_syncCalls;
         lastBodies.push_back(body);  // T10d 不污染上下文断言
         // 预设不足必须抛异常，不能只 expect 后继续：boost::ut 的 expect 只记录
@@ -76,12 +76,10 @@ public:
     CLFHttpResponse postJsonStream(
         const std::string&, const std::string& body,
         std::function<void(const std::string&)> onLine) override {
-        const bool pendingAbort = m_aborted.exchange(false);
-        if (pendingAbort) {
-            CLFHttpResponse resp;
-            resp.m_wasAborted = true;
-            return resp;
-        }
+        m_aborted = false;   // W1 修根对齐：入口无条件重置
+        struct InFlightGuard { std::atomic<bool>& f;
+                               ~InFlightGuard() { f.store(false); } } inFlight{m_inFlight};
+        m_inFlight.store(true);
         ++m_streamCalls;
         lastBodies.push_back(body);  // T10d 不污染上下文断言
         if (m_streamResponses.empty()) {  // 同 postJson：空队列 front() 是 UB
@@ -119,6 +117,7 @@ private:
     int m_syncCalls = 0;
     int m_streamCalls = 0;
     std::atomic<bool> m_aborted{false};   // W5：abort 做实（真实客户端同字段语义）
+    std::atomic<bool> m_inFlight{false};  // W1 修根：abort 仅在在途请求时置位
 };
 
 // 构造带 Mock 的 Agent + 注册 echo 工具
@@ -402,7 +401,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
     // ========== W5: HTTP 中断语义（批C-4，2026-09-23） ==========
 
-    "W5a abort 先于请求开始：请求从未发出，直接中断收尾"_test = [] {
+    "W5a abort 先于请求开始：no-op——请求正常发出（实机 bug 回归钉）"_test = [] {
         auto mock = std::make_shared<MockHttpClient>();
         CLFAgentConfig config;
         config.m_apiKey = "k";
@@ -411,15 +410,20 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         agent->setOutput(&out);
 
-        mock->abort();  // 仅 HTTP 层 abort（不置 m_interrupted）——上一请求
-                       // 返回后、本请求入口前发生的待决中断
-        std::string result = agent->runTurn("hi");
+        // 无在途请求时 abort（= 工具执行期间按 ESC 的 HTTP 层动作）——
+        // W1 修根（2026-09-23 实机实抓）：不得残留为"待决中断"误伤新回合
+        // 首个请求（实机现象：中断后新回合模型零输出直接 ⏹ 已中断）
+        mock->abort();
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "data: [DONE]"
+        });
 
-        // 入口先查待决中断：请求从未发出（不计数、不消费队列）+ wasAborted
-        // → AgentLoop 流式收尾路径 emitInterrupted
-        expect(result == "[Interrupted]");
-        expect(mock->streamCallCount() == 0);
-        expect(out.interruptEmissions() == 1);
+        std::string result = agent->runTurn("hi");
+        expect(result != "[Interrupted]");
+        expect(mock->streamCallCount() == 1);   // 请求正常发出
+        expect(out.interruptEmissions() == 0);  // 零中断收尾
     };
 
     "W5b abort 在请求进行中：流式中途停止喂行，中断收尾"_test = [] {

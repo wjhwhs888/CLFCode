@@ -32,14 +32,9 @@ CLFHttpClient::CLFHttpClient(const std::string& baseUrl, const std::string& apiK
 
 CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::string& jsonBody) {
     CLFHttpResponse result;
-    // W1 修复（2026-09-23 中断时效性 批C-1 最小版）：先查待决中断再重置——
-    // 上一请求返回后、本请求入口前发生的 abort 不得被入口重置抹掉；
-    // exchange 原子完成"查 + 清"（m_aborted 为 atomic，abort 与请求线程并发安全）
-    const bool pendingAbort = m_aborted.exchange(false);
-    if (pendingAbort) {
-        result.m_wasAborted = true;
-        return result;
-    }
+    // W1 修根（2026-09-23 实机验收实抓）：abort 只在有在途请求时置位
+    // （见 abort()），本入口无"待决中断"状态可查——恢复无条件重置
+    m_aborted = false;  // 新请求开始，重置中断标志（与 postJsonStream 对称）
 
     auto cli = std::make_shared<httplib::Client>(m_baseUrl);
     cli->set_connection_timeout(10, 0);
@@ -82,12 +77,8 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     std::function<void(const std::string& line)> onLine
 ) {
     CLFHttpResponse result;
-    // W1 修复（批C-1 最小版，同 postJson）：入口先查待决中断再重置
-    const bool pendingAbort = m_aborted.exchange(false);
-    if (pendingAbort) {
-        result.m_wasAborted = true;
-        return result;
-    }
+    // W1 修根（同 postJson）：abort 只在有在途请求时置位——入口无条件重置
+    m_aborted = false;  // 新请求开始，重置中断标志
 
     auto cli = std::make_shared<httplib::Client>(m_baseUrl);
     cli->set_connection_timeout(10, 0);
@@ -174,11 +165,16 @@ void CLFHttpClient::setTimeout(int seconds) {
 }
 
 void CLFHttpClient::abort() {
-    m_aborted = true;
+    // W1 修根（2026-09-23 实机验收实抓）：abort 只对"在途请求"置位/停止——
+    // 工具执行期间按 ESC 时无在途请求，无条件置位会让 m_aborted 残留到
+    // 下一回合的第一个请求入口，被误判为"待决中断"而拒发请求（实机：
+    // 中断后新回合模型零输出直接中断）。无在途请求的 abort 无需动作：
+    // m_interrupted 已由 AgentLoop 各检查点（请求前/流式回调/返回后）拦截，
+    // abort 空转无害。检查与置位/stop 同锁完成（防检查-置位间竞态）
     std::lock_guard<std::mutex> lock(m_cliMutex);
-    if (m_activeCli) {
-        m_activeCli->stop();
-    }
+    if (!m_activeCli) return;
+    m_aborted = true;
+    m_activeCli->stop();
 }
 
 } // namespace CLF::CLFNetwork
