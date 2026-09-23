@@ -15,6 +15,8 @@
 #include <unistd.h>
 #endif
 
+#include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：executableDir 原语
+
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
@@ -138,23 +140,9 @@ int         CLFConfigLoader::s_commandMaxTimeoutSec     = 600;
 std::string CLFConfigLoader::findProjectRoot() {
     if (!s_projectRoot.empty()) return s_projectRoot;
 
-    // 1. 获取可执行文件所在目录
-    std::string exeDir;
-#ifdef _WIN32
-    // W 版本 + u8string：A 版本按 ANSI 代码页读取路径，exe 位于中文目录时乱码
-    wchar_t wbuf[MAX_PATH];
-    DWORD len = GetModuleFileNameW(nullptr, wbuf, MAX_PATH);
-    if (len > 0 && len < MAX_PATH) {
-        exeDir = fs::path(wbuf).parent_path().u8string();
-    }
-#else
-    char buf[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len > 0) {
-        buf[len] = '\0';
-        exeDir = fs::path(buf).parent_path().string();
-    }
-#endif
+    // 1. 获取可执行文件所在目录（平台层收敛 2026-09-23：原 GetModuleFileNameW
+    // /readlink 双实现合一 → CLFPlatform::executableDir；失败回落 current_path）
+    const std::string exeDir = CLFPlatform::executableDir();
 
     // 2. 从 exe 目录向上查找 CMakeLists.txt（开发环境：项目根目录）
     // u8path 构造：exeDir 为 UTF-8 窄字符，按 ANSI 代码页构造 path 会乱码

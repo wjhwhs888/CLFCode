@@ -13,6 +13,7 @@
 
 #include "CLFCore/CLFHostApiImpl.hpp"
 #include "CLFCore/CLFLogger.hpp"
+#include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：exe 目录/动态库后缀/错误弹窗原语
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -35,13 +36,13 @@ namespace {
 #ifdef _WIN32
 using DllHandle = HMODULE;
 DllHandle loadDll(const fs::path& p) {
-    // 抑制系统错误弹窗（SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX）：
+    // 抑制系统错误弹窗（平台层收敛 2026-09-23 → CLFPlatform::suppressErrorDialogs）：
     // 插件目录可能含损坏/非 PE 文件，LoadLibrary 失败时 Windows 默认弹
     // "损坏的映像"错误框——CLI 程序被系统弹窗卡住不可接受
     // （2026-09-21 用户实测弹窗实抓）。SetErrorMode 按线程继承，加载后立即恢复
-    const UINT oldMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+    const unsigned oldMode = CLFPlatform::suppressErrorDialogs();
     HMODULE h = LoadLibraryW(p.c_str());
-    SetErrorMode(oldMode);
+    CLFPlatform::restoreErrorDialogs(oldMode);
     return h;
 }
 void* getSymbol(DllHandle h, const char* name) {
@@ -50,7 +51,12 @@ void* getSymbol(DllHandle h, const char* name) {
 void freeDll(DllHandle h) { FreeLibrary(h); }
 #else
 using DllHandle = void*;
-DllHandle loadDll(const fs::path& p) { return dlopen(p.c_str(), RTLD_NOW | RTLD_LOCAL); }
+DllHandle loadDll(const fs::path& p) {
+    const unsigned oldMode = CLFPlatform::suppressErrorDialogs();   // no-op
+    void* h = dlopen(p.c_str(), RTLD_NOW | RTLD_LOCAL);
+    CLFPlatform::restoreErrorDialogs(oldMode);
+    return h;
+}
 void* getSymbol(DllHandle h, const char* name) { return dlsym(h, name); }
 void freeDll(DllHandle h) { dlclose(h); }
 #endif
@@ -82,22 +88,11 @@ struct CLFPluginManager::ServiceBinding {
 CLFPluginManager::CLFPluginManager(std::string pluginDir)
     : m_pluginDir(std::move(pluginDir)) {
     if (m_pluginDir.empty()) {
-        // 缺省 = exe 目录/plugins（CLFConfigLoader GetModuleFileNameW 先例：
-        // W 版本 + u8string——A 版本按 ANSI 代码页读路径，exe 位于中文目录时乱码）
-#ifdef _WIN32
-        wchar_t wbuf[MAX_PATH];
-        DWORD len = GetModuleFileNameW(nullptr, wbuf, MAX_PATH);
-        if (len > 0 && len < MAX_PATH) {
-            m_pluginDir = (fs::path(wbuf).parent_path() / "plugins").u8string();
-        }
-#else
-        char buf[PATH_MAX];
-        ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-        if (len > 0) {
-            buf[len] = '\0';
-            m_pluginDir = (fs::path(buf).parent_path() / "plugins").string();
-        }
-#endif
+        // 缺省 = exe 目录/plugins（平台层收敛 2026-09-23：原 GetModuleFileNameW
+        // /readlink 双实现合一 → CLFPlatform::executableDir；失败回落 CWD）
+        std::string exeDir = CLFPlatform::executableDir();
+        if (exeDir.empty()) exeDir = fs::current_path().u8string();
+        m_pluginDir = (fs::u8path(exeDir) / "plugins").u8string();
     }
     m_hostApi = std::make_unique<CLFHostApiImpl>(this);
 }
@@ -230,7 +225,8 @@ int CLFPluginManager::loadAll() {
     }
     std::vector<std::string> dlls;
     for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->is_regular_file(ec) && it->path().extension() == ".dll") {
+        if (it->is_regular_file(ec)
+            && it->path().extension() == CLFPlatform::dynamicLibraryExtension()) {
             dlls.push_back(it->path().u8string());
         }
     }
@@ -433,7 +429,8 @@ bool CLFPluginManager::load(const std::string& pluginName) {
                         m_plugins.end());
     }
 
-    const fs::path dllPath = fs::u8path(m_pluginDir) / (pluginName + ".dll");
+    const fs::path dllPath = fs::u8path(m_pluginDir)
+                            / (pluginName + CLFPlatform::dynamicLibraryExtension());
     std::error_code ec;
     if (!fs::exists(dllPath, ec)) {
         CLFLogger::instance().warn(std::string(kLogPrefix) + "load '" + pluginName +

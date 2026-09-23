@@ -44,6 +44,7 @@ endfunction()
 add_library(clf_types STATIC
     CLFTypes/CLFEncoding.cpp
     CLFTypes/CLFPeriodicTimer.cpp
+    CLFTypes/CLFPlatform.cpp
     CLFTypes/CLFProcessRunner.cpp
     CLFTypes/CLFTextUtil.cpp
 )
