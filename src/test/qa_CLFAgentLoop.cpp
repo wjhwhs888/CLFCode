@@ -987,7 +987,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(lines[1]["todos"][0]["status"] == std::string("in_progress"));
     };
 
-    "V4 restoreSession .jsonl 分流：m_resumedFrom 置位 + 面板按快照"_test = [] {
+    "V4 restoreSession .jsonl 分流：m_resumedFrom 置位 + 面板隐藏（2026-09-23 拍板）"_test = [] {
         // 造一个 jsonl 会话：最后快照非全完成（1 completed + 1 in_progress）
         CLFTest::CLFTestTempDir dir("clf_agent_v4_");
         std::string srcPath = dir.string() + "/2026-08-25_10-00-00_旧会话.jsonl";  // 纯字符串拼接（UTF-8 字节），避免 path 窄构造按 CP936 解码
@@ -1004,13 +1004,16 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         VSetup s;
         expect(s.agent->restoreSession(srcPath));
         expect(s.agent->getResumedFrom() == srcPath);   // 恢复即续写态
-        expect(!s.agent->isTodoPanelDone());            // 非全完成 → 面板重现
+        // 2026-09-23 用户拍板（D8 重拍）：resume 无条件隐藏面板——中断时
+        // 快照是陈旧状态（模型不逐项核对更新，显示误导）；模型第一次调
+        // todo_write 时以新数据重现（create/update 清 done——现成机制）
+        expect(s.agent->isTodoPanelDone());
         const auto todos = s.agent->getTodos();
         expect(todos.size() == 2_ul);
         expect(todos[0].m_status == std::string("completed"));
         expect(todos[1].m_status == std::string("in_progress"));
 
-        // 全完成快照 → 面板不显示（置位）
+        // 全完成快照 → 同样隐藏（无条件）
         std::string donePath = dir.string() + "/2026-08-25_11-00-00_全完成.jsonl";
         {
             std::ofstream f(std::filesystem::u8path(donePath), std::ios::binary);

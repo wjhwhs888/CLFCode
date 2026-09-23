@@ -719,10 +719,13 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath,
     if (!ok) return false;
     setTodos(std::move(todos));   // T2: 走锁内替换（§3.9）
 
-    // J3: resume 续写态（§八 补丁 4）——恢复即进入续写；面板状态按最后快照：
-    // 全完成 → 置 done（完成记录已在历史）；非全完成 → 清 done（面板重现，续写起点）
+    // J3: resume 续写态（§八 补丁 4）——恢复即进入续写。
+    // 2026-09-23 用户拍板（实机回响 D8 重拍）：面板**无条件隐藏**——中断时
+    // 快照是陈旧状态（模型 resume 后不逐项核对更新，直接继续做后面的任务，
+    // 面板显示"任务 1 进行中"而实际在做任务 N 是误导）；模型第一次调
+    // todo_write 时以新数据重现（create/update 置面板显示——现成机制）
     m_sessionFileCtx.setResumedFrom(filePath);
-    setTodoPanelDone(!m_todoStore.allDoneSnapshot().empty());
+    setTodoPanelDone(true);
     (void)completeTodos;   // 行级回显直接解析 complete 行；此输出保留 API 完整性
 
     CLFLogger::instance().info("[Restore] loaded: "

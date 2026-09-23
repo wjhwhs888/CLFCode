@@ -141,9 +141,11 @@ public:
 
     // todo 面板显示开关（B3 语义定案 2026-09-03）：= 回合级 todo 面板展示生命周期
     // 状态——core 在回合边界维护、UI 只读消费：
-    //   清（面板显示）：todo_write create/update、resume 非全完成快照
+    //   清（面板显示）：todo_write create/update
     //   置（面板隐藏）：finishTurn 全完成收尾、beginTurnSession 新回合、
-    //                  closeSessionAndReset、resume 全完成快照
+    //                  closeSessionAndReset、resume（2026-09-23 用户拍板——
+    //                  无条件隐藏：中断快照是陈旧状态，模型 todo_write 时
+    //                  以新数据重现，D8 原"resume 非全完成显示"作废）
     // C2：已随 CLFTodoStore 迁移（B3 定案：接口保留不改名，转发实现）
     void setTodoPanelDone(bool done) { m_todoStore.setTodoPanelDone(done); }
     bool isTodoPanelDone() const      { return m_todoStore.isTodoPanelDone(); }
