@@ -16,6 +16,7 @@
 
 #include "CLFTypes/CLFProcessRunner.hpp"
 #include "CLFTypes/CLFEncoding.hpp"
+#include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：POSIX makeTempFilePath
 
 #ifdef _WIN32
 #include <windows.h>
@@ -399,9 +400,11 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
     // A 批同步改造：独立进程组 + 取消检查 + kill(-pgid) 整组（原超时只
     // kill(child)——孙进程成孤儿，既有缺陷同修）。输出重定向 /tmp 保持
     // 现状（管道直读属命令执行层 §八 第二期）
-    const std::string pidStr = std::to_string(static_cast<long long>(getpid()));
-    const std::string stdoutFile = "/tmp/clf_cmd_stdout_" + pidStr + ".txt";
-    const std::string stderrFile = "/tmp/clf_cmd_stderr_" + pidStr + ".txt";
+    // [未验证] 临时文件路径走平台层（2026-09-23 平台层收敛步骤 6：原 /tmp
+    // 硬编码 + pid 命名——同进程并发两次调用互相覆盖；makeTempFilePath 以
+    // 时钟+计数器后缀唯一化；管道直读属命令执行层 §八 第二期）
+    const std::string stdoutFile = CLFPlatform::makeTempFilePath("clf_cmd_stdout");
+    const std::string stderrFile = CLFPlatform::makeTempFilePath("clf_cmd_stderr");
     const std::string cmdWithRedirect =
         spec.m_command + " > " + stdoutFile + " 2> " + stderrFile;
 

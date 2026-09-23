@@ -1,32 +1,17 @@
 // CLFAnsi.cpp — ANSI 终端控制原语实现
+// 平台层收敛（2026-09-23）：VT 开启与终端尺寸取数已下沉 CLFPlatform
+// （enableVirtualTerminal/consoleSize）——本类保留颜色包装与门控状态。
 
 #include "CLFUI/CLFAnsi.hpp"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/ioctl.h>
-#include <unistd.h>
-#endif
+#include "CLFTypes/CLFPlatform.hpp"
 
 namespace CLF::CLFUI {
 
 bool CLFAnsi::s_enabled = false;
 
 void CLFAnsi::enable() {
-#ifdef _WIN32
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOut != INVALID_HANDLE_VALUE) {
-        DWORD mode = 0;
-        if (GetConsoleMode(hOut, &mode)) {
-            if (SetConsoleMode(hOut, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
-                s_enabled = true;
-            }
-        }
-    }
-#else
-    s_enabled = true;
-#endif
+    s_enabled = CLF::CLFCore::CLFPlatform::enableVirtualTerminal();
 }
 
 std::string CLFAnsi::cyan(const std::string& s) { return s_enabled ? "\033[36m" + s + "\033[0m" : s; }
@@ -36,33 +21,13 @@ std::string CLFAnsi::gray(const std::string& s) { return s_enabled ? "\033[90m" 
 std::string CLFAnsi::bold(const std::string& s) { return s_enabled ? "\033[1m" + s + "\033[0m" : s; }
 
 int CLFAnsi::terminalHeight() {
-#ifdef _WIN32
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOut == INVALID_HANDLE_VALUE) return -1;
-    CONSOLE_SCREEN_BUFFER_INFO info;
-    if (!GetConsoleScreenBufferInfo(hOut, &info)) return -1;
-    return static_cast<int>(info.srWindow.Bottom - info.srWindow.Top + 1);
-#else
-    struct winsize ws;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
-        return static_cast<int>(ws.ws_row);
-    return -1;
-#endif
+    int w = 0, h = 0;
+    return CLF::CLFCore::CLFPlatform::consoleSize(w, h) ? h : -1;
 }
 
 int CLFAnsi::terminalWidth() {
-#ifdef _WIN32
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOut == INVALID_HANDLE_VALUE) return -1;
-    CONSOLE_SCREEN_BUFFER_INFO info;
-    if (!GetConsoleScreenBufferInfo(hOut, &info)) return -1;
-    return static_cast<int>(info.srWindow.Right - info.srWindow.Left + 1);
-#else
-    struct winsize ws;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
-        return static_cast<int>(ws.ws_col);
-    return -1;
-#endif
+    int w = 0, h = 0;
+    return CLF::CLFCore::CLFPlatform::consoleSize(w, h) ? w : -1;
 }
 
 } // namespace CLF::CLFUI

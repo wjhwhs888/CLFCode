@@ -15,6 +15,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFArgParser.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
+#include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：initConsoleEncoding 原语
 #include "CLFCore/CLFFileServiceProxy.hpp"   // 2.2b
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFPluginManager.hpp"      // 2.2b
@@ -49,10 +50,10 @@ void printVersion() {
 } // anonymous namespace
 
 int main(int argc, char* argv[]) {
-#ifdef _WIN32
-    SetConsoleCP(CP_UTF8);
-    SetConsoleOutputCP(CP_UTF8);
-#endif
+    // 控制台编码初始化（平台层收敛 2026-09-23 → CLFPlatform::initConsoleEncoding：
+    // UTF-8 代码页——stdin 接收 UTF-8 输入、stdout 输出 UTF-8；GetACP 不变，
+    // 仅影响控制台 I/O，08-31 编码修复结论）
+    CLF::CLFCore::CLFPlatform::initConsoleEncoding();
 
     // C: 全局 terminate 兜底——任何线程的未处理异常在触发 std::terminate 前留痕。
     //     默认行为（abort，退出码 3）保持不变，但日志可定位；handler 保持极简

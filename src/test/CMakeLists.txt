@@ -24,6 +24,7 @@ endfunction()
 
 # —— 仅 clf_types ——
 clf_add_test(qa_CLFPeriodicTimer    clf_types)
+clf_add_test(qa_CLFPlatform         clf_types)
 clf_add_test(qa_CLFProcessRunner    clf_types)
 clf_add_test(qa_CLFSessionUsage     clf_types)
 clf_add_test(qa_CLFTextUtil         clf_types)

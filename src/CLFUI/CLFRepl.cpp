@@ -9,6 +9,7 @@
 #include "CLFUI/CLFRepl.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"   // 拖选自动滚动定时（2026-09-20）
 #include "CLFTypes/CLFTextUtil.hpp"   // splitLines（多行输入逐行着色）
+#include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：setRawInputMode 原语
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFUI/CLFAsyncSubmit.hpp"
 #include "CLFUI/CLFClipboard.hpp"
@@ -134,14 +135,10 @@ int CLFRepl::run() {
         // "❯" 无色无加粗的根因：enableAnsi 声明后全仓零调用，2026-09-08 修复）
         CLFTerminal::enableAnsi();
 
-        // 启动临时文件清理
-        try {
-            for (auto& e : std::filesystem::directory_iterator(".")) {
-                std::string n = e.path().filename().string();
-                if (n.find("clf_cmd_stdout_") == 0 || n.find("clf_cmd_stderr_") == 0)
-                    std::filesystem::remove(e.path());
-            }
-        } catch (...) {}
+        // （平台层收敛 2026-09-23 步骤 6：原"启动临时文件清理"扫描 CWD 的
+        // clf_cmd_stdout_*/clf_cmd_stderr_* 为死代码——写入端两平台都不在
+        // CWD：Windows 用匿名管道根本不产生临时文件，POSIX 写 /tmp 且自带
+        // 删除。删除死循环，消缺陷 1 双向错位）
 
         // ---- 初始化 FTXUI ----
         auto* terminal = dynamic_cast<CLFTerminal*>(m_output);
@@ -240,21 +237,13 @@ int CLFRepl::run() {
         });
 
         // ---- 运行 ----
-#ifdef _WIN32
-        // 关闭 ENABLE_PROCESSED_INPUT：FTXUI 设置控制台模式时未清除该位
+        // 原始输入模式（平台层收敛 2026-09-23 → CLFPlatform::setRawInputMode）：
+        // 关闭 ENABLE_PROCESSED_INPUT——FTXUI 设置控制台模式时未清除该位
         // （3rdparty app.cpp:617-624 只动 echo/line/VT/window 四位），该位开启时
         // 系统把 Ctrl+C 转成 CTRL_C_EVENT 信号，FTXUI 的 SIGINT 处理器直接退出
-        // 主循环（RecordSignal→ExecuteSignalHandlers→Signal(SIGABRT)→ExitNow）——
-        // 事件永远到不了应用层（验收实证：选区态 Ctrl+C 复制失效、应用直接退出，
-        // 事件日志零 Ctrl+C 记录）。清除后 VT 输入模式下 Ctrl+C 以 0x03 字符事件
-        // 到达 CatchEvent，旧"上下文感知分发"分支恢复生效。
-        {
-            HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
-            DWORD mode = 0;
-            if (hIn != INVALID_HANDLE_VALUE && GetConsoleMode(hIn, &mode))
-                SetConsoleMode(hIn, mode & ~ENABLE_PROCESSED_INPUT);
-        }
-#endif
+        // 主循环——事件永远到不了应用层（验收实证：选区态 Ctrl+C 复制失效、
+        // 应用直接退出）。清除后 Ctrl+C 以 0x03 字符事件到达 CatchEvent
+        CLF::CLFCore::CLFPlatform::setRawInputMode();
         screen.Loop(handler);
         asyncSubmit.join();
         if (terminal) terminal->setScreen(nullptr);

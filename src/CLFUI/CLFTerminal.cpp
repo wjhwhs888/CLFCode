@@ -3,12 +3,8 @@
 #include "CLFUI/CLFAnsi.hpp"
 #include "CLFUI/CLFAnsiParser.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"
-
-#ifdef _WIN32
-#include <windows.h>
-#undef min
-#undef max
-#endif
+// （平台层收敛 2026-09-23：原 windows.h include 为死 include——全文件零
+// Windows 符号使用，已删）
 
 namespace CLF::CLFUI {
 using CLF::CLFCore::CLFTextUtil;   // A2

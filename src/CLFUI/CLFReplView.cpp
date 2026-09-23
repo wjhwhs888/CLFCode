@@ -15,6 +15,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：utf8SafeHead
+#include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：consoleCursorPosition 原语
 
 #include <algorithm>
 #include <cstdlib>
@@ -495,24 +496,22 @@ void CLFReplView::calibratePoint(int& x, int& y) const {
     // 拖选坐标自校准（2026-09-09）：CLion(JediTerm) 的 ConPTY 不响应 CPR
     // 查询（取证实证：查询发出、零响应），FTXUI 鼠标偏移恒为初始值 (1,1)，
     // frame 原点非屏幕原点时拖选错位。
-    // 自校准：GetConsoleScreenBufferInfo 的光标 − 渲染定稿光标 frame 内
-    // 坐标（LastFrameCursor，帧尾 CUP 目标）= frame 原点。组件层坐标已减
-    // 过 cursor 偏移（x = raw − CursorOffsetX），加回同一偏移再减原点——
-    // 两项抵消，结果恒为 raw − origin，与 CPR 校准与否无关（CPR 有无
-    // 响应公式幂等）。
-    // 基准统一（2026-09-20 根因修复）：origin 与 raw 同取 1 基——csbi 光标
-    // 与 LastFrameCursor 均 0 基，相减后 +1 即 frame 原点的 1 基屏幕坐标；
-    // SGR 鼠标 raw 亦 1 基。此前 origin 按 0 基参与 raw(1 基) − origin，
-    // 拖选恒偏 +1 行/+1 列（原生 PowerShell/WT 取证实证：点击屏幕第 13 行
-    // hitTest 命中第 14 行——raw=13, origin=0 → y=13，正确应为 12）。
+    // 自校准：控制台光标 − 渲染定稿光标 frame 内坐标（LastFrameCursor，
+    // 帧尾 CUP 目标）= frame 原点。组件层坐标已减过 cursor 偏移
+    // （x = raw − CursorOffsetX），加回同一偏移再减原点——两项抵消，结果
+    // 恒为 raw − origin，与 CPR 校准与否无关（CPR 有无响应公式幂等）。
+    // 基准统一（2026-09-20 根因修复）：origin 与 raw 同取 1 基——平台层
+    // consoleCursorPosition 返回 1 基光标（0 基 +1 已吸收），LastFrameCursor
+    // 为 0 基 frame 内坐标，相减即 frame 原点的 1 基屏幕坐标；SGR 鼠标 raw
+    // 亦 1 基。此前 origin 按 0 基参与 raw(1 基) − origin，拖选恒偏
+    // +1 行/+1 列（原生 PowerShell/WT 取证实证）。
     // CLion(JediTerm) 已知局限（2026-09-09 用户定案"接受局限"）：其 SGR
     // 鼠标 y 含内部行号计数偏移（实测 4~6+，每次启动增长——\033[3J 清屏
     // 不清计数、CPR 无响应、ConPTY 缓冲=视口，程序侧不可测）。默认补偿 4
     // （2026-09-20 基准统一 origin 转 1 基后由 5 调至 4——origin +1 已
     // 相当于多减 1 行，补偿减 1 保持 CLion 拖选净效果与 v0.7.4 实测一致）；
-    // CLF_MOUSE_OFFSET_Y 环境变量可精确覆盖微调（当前偏移值 = 差几行就
-    // 设几）。外部终端无此偏移——仅 TERMINAL_EMULATOR=JetBrains-JediTerm
-    // 时补偿。
+    // CLF_MOUSE_OFFSET_Y 环境变量可精确覆盖微调。外部终端无此偏移——
+    // 仅 TERMINAL_EMULATOR=JetBrains-JediTerm 时补偿。
     static const bool kIsJediTerm = [] {
         const char* emu = std::getenv("TERMINAL_EMULATOR");
         return emu && std::string(emu).find("JediTerm") != std::string::npos;
@@ -526,14 +525,12 @@ void CLFReplView::calibratePoint(int& x, int& y) const {
     }();
     if (m_terminal) {
         if (auto* scr = m_terminal->screen()) {
-            HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-            CONSOLE_SCREEN_BUFFER_INFO csbi{};
-            if (hOut != INVALID_HANDLE_VALUE
-                && GetConsoleScreenBufferInfo(hOut, &csbi)) {
-                int originX = static_cast<int>(csbi.dwCursorPosition.X)
-                            - scr->LastFrameCursorX() + 1;   // +1：0 基差值 → 1 基原点（与 SGR raw 同基准）
-                int originY = static_cast<int>(csbi.dwCursorPosition.Y)
-                            - scr->LastFrameCursorY() + 1;
+            // 取数下沉平台层（2026-09-23：只搬取数不搬算式——1 基光标原语，
+            // 算式与补偿原样保留）
+            int cursorX = 0, cursorY = 0;
+            if (CLF::CLFCore::CLFPlatform::consoleCursorPosition(cursorX, cursorY)) {
+                const int originX = cursorX - scr->LastFrameCursorX();
+                int originY = cursorY - scr->LastFrameCursorY();
                 if (kIsJediTerm)
                     originY += kScrollbackRows;
                 x += scr->CursorOffsetX() - originX;
@@ -541,6 +538,11 @@ void CLFReplView::calibratePoint(int& x, int& y) const {
             }
         }
     }
+#else
+    // [未验证] 非 Windows 无 csbi 概念——校准 no-op（清单 #2 补显式分支；
+    // aboveContent/belowContent 的校准基准第二期按终端协议补）
+    (void)x;
+    (void)y;
 #endif
 }
 
