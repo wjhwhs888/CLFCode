@@ -60,6 +60,38 @@ std::wstring utf8ToWide(const std::string& s) {
 #endif
 
 // ============================================================================
+// G3 错误归一化（2026-09-23 命令执行层 §6.5）：not_found / permission /
+// launch_failed 的识别模式（双语——中文 Windows 的 cmd 输出中文文案）。
+// timeout / interrupted 由执行器自身状态直接归一；non_zero_exit 属 handler
+// 层（依赖 exitCodeMeansSuccess 白名单，执行器不可见）。
+// ============================================================================
+
+// CreateProcess 失败码归一（Win32 错误码：2 = 找不到文件、5 = 拒绝访问）
+std::string classifyLaunchError(int errorCode) {
+    if (errorCode == 2) return "not_found";
+    if (errorCode == 5) return "permission";
+    return "launch_failed";
+}
+
+// 命令启动成功但报错的 stderr 文案归一（cmd 报"不是内部或外部命令"
+// 等场景；chcp 65001 下 stderr 为 UTF-8 可直接匹配中文字面量）
+std::string classifyStderrError(const std::string& stderrText) {
+    // not_found：命令不存在（中/英）
+    if (stderrText.find("不是内部或外部命令") != std::string::npos
+        || stderrText.find("is not recognized as an internal") != std::string::npos
+        || stderrText.find("系统找不到指定的文件") != std::string::npos
+        || stderrText.find("The system cannot find the file") != std::string::npos) {
+        return "not_found";
+    }
+    // permission：拒绝访问（中/英）
+    if (stderrText.find("拒绝访问") != std::string::npos
+        || stderrText.find("Access is denied") != std::string::npos) {
+        return "permission";
+    }
+    return "";
+}
+
+// ============================================================================
 // G2 输出限额器（2026-09-23 命令执行层 §6.4）：头+尾保留、中段丢弃——
 // 命令结论常在尾部，只保头会让模型看不到结论（W-6 缺陷修根）。
 // 行粒度环形切分：\n 是 ASCII（0x0A）——GBK 双字节 0x81-0xFE / 0x40-0xFE
@@ -198,6 +230,9 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
         result.m_launchFailed = true;
         result.m_exitCode = -1;
         result.m_stderr = "Failed to create process: error " + std::to_string(err);
+        // G3：launch 失败码归一（2 → not_found、5 → permission、其余 launch_failed）
+        result.m_launchErrorCode = static_cast<int>(err);
+        result.m_errorKind = classifyLaunchError(static_cast<int>(err));
         return result;
     }
 
@@ -248,6 +283,7 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
             terminateTree();
             result.m_interrupted = true;
             result.m_exitCode = -1;
+            result.m_errorKind = "interrupted";   // G3
             break;
         }
 
@@ -278,6 +314,7 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
             terminateTree();  // 超时路径同改：原只杀父（W-2 缺陷）
             result.m_timedOut = true;
             result.m_exitCode = -1;
+            result.m_errorKind = "timeout";   // G3
             break;
         }
     }
@@ -314,6 +351,10 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
     if (result.m_stderr.empty()) {
         result.m_stderr = CLFEncoding::toUtf8(errLimiter.result());
     }
+    // G3：启动成功但报错（cmd "不是内部或外部命令"等）的 stderr 文案归一
+    if (result.m_errorKind.empty() && !result.m_stderr.empty()) {
+        result.m_errorKind = classifyStderrError(result.m_stderr);
+    }
 
 #else
     // ==== POSIX：fork + setsid + sh -c（[未验证]：非 Windows 构建未覆盖）====
@@ -347,6 +388,7 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
                 waitpid(child, &status, 0);      // 等待 kill 生效
                 result.m_interrupted = true;
                 result.m_exitCode = -1;
+                result.m_errorKind = "interrupted";   // [未验证] G3
                 stopped = true;
                 break;
             }
@@ -360,6 +402,7 @@ CLFExecResult CLFProcessRunner::run(const CLFExecSpec& spec,
                 waitpid(child, &status, 0);
                 result.m_timedOut = true;
                 result.m_exitCode = -1;
+                result.m_errorKind = "timeout";   // [未验证] G3
                 stopped = true;
                 break;
             }

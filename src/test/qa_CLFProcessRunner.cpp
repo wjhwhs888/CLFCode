@@ -67,6 +67,7 @@ const boost::ut::suite<"CLFProcessRunner"> tests = [] {
             std::chrono::steady_clock::now() - t0).count();
         expect(r.m_interrupted);
         expect(r.m_exitCode != 0);
+        expect(r.m_errorKind == "interrupted");   // G3 归一化
         expect(elapsedMs < 2000);
     };
 
@@ -97,6 +98,7 @@ const boost::ut::suite<"CLFProcessRunner"> tests = [] {
         const CLFExecResult r = CLFProcessRunner::run(spec);
         expect(r.m_timedOut);
         expect(r.m_exitCode == -1);
+        expect(r.m_errorKind == "timeout");   // G3 归一化
         std::this_thread::sleep_for(std::chrono::seconds(1));
         const size_t s1 = readHeartbeatSize(dir.string());
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -127,6 +129,15 @@ const boost::ut::suite<"CLFProcessRunner"> tests = [] {
         expect(r.m_stdout.find("TAIL_MARKER") != std::string::npos);  // 尾部结论保留
         expect(r.m_stdout.find("中间输出省略") != std::string::npos); // 中段标记
         expect(r.m_stdout.size() < 160 * 1024);   // 限额生效（128KB + 标记余量）
+    };
+
+    "C6 错误归一化（G3）：不存在的命令 → not_found"_test = [] {
+        CLFExecSpec spec;
+        spec.m_command = "nosuchcmd__clf_qa";
+        const CLFExecResult r = CLFProcessRunner::run(spec);
+        expect(r.m_exitCode != 0);
+        expect(r.m_errorKind == "not_found");   // cmd"不是内部或外部命令"文案归一
+        expect(!r.m_stderr.empty());            // 原始 stderr 保留（快信号非替代）
     };
 };
 

@@ -21,6 +21,7 @@ struct CLFCommandResult {
     bool        m_timedOut = false;
     bool        m_interrupted = false;  // A 批新增：取消触发（handler 读）
     bool        m_truncated = false;    // G2：输出超执行器限额（中段被丢弃）
+    std::string m_errorKind;            // G3：错误归一化（§6.5）；空 = 无
 };
 
 // 执行命令（带超时控制）

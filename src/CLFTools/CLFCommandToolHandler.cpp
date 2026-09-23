@@ -77,17 +77,26 @@ std::string executeCommandToolHandler(const std::string& args,
                 result["interrupted"] = true;
                 result["exitCode"]    = cmdResult.m_exitCode;
                 result["stdout"]      = cmdResult.m_stdout;
+                result["errorKind"]   = "interrupted";   // G3 归一化
                 std::string err = cmdResult.m_stderr;
                 if (!err.empty()) err += "\n";
                 result["stderr"] = err + "命令被用户中断（已终止进程树）";
                 return;
             }
-            result["success"]  = exitCodeMeansSuccess(command, cmdResult.m_exitCode);
+            const bool ok = exitCodeMeansSuccess(command, cmdResult.m_exitCode);
+            result["success"]  = ok;
             result["exitCode"] = cmdResult.m_exitCode;
             result["stdout"]   = cmdResult.m_stdout;
             result["stderr"]   = cmdResult.m_stderr;
             if (cmdResult.m_timedOut) {
                 result["timedOut"] = true;
+            }
+            // G3（命令执行层 §6.5）：错误归一化结构化字段——模型不必读 raw
+            // 文案即可决定下一步（原始 stderr 仍完整保留，归一化是快信号）
+            if (!cmdResult.m_errorKind.empty()) {
+                result["errorKind"] = cmdResult.m_errorKind;
+            } else if (!ok) {
+                result["errorKind"] = "non_zero_exit";
             }
         });
 }

@@ -198,7 +198,43 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
             // 中断语义（设计-中断时效性 A.4）：success=false + interrupted=true
             expect(r.value("success", true) == false);
             expect(r.value("interrupted", false) == true);
+            expect(r.value("errorKind", "") == "interrupted");   // G3 归一化
             expect(elapsedMs < 5000);   // 30s 睡眠命令被 ≤5s 取消（含 powershell 启动）
+        }
+    };
+
+    "D8 错误归一化（G3）：非白名单非零退出 → non_zero_exit；白名单退出 1 → 成功"_test = [] {
+        auto dir = makePluginDir();
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 3_i);
+            auto* p = findProvider(mgr, "execute_command");
+            expect(p != nullptr);
+
+            // 非白名单非零退出：exit /b 3 → success=false + errorKind=non_zero_exit
+            {
+                nlohmann::json args{{"command", "exit /b 3"}};
+                auto r = nlohmann::json::parse(
+                    callToolText(p, "execute_command", args.dump()));
+                expect(r.value("success", true) == false);
+                expect(r.value("errorKind", "") == "non_zero_exit");
+            }
+            // 白名单命令退出码 1（findstr 无匹配）：仍视为成功、无 errorKind
+            {
+                nlohmann::json args{
+                    {"command", "findstr /c:\"__clf_qa_no_such__\" __clf_qa_no_file__"}};
+                auto r = nlohmann::json::parse(
+                    callToolText(p, "execute_command", args.dump()));
+                expect(r.value("success", false) == true);   // S2-3 白名单语义不动
+                expect(!r.contains("errorKind"));
+            }
+            // 不存在的命令 → not_found 全链路（执行器归一 → handler JSON 透传）
+            {
+                nlohmann::json args{{"command", "nosuchcmd__clf_qa"}};
+                auto r = nlohmann::json::parse(
+                    callToolText(p, "execute_command", args.dump()));
+                expect(r.value("errorKind", "") == "not_found");
+            }
         }
     };
 };

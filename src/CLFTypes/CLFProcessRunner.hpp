@@ -42,6 +42,12 @@ struct CLFExecResult {
     bool        m_interrupted  = false;  // 取消触发（与 m_timedOut 互斥）
     bool        m_launchFailed = false;
     bool        m_truncated    = false;  // G2：输出超限额（中段被丢弃）
+    // G3（2026-09-23 命令执行层 §6.5）：错误归一化——not_found / permission /
+    // timeout / interrupted / launch_failed；空 = 无归一化错误（退出码判定
+    // 与白名单属 handler 层 non_zero_exit）
+    std::string m_errorKind;
+    // CreateProcess 失败码（归一化内部用，不出门面）
+    int         m_launchErrorCode = 0;
     std::string m_stdout;                // 已按头+尾保留（限额内）
     std::string m_stderr;
 };

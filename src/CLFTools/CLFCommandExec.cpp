@@ -28,6 +28,7 @@ CLFCommandResult executeCommand(const std::string& command, int timeoutSeconds,
     result.m_timedOut    = r.m_timedOut;
     result.m_interrupted = r.m_interrupted;
     result.m_truncated   = r.m_truncated;
+    result.m_errorKind   = r.m_errorKind;
     return result;
 }
 
