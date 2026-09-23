@@ -166,6 +166,11 @@ public:
     // 会话缓存命中统计（底部常亮参数行渲染用；与 m_totalTokensUsed 同生命周期）
     const CLF::CLFTypes::CLFSessionUsage& getSessionUsage() const { return m_sessionUsage; }
 
+    // 中断标志只读暴露（2026-09-23 中断时效性 A 批步骤 2）：插件工具 handler 经
+    // ABI isCancelled 通道查询（CLFPluginTools 装配时捕获）；指针在 AgentLoop
+    // 生命周期内有效（m_tools 的 handler 与成员同寿）
+    const std::atomic<bool>* interruptFlag() const { return &m_interrupted; }
+
     // 已注入上下文的 skill 名称列表（/skill 状态显示用）
     std::vector<std::string> getLoadedSkills() const;
 

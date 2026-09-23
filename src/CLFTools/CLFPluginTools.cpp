@@ -11,6 +11,7 @@
 
 #include "CLFTools/CLFBuiltinTools.hpp"
 
+#include <atomic>
 #include <string>
 
 #include "CLFCore/CLFAgentLoop.hpp"
@@ -28,6 +29,19 @@ namespace {
 std::string providerUnavailableError(const std::string& toolName) {
     return std::string(R"({"success":false,"error":"工具提供者不可用（插件已停用）: )") +
            toolName + "\"}";
+}
+
+// 宿主内部调用上下文（2026-09-23 中断时效性 A 批）：结果收集器 + 中断标志。
+// 经 ABI ctx 传给插件——插件侧义务不变（只原样回传，不得解引用）
+struct CLFToolCallCtx {
+    std::string*            out;
+    const std::atomic<bool>* interrupt;
+};
+
+// ABI isCancelled 回调：读宿主中断标志（可为空指针 = 宿主未提供取消 → false）
+bool cbIsCancelled(void* ctx) {
+    const auto* c = static_cast<CLFToolCallCtx*>(ctx);
+    return c->interrupt && c->interrupt->load();
 }
 
 } // namespace
@@ -73,21 +87,28 @@ void registerPluginTools(CLF::CLFCore::CLFAgentLoop& agent,
             // 2026-09-21 实机实抓：多提供者场景 read_file 被路由到 teststub
             // 回显参数，工具结果错乱）。不缓存服务指针（§1.2）；
             // 卸载后无提供者 → 兜底错误（验证点 4）
-            tool.m_handler = [&manager, toolName](const std::string& args) -> std::string {
+            // 中断标志装配时捕获（A 批步骤 2）：经 ABI isCancelled 下传——插件
+            // 侧义务不变（ctx 原样回传）；指针随 AgentLoop 生命周期有效
+            const std::atomic<bool>* flag = agent.interruptFlag();
+            tool.m_handler = [&manager, toolName, flag](const std::string& args) -> std::string {
                 for (auto* provider : manager.toolProviders()) {
                     for (int idx = 0; idx < provider->toolCount(); ++idx) {
                         const auto* m = provider->toolMeta(idx);
                         if (m && std::string(m->name) == toolName) {
+                            CLFToolCallCtx ctx{};
                             std::string content;
+                            ctx.out       = &content;
+                            ctx.interrupt = flag;
                             CLFToolCallbacks cb{};
                             cb.onResult = [](void* ctx, const char* s, size_t n) {
-                                static_cast<std::string*>(ctx)->append(s, n);
+                                static_cast<CLFToolCallCtx*>(ctx)->out->append(s, n);
                             };
                             // onError 两参签名（不可直接赋 onResult——2.2a 实抓）
                             cb.onError = [](void* ctx, const char* s) {
-                                static_cast<std::string*>(ctx)->append(s);
+                                static_cast<CLFToolCallCtx*>(ctx)->out->append(s);
                             };
-                            provider->callTool(toolName.c_str(), args.c_str(), &content, &cb);
+                            cb.isCancelled = cbIsCancelled;
+                            provider->callTool(toolName.c_str(), args.c_str(), &ctx, &cb);
                             return content;
                         }
                     }
