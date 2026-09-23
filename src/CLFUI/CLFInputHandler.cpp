@@ -431,6 +431,16 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     }
 
     // === 8. 滚动 ===
+    // 焦点语义修复（2026-09-23 用户实抓）：输入框聚焦时 Home/End 归 Input
+    // （光标跳行首/行尾）——此前 ScrollView 无条件消费 Home/End（键盘翻页），
+    // 输入框永远收不到；滚轮/PageUp/PageDown 仍归滚动视图（输入框不使用
+    // 翻页键）。input() 字符串比较（qa 静态期教训：Event::Home 等静态
+    // 常量在 boost::ut 静态初始化期不可靠——ScrollView 同款先例）
+    if (input->Focused()
+        && (e.input() == std::string_view("\x1B[H")
+            || e.input() == std::string_view("\x1B[F"))) {
+        return false;   // 放行给 Input 组件
+    }
     if (m_view.scrollHandleEvent(e))
         return true;
 
