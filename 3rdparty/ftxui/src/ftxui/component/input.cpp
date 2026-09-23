@@ -546,55 +546,40 @@ class InputBase : public ComponentBase, public InputOption {
     return true;
   }
 
-  // CLFCode patch（2026-09-23）：把组件内坐标 (mouse_x, mouse_y) 换算为光标
-  // 字节偏移——自原 HandleMouse 点击定位逻辑原样抽取（列→字节与点击定位
-  // 同源，拖选换算复用同一口径：多行折行/宽字符宽度天然一致）。
+  // CLFCode patch（2026-09-23）：把鼠标坐标 (mouse_x, mouse_y)（全局屏幕
+  // 坐标）换算为字节偏移。**绝对基准**（组件 box）——不依赖光标位置：
+  // 组件内行 = mouse_y - box_.y_min（行渲染左对齐、行高 1）、组件内列 =
+  // mouse_x - box_.x_min。原 HandleMouse 的"光标相对基准"（cursor_box_）
+  // 在拖选场景失效：Press 后光标立即跳到点击处，而 cursor_box_ 仍是上一
+  // 帧的旧位置——Moved/Released 换算基准错位（实机实抓：向上拖选失效、
+  // 行内列算错被 clamp 到行边界致"整行或全不选"、末行丢一半）。
   int PositionToCursor(int mouse_x, int mouse_y) {
     if (content->empty()) {
       return 0;
     }
 
-    // Find the line and index of the cursor.
     std::vector<std::string> lines = SplitLines(*content);
-    int cursor_line = 0;
-    int cursor_char_index = cursor_position();
-    for (const auto& line : lines) {
-      if (cursor_char_index <= (int)line.size()) {
-        break;
-      }
-
-      cursor_char_index -= static_cast<int>(line.size() + 1);
-      cursor_line++;
-    }
-    const int cursor_column =
-        password()
-            ? GlyphCount(lines[cursor_line].substr(0, cursor_char_index))
-            : string_width(lines[cursor_line].substr(0, cursor_char_index));
-
-    int new_cursor_column = cursor_column + mouse_x - cursor_box_.x_min;
-    int new_cursor_line = cursor_line + mouse_y - cursor_box_.y_min;
-
-    // Fix the new cursor position:
-    new_cursor_line = std::max(std::min(new_cursor_line, (int)lines.size()), 0);
+    int line_idx = mouse_y - box_.y_min;
+    line_idx = std::max(std::min(line_idx, (int)lines.size()), 0);
 
     const std::string empty_string;
-    const std::string& line = new_cursor_line < (int)lines.size()
-                                  ? lines[new_cursor_line]
+    const std::string& line = line_idx < (int)lines.size()
+                                  ? lines[line_idx]
                                   : empty_string;
-    new_cursor_column =
-        util::clamp(new_cursor_column, 0,
-                    password() ? GlyphCount(line) : string_width(line));
+    int column = mouse_x - box_.x_min;
+    column = util::clamp(column, 0,
+                         password() ? GlyphCount(line) : string_width(line));
 
-    // Convert back the new_cursor_{line,column} toward cursor_position:
+    // 列 → 字节偏移（GlyphWidth 宽字符口径——与渲染/点击定位同表）
     int pos = 0;
-    for (int i = 0; i < new_cursor_line; ++i) {
+    for (int i = 0; i < line_idx; ++i) {
       pos += static_cast<int>(lines[i].size() + 1);
     }
-    while (new_cursor_column > 0) {
+    while (column > 0) {
       if (password()) {
-        new_cursor_column -= 1;
+        column -= 1;
       } else {
-        new_cursor_column -= static_cast<int>(GlyphWidth(content(), pos));
+        column -= static_cast<int>(GlyphWidth(content(), pos));
       }
       pos = static_cast<int>(GlyphNext(content(), pos));
     }
