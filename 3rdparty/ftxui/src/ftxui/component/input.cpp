@@ -209,9 +209,12 @@ class InputBase : public ComponentBase, public InputOption {
                               int line_start, int cursor_begin_in_line,
                               int cursor_end_in_line, bool has_cursor,
                               bool is_focused, Decorator cursor_dec) {
-    // 选区在本行的交集（字节区间；无选区 → 空）
+    // 选区在本行的交集（字节区间；无选区 → 空）。
+    // 反向拖选（end < begin）同样支持——渲染即规范化（min/max），
+    // 实机实抓：向上拖选高亮消失（原条件 end > begin 不成立）
     int sel_begin = -1, sel_end = -1;
-    if (selection_begin_ >= 0 && selection_end_ > selection_begin_) {
+    if (selection_begin_ >= 0 && selection_end_ >= 0
+        && selection_end_ != selection_begin_) {
       const int s = std::min(selection_begin_, selection_end_) - line_start;
       const int e = std::max(selection_begin_, selection_end_) - line_start;
       sel_begin = std::max(s, 0);
@@ -553,7 +556,12 @@ class InputBase : public ComponentBase, public InputOption {
   // 在拖选场景失效：Press 后光标立即跳到点击处，而 cursor_box_ 仍是上一
   // 帧的旧位置——Moved/Released 换算基准错位（实机实抓：向上拖选失效、
   // 行内列算错被 clamp 到行边界致"整行或全不选"、末行丢一半）。
-  int PositionToCursor(int mouse_x, int mouse_y) {
+  //
+  // inclusive 语义（2026-09-23 实机二轮实抓）：false = 格起点（点击定位
+  // 光标——点在字符格上光标在该字符前，FTXUI 原生语义）；true = 含入
+  // （拖选——鼠标所在字符计入选区，与显示区"游标含入鼠标所在字符"一致。
+  // 实抓：拖选"123"实际得"12"——少含最后一个字符）
+  int PositionToCursor(int mouse_x, int mouse_y, bool inclusive) {
     if (content->empty()) {
       return 0;
     }
@@ -583,6 +591,12 @@ class InputBase : public ComponentBase, public InputOption {
       }
       pos = static_cast<int>(GlyphNext(content(), pos));
     }
+    // 含入：鼠标在字符格内（列 > 0）且未到行尾（下一字符非 '\n'/结尾）
+    // → 前进一个 glyph——该字符计入选区（与显示区"游标含入"语义一致）
+    if (inclusive && column > 0 && pos < static_cast<int>(content->size())
+        && content->at(pos) != '\n') {
+      pos = static_cast<int>(GlyphNext(content(), pos));
+    }
     return pos;
   }
 
@@ -605,7 +619,8 @@ class InputBase : public ComponentBase, public InputOption {
     const auto motion = event.mouse().motion;
     if (motion == Mouse::Pressed) {
       TakeFocus();
-      const int pos = PositionToCursor(event.mouse().x, event.mouse().y);
+      // 点击定位：格起点语义（光标在鼠标所在字符之前——FTXUI 原生行为）
+      const int pos = PositionToCursor(event.mouse().x, event.mouse().y, false);
       cursor_position() = pos;
       if (on_select) {   // 拖选复制启用 → 选区开始（锚点 = 新光标）
         selection_begin_ = pos;
@@ -619,7 +634,9 @@ class InputBase : public ComponentBase, public InputOption {
       if (selection_begin_ < 0) {
         return false;   // 未在拖选（on_select 未启用/无选区）→ 原行为
       }
-      selection_end_ = PositionToCursor(event.mouse().x, event.mouse().y);
+      // 拖选扩展：含入语义（鼠标所在字符计入选区）
+      selection_end_ =
+          PositionToCursor(event.mouse().x, event.mouse().y, true);
       return true;
     }
 
@@ -627,6 +644,10 @@ class InputBase : public ComponentBase, public InputOption {
       if (selection_begin_ < 0) {
         return false;
       }
+      // 松手补一次含入换算（松手点可能没有对应 Moved 事件——与显示区
+      // "松手先含入最终位置"同款语义）
+      selection_end_ =
+          PositionToCursor(event.mouse().x, event.mouse().y, true);
       const int begin = std::min(selection_begin_, selection_end_);
       const int end   = std::max(selection_begin_, selection_end_);
       if (begin < end && on_select) {
