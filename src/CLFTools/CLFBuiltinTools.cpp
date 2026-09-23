@@ -219,7 +219,9 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         "维护当前会话的待办清单。create 为整表替换；随会话保存，/resume 后自动恢复。"
         "状态取值：pending / in_progress / completed。"
         "继续已有任务时用 update（按 id 改状态），不要用 create 重建；"
-        "create 为整表替换，仅用于全新清单";
+        "create 为整表替换，仅用于全新清单。"
+        "任务清单的更新要及时（开始某任务时将其标为 in_progress、完成时标为 "
+        "completed），尽量不要静默执行不更新";
     todoTool.m_risk        = CLF::CLFCore::CLFToolRisk::Read;
     todoTool.m_parametersSchema = R"({
         "type": "object",
