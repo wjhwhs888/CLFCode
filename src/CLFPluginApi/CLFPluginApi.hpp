@@ -35,7 +35,8 @@ namespace CLF::CLFPluginApi {
 // ============================================================================
 
 // 不兼容变更 = +1；宿主与插件版本不等 → 管理器拒绝加载 + 提示重建
-constexpr uint32_t CLF_PLUGIN_API_VERSION = 1;
+// v2（2026-09-23）：CLFToolCallbacks 尾部新增 isCancelled 取消查询（中断时效性 A 批）
+constexpr uint32_t CLF_PLUGIN_API_VERSION = 2;
 
 // ============================================================================
 // 日志级别（跨边界 POD 编码）

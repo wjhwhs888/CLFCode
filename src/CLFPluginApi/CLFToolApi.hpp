@@ -7,10 +7,13 @@
 //   跨边界：callTool(name, argsJson, ctx, cb) → cb->onResult 或 cb->onError
 //   **两者产出的文本都走既有 formatToolResult 判定 ok/error——行为等价**
 //
-// 同步契约（2026-09-21）：callTool 为同步阻塞调用——回调必须在返回前完成；
-// ctx 由宿主调用栈持有（CLFToolExecutor 的局部 std::string），
-// 插件实现不得在返回后异步补调回调（阶段 3 集成插件的 IPC 须自行阻塞等待）；
-// 失败/超时经 onError 文本表达，本 ABI 无取消通道
+// 同步契约（2026-09-21，2026-09-23 增补取消通道）：callTool 为同步阻塞调用——
+// 回调必须在返回前完成；ctx 由宿主调用栈持有，插件实现不得在返回后异步补调回调
+// （阶段 3 集成插件的 IPC 须自行阻塞等待）；失败/超时经 onError 文本表达。
+// 取消通道（ABI v2）：isCancelled 返回 true = 宿主已请求取消本次调用，实现侧
+// 应在可中断处轮询，命中即尽快中止并走 onError/onResult。ctx 为宿主内部调用
+// 上下文（不透明），插件实现只原样回传、不得解引用。插件若不轮询 isCancelled，
+// 宿主无法强制中断它（同步 ABI 固有限制）——设计-中断时效性 §八
 //
 // example（宿主侧）：
 //   std::string content;
@@ -59,6 +62,10 @@ struct CLFToolCallbacks {
     // 错误文本（失败/异常被兜底；同样作为结果文本交给 formatToolResult）；
     // 实现侧调用前判空（可为 null）
     void (*onError)(void* ctx, const char* msg) = nullptr;
+    // 取消查询（ABI v2，尾部新增）：返回 true = 宿主已请求取消本次调用；
+    // 实现侧应在可中断处轮询（如子进程轮询循环），命中即尽快中止并走
+    // onError/onResult；可为 null（宿主未提供 = 不可取消，行为与 v1 一致）
+    bool (*isCancelled)(void* ctx) = nullptr;
 };
 
 // ============================================================================
