@@ -116,6 +116,28 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     // API 调用的 usage 之和；触顶 wrapUp 在 summary 显示之后累加、计入
     // 下一轮，与累计生命周期一致）
     m_turnStartTokens = m_totalTokensUsed;
+    // 模型自发回合结束宣告（2026-09-23 用户拍板）："✻ <worked> for" 是
+    // CLFCode 专属 UI 格式——模型回复中出现即视为宣告回合结束。尊重宣告：
+    // 保留标记行、截断其后内容（防"模拟用户追问"自问自答）、丢弃已声明
+    // 的 tool_calls（宣告结束 → 不执行）；收尾不重复拼 worked（模型已
+    // 宣告）。模型正常回复不可能含该字面——出现即思考异常，止损正确
+    bool modelDeclaredEnd = false;
+    auto applySelfWorkedMark = [this, &modelDeclaredEnd](CLFAssistantResponse& parsed) {
+        const std::string mark = "\n✻ " + m_labels.worked + " for";
+        size_t pos = parsed.m_content.find(mark);
+        if (pos == std::string::npos
+            && parsed.m_content.rfind("✻ " + m_labels.worked + " for", 0) == 0) {
+            pos = 0;   // 内容首行即标记
+        }
+        if (pos == std::string::npos) return;
+        modelDeclaredEnd = true;
+        const size_t lineEnd = parsed.m_content.find('\n', pos + 1);
+        parsed.m_content.erase(lineEnd == std::string::npos
+                                   ? parsed.m_content.size() : lineEnd);
+        parsed.m_toolCalls.clear();
+        CLFLogger::instance().warn(
+            "[Turn] model declared end (self worked mark) — truncated trailing content");
+    };
     // W-usage（2026-09-23 中断时效性 §13.5 用户拍板）：中断路径也累计 usage——
     // "发生了的请求就是发生了"。helper 供中断早退点与正常累计点共用；
     // 中断发生在服务端发出 usage 之前 → 各字段为 0，gate 自然跳过
@@ -302,6 +324,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 parsed.m_usageTotal      = acc.getUsageTotal();
                 parsed.m_usageCacheHit   = acc.getUsageCacheHit();
                 parsed.m_hasCacheField   = acc.getHasCacheField();
+                // 模型自发结束标记：截断其后内容 + 丢弃 tool_calls
+                applySelfWorkedMark(parsed);
 
             } else {
                 // ====== 同步路径 ======
@@ -342,6 +366,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
                 consecutiveErrors = 0;
                 parsed = m_protocolAdapter.parseAssistantResponse(response.m_body);
+                // 模型自发结束标记：截断其后内容 + 丢弃 tool_calls（同步路径同款）
+                applySelfWorkedMark(parsed);
             }
 
             // P2-4/R3: 只累计已落定的 usage（正常解析路径；W-usage 2026-09-23：
@@ -409,7 +435,8 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 const auto finishKind = (parsed.m_finishReason == "length")
                     ? CLF::CLFTypes::ICLFOutput::StatusKind::Warn
                     : CLF::CLFTypes::ICLFOutput::StatusKind::Done;
-                return finishTurn(finalContent, turnStart, finishKind);
+                return finishTurn(finalContent, turnStart, finishKind,
+                                  modelDeclaredEnd);
             }
 
         } catch (const std::exception& e) {
@@ -511,7 +538,8 @@ void CLFAgentLoop::appendWorked(std::string& finalContent,
 std::string CLFAgentLoop::finishTurn(
     std::string& finalContent,
     std::chrono::steady_clock::time_point turnStart,
-    CLF::CLFTypes::ICLFOutput::StatusKind kind) {
+    CLF::CLFTypes::ICLFOutput::StatusKind kind,
+    bool modelDeclaredEnd) {
     // T6: todo 全完成收尾（设计-任务清单UI显示 §3.7，2026-09-02）
     // 判定（C2：收敛至 CLFTodoStore::allDoneSnapshot）：非空 && 全部 completed
     // && !todoPanelDone（无 m_todoDirty，§八 补丁 5）
@@ -542,7 +570,11 @@ std::string CLFAgentLoop::finishTurn(
         }
     }
 
-    appendWorked(finalContent, turnStart);
+    // 模型自发宣告结束 → 不重复拼 worked（模型输出中的标记行保留在
+    // finalContent 内——尊重宣告，2026-09-23 用户拍板）
+    if (!modelDeclaredEnd) {
+        appendWorked(finalContent, turnStart);
+    }
     m_context.addMessage("assistant", finalContent);
     // P1-1: 完成点显式接线（TurnGuard 不设 kind，F20）；kind 由调用方按
     // 结束原因传入：自然停/concluded = Done，max-tokens = Warn（A5 §3.2.1）

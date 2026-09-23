@@ -207,10 +207,13 @@ private:
 
     // A5-concludesTurn：收尾汇聚点（设计-工具调用循环上限机制改造 §3.2.1）——
     // 自然停 / concluded-break 共用；状态点按结束原因传入（Done/Warn）。
-    // 内含 todo 全完成收尾 + worked 拼接 + addMessage + 状态点 + return
+    // 内含 todo 全完成收尾 + worked 拼接 + addMessage + 状态点 + return。
+    // modelDeclaredEnd：模型自发输出了回合结束标记 → 不重复拼接 worked
+    // （尊重宣告——用户拍板 2026-09-23）
     std::string finishTurn(std::string& finalContent,
                            std::chrono::steady_clock::time_point turnStart,
-                           CLF::CLFTypes::ICLFOutput::StatusKind kind);
+                           CLF::CLFTypes::ICLFOutput::StatusKind kind,
+                           bool modelDeclaredEnd = false);
 
     // A5：worked 行拼接（完成分支与触顶路径两处复用；stream 模式内含显式 emit）
     void appendWorked(std::string& finalContent,

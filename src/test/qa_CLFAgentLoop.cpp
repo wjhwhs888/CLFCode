@@ -449,6 +449,74 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         expect(out.interruptEmissions() == 1);
     };
 
+    // ========== SW: 模型自发结束标记（2026-09-23 用户拍板双保险） ==========
+
+    "SW1 模型自发 ✻ Worked（流式）：截断其后追问 + 丢弃 tool_calls + 不重复拼接"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = true;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        // 实机现象复刻：正文 → 自发 ✻ Worked → "用户"标签的模拟追问 →
+        // 声明工具调用（模型"自己发指令自己执行"）
+        mock->pushStream({
+            "data: {\"choices\":[{\"delta\":{\"content\":\"表格结果\"}}]}",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\n✻ Worked for 3s\\n用户\\n列出所有 .md\"}}]}",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_x\",\"function\":{\"name\":\"echo\",\"arguments\":\"\"}}]}}]}",
+            "data: {\"choices\":[{\"finish_reason\":\"tool_calls\"}]}",
+            "data: [DONE]"
+        });
+
+        std::string result = agent->runTurn("列 json");
+        expect(result != "[Interrupted]");
+        expect(mock->streamCallCount() == 1);   // 工具零执行——无第二轮请求
+
+        // 最终 assistant 消息：保留标记行、截断其后追问、worked 仅一次
+        std::string lastAssistant;
+        for (const auto& m : agent->getContext().getMessages())
+            if (m.m_role == "assistant") lastAssistant = m.m_content;
+        expect(lastAssistant.find("✻ Worked for 3s") != std::string::npos);
+        expect(lastAssistant.find("列出所有") == std::string::npos);
+        size_t count = 0, p = 0;
+        while ((p = lastAssistant.find("✻ Worked", p)) != std::string::npos) {
+            ++count;
+            ++p;
+        }
+        expect(count == 1_ul);   // 不重复拼接真 Worked（尊重宣告）
+    };
+
+    "SW2 模型自发 ✻ Worked（同步）：同款截断与丢弃"_test = [] {
+        auto mock = std::make_shared<MockHttpClient>();
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        config.m_stream = false;
+        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        MockOutput out;
+        agent->setOutput(&out);
+
+        mock->pushResponse(R"({
+            "choices": [{
+                "message": {"role": "assistant",
+                    "content": "结果如下\n✻ Worked for 5s\n用户\n再查一下别的",
+                    "tool_calls": [{"id": "call_y", "type": "function",
+                        "function": {"name": "echo", "arguments": "{}"}}]},
+                "finish_reason": "tool_calls"
+            }]
+        })");
+
+        std::string result = agent->runTurn("hi");
+        expect(mock->syncCallCount() == 1);   // 工具零执行
+
+        std::string lastAssistant;
+        for (const auto& m : agent->getContext().getMessages())
+            if (m.m_role == "assistant") lastAssistant = m.m_content;
+        expect(lastAssistant.find("✻ Worked for 5s") != std::string::npos);
+        expect(lastAssistant.find("再查一下别的") == std::string::npos);
+    };
+
     // ========== T4: 状态点状态机（P1-1 接线全表） ==========
 
     "T4a 正常完成：Running → Done 序列，Done 常亮不自动清"_test = [] {
