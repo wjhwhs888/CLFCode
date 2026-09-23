@@ -133,6 +133,20 @@ suite<"CLFCommandDispatcher"> cmdSuite = [] {
         expect(s.dispatcher->matchingCommands("/x").empty());
     };
 
+    "M9 quiesce busy 语义（中断回归钉，2026-09-23）：busyChecker 转态即时生效"_test = [] {
+        // 中断 × /plugin unload quiesce（设计-中断时效性 §13.5 用户"这个确实
+        // 需要"）：中断使回合提前结束 → asyncSubmit busy 在 worker 线程尾
+        // 无条件转 false（CLFAsyncSubmit:25）→ unload 判定窗口放行。
+        // 钉住 dispatcher.busy() 的转发即时性——不缓存 busy 值（"异步提交
+        // 自拒"实抓教训，2.2c：busy 判定必须实时查询）
+        CmdSetup s;
+        bool busy = true;   // 模拟回合执行中（asyncSubmit 提交态）
+        s.dispatcher->setBusyChecker([&busy] { return busy; });
+        expect(s.dispatcher->busy());
+        busy = false;       // 模拟中断后回合结束（worker 线程尾置 false）
+        expect(!s.dispatcher->busy());
+    };
+
     "M6 /exit 精确名也走前缀路径"_test = [] {
         CmdSetup s;
         const auto matches = s.dispatcher->matchingCommands("/exit");

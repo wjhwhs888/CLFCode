@@ -65,6 +65,27 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     auto& m_justInterrupted = m_repl.m_justInterrupted;
     auto& m_dispatcher = m_repl.m_dispatcher;
 
+    // B3（2026-09-23）：中断 UI 收尾统一——ESC 与 Ctrl+C 共用同一套
+    // （状态行"⏹ 中断中…"+hold / 输入框恢复守卫 / CPR 残留剥离 / 冷却）
+    auto doInterruptCleanup = [&](bool wasBusy) {
+        if (wasBusy) {
+            m_interruptCooldownUntil = std::chrono::steady_clock::now()
+                                       + std::chrono::milliseconds(800);  // B2 (b)
+        }
+        m_justInterrupted = true;
+        // B4 修复（2026-09-23）：渲染层守卫（CLFReplView 仅空输入框回填）
+        // 不再被架空——正在输入的内容保留，仅空框时置恢复位
+        if (inputText.empty()) {
+            m_needRestoreInput = true;
+        }
+        m_escCleanupFrames = 3;
+        if (terminal) {
+            terminal->setStatus("⏹ 中断中…");
+            terminal->setStatusHold(true);   // W6：hold 期间 turnTimer 覆盖被忽略
+        }
+        screen->PostEvent(ftxui::Event::Custom);
+    };
+
     if (dbgEvt) {
         std::string kind = e.is_character()
             ? ("Char '" + escDbg(e.character()) + "'")
@@ -356,12 +377,15 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     // === 4. Ctrl+C: 上下文感知分发 ===
     // 验收收敛（用户决策）：空闲时忽略——原"空闲 Ctrl+C 退出"与
     // 用户直觉冲突（误触即退出）；退出统一 Esc Esc / /exit。busy 时中断保留。
+    // B3（2026-09-23）：Ctrl+C 与 ESC 收尾统一——原"只发信号无任何收尾"
+    // 与 ESC 全套收尾（状态行/输入框恢复/CPR 残留剥离）两套观感
     if (e == ftxui::Event::CtrlC) {
         if (dbgEvt)
             dbgEvt("  CtrlC busy="
                    + std::string(asyncSubmit.busy() ? "1" : "0"));
         if (asyncSubmit.busy()) {
             if (terminal) terminal->interruptFromUi();
+            doInterruptCleanup(true);
         }
         // 空闲：消费且无动作（不退出）
         return true;
@@ -386,24 +410,9 @@ bool CLFInputHandler::handle(ftxui::Event e) {
         }
         m_lastEscTime = wasBusy ? std::chrono::steady_clock::time_point{} : now;
 
-        // 5b. 立即中断
+        // 5b. 立即中断（B3：收尾与 Ctrl+C 共用 doInterruptCleanup）
         if (terminal) terminal->interruptFromUi();
-        if (wasBusy) {
-            m_interruptCooldownUntil = now + std::chrono::milliseconds(800);  // (b)
-        }
-        m_justInterrupted = true;
-        // B4 修复（2026-09-23）：去掉无条件 clear——渲染层守卫
-        // （CLFReplView:128-132 仅输入框为空时回填）被架空，正在输入的
-        // 内容被覆盖（设计 §13.4：实现漏掉了守卫语义）
-        if (inputText.empty()) {
-            m_needRestoreInput = true;
-        }
-        m_escCleanupFrames = 3;
-        if (terminal) {
-            terminal->setStatus("⏹ 中断中…");
-            terminal->setStatusHold(true);   // W6：hold 期间 turnTimer 覆盖被忽略
-        }
-        screen->PostEvent(ftxui::Event::Custom);
+        doInterruptCleanup(wasBusy);
         return true;
     }
 

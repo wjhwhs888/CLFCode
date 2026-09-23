@@ -116,6 +116,20 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     // API 调用的 usage 之和；触顶 wrapUp 在 summary 显示之后累加、计入
     // 下一轮，与累计生命周期一致）
     m_turnStartTokens = m_totalTokensUsed;
+    // W-usage（2026-09-23 中断时效性 §13.5 用户拍板）：中断路径也累计 usage——
+    // "发生了的请求就是发生了"。helper 供中断早退点与正常累计点共用；
+    // 中断发生在服务端发出 usage 之前 → 各字段为 0，gate 自然跳过
+    // （不估算——与既有"缺失保持 0"口径一致）
+    auto accumulateUsage = [this](const CLFAssistantResponse& usageSrc) {
+        if (usageSrc.m_usageTotal > 0) {
+            m_totalTokensUsed += usageSrc.m_usageTotal;
+            m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
+            m_lastToolStats.turnTokens = static_cast<int>(
+                m_totalTokensUsed - m_turnStartTokens);
+            if (usageSrc.m_hasCacheField)
+                m_sessionUsage.accumulate(usageSrc.m_usagePrompt, usageSrc.m_usageCacheHit);
+        }
+    };
     // P1-1: 状态点接线——Running 于 turn 开始
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
 
@@ -240,6 +254,15 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                     return std::string("[Error] ") + errorMsg;
                 }
                 if (interrupted || m_interrupted) {
+                    // W-usage：中断早退前累计已到达的 usage（中断早于服务端
+                    // usage 发出 → acc 各字段为 0，helper 内 gate 自然跳过）
+                    CLFAssistantResponse partial;
+                    partial.m_usagePrompt     = acc.getUsagePrompt();
+                    partial.m_usageCompletion = acc.getUsageCompletion();
+                    partial.m_usageTotal      = acc.getUsageTotal();
+                    partial.m_usageCacheHit   = acc.getUsageCacheHit();
+                    partial.m_hasCacheField   = acc.getHasCacheField();
+                    accumulateUsage(partial);
                     emitInterrupted();
                     return std::string("[Interrupted]");
                 }
@@ -288,10 +311,16 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 thinking.stop();
 
                 if (m_interrupted) {
+                    // W-usage：响应已完整返回——从 body 提取 usage 累计
+                    // （连接失败等 wasAborted 场景 body 空 → parse 默认 0，no-op）
+                    accumulateUsage(
+                        m_protocolAdapter.parseAssistantResponse(response.m_body));
                     emitInterrupted();
                     return std::string("[Interrupted]");
                 }
                 if (response.m_wasAborted) {
+                    accumulateUsage(
+                        m_protocolAdapter.parseAssistantResponse(response.m_body));
                     emitInterrupted();
                     return std::string("[Interrupted]");
                 }
@@ -315,20 +344,12 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
                 parsed = m_protocolAdapter.parseAssistantResponse(response.m_body);
             }
 
-            // P2-4/R3: 只累计已落定的 usage（正常解析路径；
-            // 中断/错误路径在此之前已 return，usage 未到达则不累计）
-            if (parsed.m_usageTotal > 0) {
-                m_totalTokensUsed += parsed.m_usageTotal;
-                m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
-                m_lastToolStats.turnTokens = static_cast<int>(
-                    m_totalTokensUsed - m_turnStartTokens);
-                // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
-                // 同生命周期不重置，R3 同规则——仅正常解析路径累计）。
-                // 仅响应携带缓存字段才累计——第三方 provider 无此字段时
-                // 不显示（"无法统计"），区别于 DeepSeek 真实零命中（显示 0%）
-                if (parsed.m_hasCacheField)
-                    m_sessionUsage.accumulate(parsed.m_usagePrompt, parsed.m_usageCacheHit);
-            }
+            // P2-4/R3: 只累计已落定的 usage（正常解析路径；W-usage 2026-09-23：
+            // 中断早退点已共用同一 helper——"发生了的请求就是发生了"）。
+            // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
+            // 同生命周期不重置）。仅响应携带缓存字段才累计——第三方 provider
+            // 无此字段时不显示（"无法统计"），区别于 DeepSeek 真实零命中（显示 0%）
+            accumulateUsage(parsed);
 
             // finish_reason 检查
             if (!CLFProtocolAdapter::isValidFinish(parsed)) {
