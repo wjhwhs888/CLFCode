@@ -45,6 +45,9 @@ public:
     void emitStyledLine(const std::string& line, LineStyle style) override;
     void setStatus(const std::string& title, int cur=-1, int total=-1) override;
     void setStatusTextOnly(const std::string& title) override;
+    // 状态行保持（W6 修复 2026-09-23）：hold 期间 setStatusTextOnly 被忽略——
+    // "⏹ 中断中…" 不被 turnTimer 每秒覆盖；setStatus（权威路径）自动解除
+    void setStatusHold(bool hold);
     void showProgress(const std::vector<std::string>& lines) override;
     void finishProgress(const std::string& summary) override;
     bool confirm(const std::string& prompt) override;
@@ -132,6 +135,7 @@ private:
     int          m_thinkingElapsed = 0;  // 思考总耗时（秒）
     std::chrono::steady_clock::time_point m_thinkingStart;
     std::string  m_statusText;
+    bool         m_statusHold = false;   // W6：hold 期间 setStatusTextOnly 忽略
     ICLFOutput::StatusKind m_statusKind = ICLFOutput::StatusKind::None;
     std::vector<std::string> m_progressLines;
     // 恢复回显折叠块（P2-1）

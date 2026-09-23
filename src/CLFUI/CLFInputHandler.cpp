@@ -60,6 +60,7 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     auto& m_needRestoreInput = m_repl.m_needRestoreInput;
     auto& m_lastSubmittedInput = m_repl.m_lastSubmittedInput;
     auto& m_lastEscTime = m_repl.m_lastEscTime;
+    auto& m_interruptCooldownUntil = m_repl.m_interruptCooldownUntil;  // B2 (b) 冷却
     auto& m_escCleanupFrames = m_repl.m_escCleanupFrames;
     auto& m_justInterrupted = m_repl.m_justInterrupted;
     auto& m_dispatcher = m_repl.m_dispatcher;
@@ -371,25 +372,37 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     if (e == ftxui::Event::Escape
         || e == ftxui::Event::Special({27, 27})) {
         // 5a. 双击检测（空闲时 500ms 内连续两次 Esc → 退出）
+        // B2 修复 (a)+(b)（2026-09-23，§13.4 定稿）：(a) 中断那次 ESC 不参与
+        // 双击计时 + (b) 中断后 800ms 冷却——修复越快越危险：中断后回合
+        // ~50ms 即空闲，用户"连按 ESC 确保停住"的习惯会命中退出分支
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - m_lastEscTime).count();
-        if (elapsed < 500 && !asyncSubmit.busy()) {
+        const bool wasBusy = asyncSubmit.busy();
+        if (elapsed < 500 && !wasBusy && now >= m_interruptCooldownUntil) {
             m_lastEscTime = {};
             m_dispatcher->handle("/exit");
             return true;
         }
-        m_lastEscTime = now;
+        m_lastEscTime = wasBusy ? std::chrono::steady_clock::time_point{} : now;
 
         // 5b. 立即中断
         if (terminal) terminal->interruptFromUi();
+        if (wasBusy) {
+            m_interruptCooldownUntil = now + std::chrono::milliseconds(800);  // (b)
+        }
         m_justInterrupted = true;
-        if (asyncSubmit.busy() || m_needRestoreInput) {
-            inputText.clear();
+        // B4 修复（2026-09-23）：去掉无条件 clear——渲染层守卫
+        // （CLFReplView:128-132 仅输入框为空时回填）被架空，正在输入的
+        // 内容被覆盖（设计 §13.4：实现漏掉了守卫语义）
+        if (inputText.empty()) {
             m_needRestoreInput = true;
         }
         m_escCleanupFrames = 3;
-        if (terminal) terminal->setStatus("⏹ 中断中…");
+        if (terminal) {
+            terminal->setStatus("⏹ 中断中…");
+            terminal->setStatusHold(true);   // W6：hold 期间 turnTimer 覆盖被忽略
+        }
         screen->PostEvent(ftxui::Event::Custom);
         return true;
     }

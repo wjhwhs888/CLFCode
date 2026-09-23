@@ -247,6 +247,7 @@ void CLFTerminal::emitRaw(const std::string& data) {
 void CLFTerminal::setStatus(const std::string& title, int cur, int total) {
     {
         std::lock_guard lock(m_mutex);
+        m_statusHold = false;   // W6：权威设置路径解除 hold（TurnGuard 清状态也走此）
         if (title.empty()) {
             m_statusText.clear();
         } else if (cur >= 0 && total > 0) {
@@ -272,9 +273,15 @@ void CLFTerminal::emitStyledLine(const std::string& line, LineStyle style) {
 void CLFTerminal::setStatusTextOnly(const std::string& title) {
     {
         std::lock_guard lock(m_mutex);
+        if (m_statusHold) return;   // W6：hold 期间忽略（"⏹ 中断中…" 不被覆盖）
         m_statusText = title;
     }
     // 不调 requestRefresh，由其他 emitContent 调用顺便刷新
+}
+
+void CLFTerminal::setStatusHold(bool hold) {
+    std::lock_guard lock(m_mutex);
+    m_statusHold = hold;
 }
 
 void CLFTerminal::showProgress(const std::vector<std::string>& lines) {

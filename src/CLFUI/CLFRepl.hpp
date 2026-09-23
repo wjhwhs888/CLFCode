@@ -78,6 +78,9 @@ private:
 
     // 快捷键状态
     std::chrono::steady_clock::time_point m_lastEscTime;   // 双击退出计时
+    // B2 修复 (b)（2026-09-23）：中断后 800ms 冷却——修复越快越危险
+    // （中断后回合 ~50ms 即空闲，连按 ESC 习惯会命中双击退出）
+    std::chrono::steady_clock::time_point m_interruptCooldownUntil;
     bool        m_justInterrupted = false;  // ESC 中断标记（Renderer 剥离 CPR 残留）
     bool        m_needRestoreInput = false; // 中断后需恢复上次提交的输入
     int         m_escCleanupFrames = 0;     // ESC 后持续剥离 CPR 的帧数
