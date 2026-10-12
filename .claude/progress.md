@@ -59,7 +59,7 @@
 - **用户 25 条决策全落档**（总纲 §五）：含四点架构定调/9 条议题定调/confirm 超时/event_log/装饰剥离/并发进度/labels 兼容/resume 重放/命名规范（事件化重构 1/2/3 + 占位册无号）/函数粒度 ≤50 行/裸指针纪律/生产者-消费者落盘/角色术语/自问自答关系/dsh 取证
 - **文件改动清单**（总纲 §七）：新增 8 源文件（CLFEvents/CLFEventBus/SessionWriter/SessionReplayer/ToolScheduler/TerminalEventAdapter/TerminalTexts）+ 6 测试套件；AgentLoop 单文件函数级拆分（用户定调：调度编排即单一职责）
 - **排期**：明天动工——分册 1 步骤 0（runTurn 拆 5 Section + 二级函数化，纯搬移零行为变化，ctest+实机逐字回归）→ 步骤 1-2 → 分册 2 → 分册 3
-- **提交**：本批分析+设计+进度已提交推送（commit 见 git log）
+- **提交**：本批分析+设计+进度已提交推送（854ffa2，7 文件 +1342 行）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
