@@ -81,12 +81,13 @@ const boost::ut::suite<"CLFTipsBar"> tests = [] {
         std::filesystem::remove(path);
     };
 
-    "P4 静默超阈值：无活动累计 → 浅红异常文案"_test = [] {
+    "P4 静默超阈值：busy 中无活动累计 → 浅红异常文案"_test = [] {
         const std::string path = writeTipsFile({"条目一"});
         MockOutput out;
-        // 间隔 1s / 阈值 3s：手动 tick 3 次（无活动）→ 触发
+        // 间隔 1s / 阈值 3s：手动 tick 3 次（busy 中无活动）→ 触发
         CLFTipsBar bar(&out, 1, 3, path, /*startTimer=*/false);
 
+        bar.setBusy(true);                    // 回合内（render 每帧写入的 busy 快照）
         bar.tick();  // silence=1
         bar.tick();  // silence=2
         expect(bar.currentLine(true).find("无响应") == std::string::npos);
@@ -101,6 +102,7 @@ const boost::ut::suite<"CLFTipsBar"> tests = [] {
         MockOutput out;
         CLFTipsBar bar(&out, 1, 3, path, /*startTimer=*/false);
 
+        bar.setBusy(true);
         bar.tick(); bar.tick(); bar.tick();   // 触发异常态
         expect(bar.currentLine(true).find("无响应") != std::string::npos);
 
@@ -108,6 +110,33 @@ const boost::ut::suite<"CLFTipsBar"> tests = [] {
         bar.tick();                           // 检测到增量 → 静默清零
         expect(bar.currentLine(true).find("无响应") == std::string::npos);
         expect(bar.currentLine(true).find("条目") != std::string::npos);
+
+        std::filesystem::remove(path);
+    };
+
+    "P7 回合外静默清零：闲置后新回合不误报（2026-10-12 实机取证回归）"_test = [] {
+        const std::string path = writeTipsFile({"条目一"});
+        MockOutput out;
+        CLFTipsBar bar(&out, 1, 3, path, /*startTimer=*/false);
+
+        // 回合内触发异常态
+        bar.setBusy(true);
+        bar.tick(); bar.tick(); bar.tick();
+        expect(bar.currentLine(true).find("无响应") != std::string::npos);
+
+        // 回合结束（render(false) 更新快照）→ 下一 tick 静默清零，
+        // 用户闲置期间不再累积（原缺陷：闲置 1 小时 → 新回合误报"已 3600s"）
+        bar.setBusy(false);
+        bar.tick();
+        bar.tick();
+
+        // 闲置许久后新提问：从 0 开始计——不误报历史闲置时长
+        bar.setBusy(true);
+        bar.tick();   // silence=1 < 3
+        bar.tick();   // silence=2
+        expect(bar.currentLine(true).find("无响应") == std::string::npos);
+        bar.tick();   // silence=3 → 新回合内真无输出才触发
+        expect(bar.currentLine(true).find("无响应") != std::string::npos);
 
         std::filesystem::remove(path);
     };

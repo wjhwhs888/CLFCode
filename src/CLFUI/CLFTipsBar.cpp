@@ -71,6 +71,15 @@ std::vector<std::string> CLFTipsBar::loadEntries(const std::string& tipsPath) co
 }
 
 void CLFTipsBar::tick() {
+    if (!m_busy.load()) {
+        // 回合外（用户闲置）：无"无响应"语义——静默清零。
+        // 2026-10-12 实机取证：原实现无条件累积（回合结束后 timer 持续
+        // tick、activityCount 不再增长），用户闲置 1 小时后新回合误报
+        // "⚠ 已 3600s 无响应"——把用户闲置当成了 AI 无响应。
+        m_silenceSec = 0;
+        ++m_rotateIndex;
+        return;
+    }
     const uint64_t now = m_output ? m_output->activityCount() : 0;
     if (now != m_lastActivity.load()) {
         // 有输出活动 → 静默清零（异常消除回灰轮播）
@@ -93,6 +102,7 @@ std::string CLFTipsBar::currentLine(bool busy) const {
 }
 
 ftxui::Element CLFTipsBar::render(bool busy) const {
+    setBusy(busy);   // 每帧更新快照供 tick 读取（回合边界判断）
     const std::string line = currentLine(busy);
     if (line.empty()) return ftxui::emptyElement();
     const bool isWarning = line.rfind("⚠", 0) == 0;

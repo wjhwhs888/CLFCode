@@ -47,7 +47,12 @@ public:
     std::string currentLine(bool busy) const;
 
     // 渲染为 Element（qa 不测渲染，人工验收；currentLine 覆盖逻辑测试）
+    // 每帧更新 busy 快照（m_busy）——tick 读取以区分"回合外闲置"与"回合内无响应"
     ftxui::Element render(bool busy) const;
+
+    // busy 快照写入（render 每帧调用；qa 手动 tick 前调用模拟回合内/外）
+    // const：写 mutable 原子成员，供 const render 调用
+    void setBusy(bool busy) const { m_busy.store(busy); }
 
     // 一个轮播周期（内部 CLFPeriodicTimer 调用；qa 直接调用）
     void tick();
@@ -67,6 +72,7 @@ private:
     std::atomic<uint64_t>        m_silenceSec{0};   // 累计静默秒（ticker 写 / 渲染读）
     std::atomic<size_t>          m_rotateIndex{0};  // 轮播索引
     std::atomic<uint64_t>        m_lastActivity{0}; // 上次 tick 时的活动计数
+    mutable std::atomic<bool>    m_busy{false};     // busy 快照（render 每帧写 / tick 读）
     std::unique_ptr<CLF::CLFTypes::CLFPeriodicTimer> m_timer;
 };
 

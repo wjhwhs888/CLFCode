@@ -50,6 +50,15 @@
   - CHANGELOG v0.9.0 段 + VERSION bump v0.9.0 + tag v0.9.0（用户授权）
 - **待办**：① thinking 治理批（等 v4.1 pro 出来再定）② 阶段 3/dsh（决策门挂起）③ 平台层第二期（Linux 三系统，§十五 矩阵待排期）④ 文案强化（中断文案加"先询问用户"——待用户拍板）
 
+### ▶ 闲置后新回合误报"无响应"修复 ✅ 代码完成（2026-10-12，未提交推送）
+- **用户报告**：LLM 回复完成后闲置约 1 小时再提问，tips 行显示"⚠ 已 3600s 无响应"警告——显示有问题
+- **取证（CLFTipsBar.cpp 全链路）**：`tick()` 静默判定依据 = `activityCount()`（输出活动计数），**不感知 busy 状态**——回合结束后 timer 每 5s 持续 tick、activityCount 不再增长 → `m_silenceSec` 无限累积；用户闲置 1 小时再提问 → busy=true → 立即显示"⚠ 已 3600s 无响应"——把**用户闲置时间误判成 AI 无响应时间**。设计意图（A5 §3.4 + P4/P5 用例）= busy 期间无输出才警告
+- **修根（三处）**：① hpp 加 `mutable std::atomic<bool> m_busy` 快照 + `setBusy()`（const，写 mutable 原子供 const render 调用）② cpp：`render()` 每帧 `setBusy(busy)`；`tick()` 回合外（!m_busy）→ 静默清零（闲置不累积，轮播索引照常推进）③ qa：P4/P5 补 setBusy(true) 前置 + 新增 **P7 回归**（回合内触发 → 回合外 tick 清零 → 重新 busy 从 0 计——用户 bug 场景最小复现）
+- **验证**：qa_CLFTipsBar 7 tests / 16 asserts 全绿；ctest 39/39 全绿；--version 冒烟 exit=0
+- **编译实抓**：C2662——非 const setBusy 被 const render 调用 → setBusy 改 const（mutable 原子）
+- **CHANGELOG 未发布段已加**（"闲置后新提问误报'无响应'"修复条目）
+- **待办**：提交推送（用户指示）
+
 ### ▶ todo_write 批量 update 修复 ✅✅ 全闭环（2026-10-12，已提交推送）
 - **用户定调**：显示问题不大、不影响实际功能——CHANGELOG 未发布段记录，攒下次发布
 - **用户报告**：任务完成后清单显示 3/4，最后一步"讲解 GDAL/QGIS 精简组合安装方案"停在 ⏳（任务实际已讲完）
