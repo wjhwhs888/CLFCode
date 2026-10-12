@@ -50,6 +50,19 @@
   - CHANGELOG v0.9.0 段 + VERSION bump v0.9.0 + tag v0.9.0（用户授权）
 - **待办**：① thinking 治理批（等 v4.1 pro 出来再定）② 阶段 3/dsh（决策门挂起）③ 平台层第二期（Linux 三系统，§十五 矩阵待排期）④ 文案强化（中断文案加"先询问用户"——待用户拍板）
 
+### ▶ todo_write 批量 update 修复 ✅✅ 全闭环（2026-10-12，已提交推送）
+- **用户定调**：显示问题不大、不影响实际功能——CHANGELOG 未发布段记录，攒下次发布
+- **用户报告**：任务完成后清单显示 3/4，最后一步"讲解 GDAL/QGIS 精简组合安装方案"停在 ⏳（任务实际已讲完）
+- **取证链（发布版日志 + jsonl 双重实证，用户判断"大模型的问题"基本正确）**：
+  - iter=8 最终消息 finish=stop 无 tool_calls——**模型确实忘了发最后一项的 completed**（模型自认属实）；屏幕 "✻ Worked for 27s" 是程序正常拼的（appendWorked 格式 `\n \n✻ …` 与 jsonl 逐字节吻合），v0.9.1 防御未涉及（无 mark 可匹配，无 warn 日志）
+  - **取证挖出程序侧真缺陷**：iter=4 模型发**批量 update**（todos 数组、4 项全带 id：1-3 标 completed + 4 标 in_progress，语义完全合法）被拒——`CLFBuiltinTools.cpp` update 只认顶层单条 id，todos 数组被无视 → "未找到 id= 的待办项"（54 chars 吻合）。后果：第 4 项 in_progress 标记丢失 + 模型补救多花 3 次 API 调用（iter=5/6/7 逐个单条补救）打乱节奏。描述虽写清"todos 是 create 专用"，但模型对"整表替换"的对称推断（create 用数组 → update 也用数组）是自然行为，拒绝合法语义 = 程序健壮性缺陷
+- **修复（用户拍板：只修程序侧批量 update，不碰模型引导文案）**：
+  - update 分支重构：`updateOne` lambda（id 定位 + status/content 修改）收敛单条/批量两形式；批量 = todos 数组逐项复用，每项必须带 id（缺 id 报错），**任一项失败整体不写回**（与单条失败同语义，原子性）；单条走顶层 id 原语义
+  - 工具描述同步：todos 字段 "create 用" → "create / update（批量）用，批量时每项必须带 id"
+- **验证**：qa_CLFBuiltinTools 新增 B5a-d 4 例（批量多项 / 含不存在 id 整体失败原子性 / 缺 id 报错 / 单条回归）——B5a 即原始 bug 场景最小复现；**ctest 39/39 全绿** + --version 冒烟 exit=0
+- **CHANGELOG 未发布段已加**（"任务清单批量更新被拒"修复条目——用户视角文案）；发布版同步注意：改的是代码，需下次发布或手动同步 exe
+- **收尾 ✅（2026-10-12）**：已提交推送（commit 见 git log）
+
 ### ▶ v0.9.0 发布后实机回响 ✅✅（2026-09-23 晚，**v0.9.1 已发布**）
 - **"自问自答"破案 + 双保险防御（792d83d + a170727，随 v0.9.1 发布）**：
   - 取证（C 盘发布版日志 + jsonl 严格解析）：非程序 bug——jsonl 的 user 消息全部干净、日志 [Submit] 与用户操作逐条吻合（程序零自动提交）；异常文本（`> 追问`、`用户\n指令`、假 `✻ Worked` 行）全部在 **assistant 消息内 = 模型输出**——DeepSeek 长上下文高频对话中"扮演用户"续写追问并自行执行（从历史上下文学会了 Worked 格式）

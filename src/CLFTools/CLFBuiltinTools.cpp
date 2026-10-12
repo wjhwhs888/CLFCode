@@ -141,29 +141,55 @@ std::string todoWriteHandlerImplInternal(const std::string& args,
             result["success"] = true;
             result["todos"]   = renderList();
         } else if (action == "update") {
-            const std::string id = params.value("id", "");
             auto items = agent.getTodos();   // 取副本后整体写回
-            bool found = false;
-            for (auto& t : items) {
-                if (t.m_id != id) continue;
-                found = true;
-                if (params.contains("status") && params["status"].is_string()) {
-                    const auto st = params["status"].get<std::string>();
-                    if (!isValidTodoStatus(st)) {
+            // 单条更新语义：id 定位 + status/content 修改。批量形式（todos 数组）
+            // 逐项复用同一语义——2026-10-12 实机取证：模型对 create"整表替换"的
+            // 对称推断发批量 update（每项带 id）被拒 → in_progress 标记丢失、
+            // 补救节奏被打乱（多花 3 次 API 调用）。合法语义不该拒。
+            auto updateOne = [&items](const nlohmann::json& patch,
+                                      const std::string& id) -> std::string {
+                for (auto& t : items) {
+                    if (t.m_id != id) continue;
+                    if (patch.contains("status") && patch["status"].is_string()) {
+                        const auto st = patch["status"].get<std::string>();
+                        if (!isValidTodoStatus(st))
+                            return "status 非法（应为 pending/in_progress/completed）: " + st;
+                        t.m_status = st;
+                    }
+                    if (patch.contains("content") && patch["content"].is_string()) {
+                        t.m_content = patch["content"].get<std::string>();
+                    }
+                    return "";   // id 唯一，命中即返回
+                }
+                return "未找到 id=" + id + " 的待办项";
+            };
+
+            if (params.contains("todos") && params["todos"].is_array()) {
+                // 批量：每项必须带 id；任一项失败整体不写回（与单条失败同语义）
+                for (const auto& t : params["todos"]) {
+                    if (!t.is_object()) continue;
+                    const std::string id = t.value("id", "");
+                    if (id.empty()) {
                         result["success"] = false;
-                        result["error"]   = "status 非法（应为 pending/in_progress/completed）: " + st;
+                        result["error"]   = "todos 批量更新要求每项带 id";
                         return result.dump();
                     }
-                    t.m_status = st;
+                    const std::string err = updateOne(t, id);
+                    if (!err.empty()) {
+                        result["success"] = false;
+                        result["error"]   = err;
+                        return result.dump();
+                    }
                 }
-                if (params.contains("content") && params["content"].is_string()) {
-                    t.m_content = params["content"].get<std::string>();
+            } else {
+                // 单条：顶层 id（原语义）
+                const std::string err =
+                    updateOne(params, params.value("id", ""));
+                if (!err.empty()) {
+                    result["success"] = false;
+                    result["error"]   = err;
+                    return result.dump();
                 }
-            }
-            if (!found) {
-                result["success"] = false;
-                result["error"]   = "未找到 id=" + id + " 的待办项";
-                return result.dump();
             }
             agent.setTodos(std::move(items));
             // J3 接线：update 即写快照（每次状态变化落盘，崩溃进度保留到最近一步）
@@ -229,7 +255,7 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
             "action": {"type": "string", "description": "create（整表替换）/ update / list / clear"},
             "todos": {
                 "type": "array",
-                "description": "create 用：待办数组，元素含 content（必填）、可选 id 与 status",
+                "description": "create / update（批量）用：待办数组，元素含 content（create 必填）、可选 id 与 status；update 批量时每项必须带 id",
                 "items": {
                     "type": "object",
                     "properties": {

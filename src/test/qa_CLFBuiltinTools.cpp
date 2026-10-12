@@ -165,6 +165,87 @@ const boost::ut::suite<"CLFBuiltinTools"> tests = [] {
         expect(r3.find("\"success\":true") != std::string::npos);
         expect(agent.getTodos().empty());
     };
+
+    // ========== B5: update 批量形式（2026-10-12 实机取证：批量 update 被拒
+    // → in_progress 标记丢失 + 补救节奏打乱。合法语义不该拒） ==========
+
+    "B5a 批量 update 一次改多项"_test = [] {
+        using CLF::CLFCore::CLFAgentLoop;
+        using CLF::CLFCore::CLFAgentConfig;
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        CLFAgentLoop agent(config);
+
+        todoWriteHandlerImpl(
+            R"({"action":"create","todos":[{"content":"任务1"},{"content":"任务2"},{"content":"任务3"}]})",
+            agent);
+        const auto r = todoWriteHandlerImpl(
+            R"({"action":"update","todos":[{"id":"1","status":"completed"},{"id":"2","status":"in_progress"}]})",
+            agent);
+        expect(r.find("\"success\":true") != std::string::npos);
+        const auto todos = agent.getTodos();
+        expect(todos.size() == 3_ul);
+        expect(todos[0].m_status == std::string("completed"));
+        expect(todos[1].m_status == std::string("in_progress"));
+        expect(todos[2].m_status == std::string("pending"));   // 未在批量中的项不动
+    };
+
+    "B5b 批量含不存在 id 整体失败不写回"_test = [] {
+        using CLF::CLFCore::CLFAgentLoop;
+        using CLF::CLFCore::CLFAgentConfig;
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        CLFAgentLoop agent(config);
+
+        todoWriteHandlerImpl(
+            R"({"action":"create","todos":[{"content":"任务1"},{"content":"任务2"}]})",
+            agent);
+        const auto r = todoWriteHandlerImpl(
+            R"({"action":"update","todos":[{"id":"1","status":"completed"},{"id":"99","status":"completed"}]})",
+            agent);
+        expect(r.find("\"success\":false") != std::string::npos);
+        expect(r.find("未找到 id=99") != std::string::npos);
+        const auto todos = agent.getTodos();
+        // 原子性：任一项失败 → 已更新的 1 也不写回
+        expect(todos[0].m_status == std::string("pending"));
+        expect(todos[1].m_status == std::string("pending"));
+    };
+
+    "B5c 批量项缺 id 报错"_test = [] {
+        using CLF::CLFCore::CLFAgentLoop;
+        using CLF::CLFCore::CLFAgentConfig;
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        CLFAgentLoop agent(config);
+
+        todoWriteHandlerImpl(
+            R"({"action":"create","todos":[{"content":"任务1"}]})",
+            agent);
+        const auto r = todoWriteHandlerImpl(
+            R"({"action":"update","todos":[{"status":"completed"}]})", agent);
+        expect(r.find("\"success\":false") != std::string::npos);
+        expect(r.find("每项带 id") != std::string::npos);
+    };
+
+    "B5d 单条语义回归（原路径）"_test = [] {
+        using CLF::CLFCore::CLFAgentLoop;
+        using CLF::CLFCore::CLFAgentConfig;
+        CLFAgentConfig config;
+        config.m_apiKey = "k";
+        CLFAgentLoop agent(config);
+
+        todoWriteHandlerImpl(
+            R"({"action":"create","todos":[{"content":"任务1"}]})",
+            agent);
+        const auto r1 = todoWriteHandlerImpl(
+            R"({"action":"update","id":"1","status":"completed"})", agent);
+        expect(r1.find("\"success\":true") != std::string::npos);
+        expect(agent.getTodos()[0].m_status == std::string("completed"));
+        const auto r2 = todoWriteHandlerImpl(
+            R"({"action":"update","id":"9","status":"completed"})", agent);
+        expect(r2.find("\"success\":false") != std::string::npos);
+        expect(r2.find("未找到 id=9") != std::string::npos);
+    };
 };
 
 int main() {}
