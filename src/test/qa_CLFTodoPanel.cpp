@@ -11,11 +11,11 @@
 #include <string>
 #include <vector>
 
-#include "CLFUI/CLFRepl.hpp"
+#include "CLFTUI/CLFRepl.hpp"
 
 using namespace boost::ut;
-using CLF::CLFUI::buildTodoPanelLines;
-using CLF::CLFUI::CLFTodoPanelLine;
+using CLF::CLFTUI::buildTodoPanelLines;
+using CLF::CLFTUI::CLFTodoPanelLine;
 using CLF::CLFCore::CLFTodoItem;
 
 const boost::ut::suite<"CLFTodoPanel"> tests = [] {

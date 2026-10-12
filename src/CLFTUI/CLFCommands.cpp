@@ -1,8 +1,8 @@
 // CLFCommands.cpp — 内置斜杠命令 handler 实现
 // 每个命令一个独立函数，通过 registerBuiltinCommands() 批量注册
 
-#include "CLFUI/CLFCommandDispatcher.hpp"
-#include "CLFUI/CLFTerminal.hpp"   // 输入回显视觉锚点（cyan/bold/gray）
+#include "CLFTUI/CLFCommandDispatcher.hpp"
+#include "CLFTUI/CLFTerminal.hpp"   // 输入回显视觉锚点（cyan/bold/gray）
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
@@ -20,7 +20,7 @@
 #include <sstream>
 #include <string>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 using namespace CLF::CLFCore;
 using CLF::CLFTypes::ICLFOutput;
 
@@ -557,4 +557,4 @@ void registerBuiltinCommands(CLFCommandDispatcher& dispatcher) {
     reg("/version", "显示 CLFCode 版本号",                  cmdVersion);
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

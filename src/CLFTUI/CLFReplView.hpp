@@ -20,9 +20,9 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/dom/elements.hpp>
 
-#include "CLFUI/CLFScrollView.hpp"
+#include "CLFTUI/CLFScrollView.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFRepl;
 class CLFTerminal;
@@ -85,4 +85,4 @@ private:
     CLFScrollView m_scrollView;   // 原 run() 局部 scrollView
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

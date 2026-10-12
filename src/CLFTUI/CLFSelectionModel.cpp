@@ -1,11 +1,11 @@
 // CLFSelectionModel.cpp — 选区状态机实现
 
-#include "CLFUI/CLFSelectionModel.hpp"
+#include "CLFTUI/CLFSelectionModel.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：宽度工具实现收敛至此
 
 #include <algorithm>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 using CLF::CLFCore::CLFTextUtil;   // A2
 
 // ============================================================================
@@ -143,4 +143,4 @@ std::string CLFSelectionModel::extract(const Range& r,
     return out;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

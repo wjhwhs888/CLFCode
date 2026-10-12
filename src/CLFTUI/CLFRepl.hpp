@@ -15,17 +15,17 @@
 #include <thread>
 #include <vector>
 
-#include "CLFUI/CLFAnsiParser.hpp"  // m_lastRowSegments 完整类型（渲染样式分段）
-#include "CLFUI/CLFSelectionModel.hpp"
-#include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
-#include "CLFUI/CLFTipsBar.hpp"    // A5：Tips 行（unique_ptr 成员）
+#include "CLFTUI/CLFAnsiParser.hpp"  // m_lastRowSegments 完整类型（渲染样式分段）
+#include "CLFTUI/CLFSelectionModel.hpp"
+#include "CLFTUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
+#include "CLFTUI/CLFTipsBar.hpp"    // A5：Tips 行（unique_ptr 成员）
 #include "CLFCore/CLFPasserby.hpp" // 会话节奏观察器（值成员）
 #include "CLFTypes/CLFTypes.hpp"   // CLFTodoItem（buildTodoPanelLines 参数）
 
 namespace CLF::CLFCore { class CLFAgentLoop; class CLFPluginManager; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFCommandDispatcher;
 
@@ -107,4 +107,4 @@ private:
     std::atomic<bool> m_dragAutoScroll{false};
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

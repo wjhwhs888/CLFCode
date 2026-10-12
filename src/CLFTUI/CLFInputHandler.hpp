@@ -23,7 +23,7 @@
 #include <ftxui/component/event.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFRepl;
 class CLFReplView;
@@ -70,4 +70,4 @@ private:
     bool m_dragMoved = false;
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

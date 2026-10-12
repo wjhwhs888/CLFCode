@@ -6,7 +6,7 @@
 #include <ftxui/component/event.hpp>
 #include <ftxui/dom/elements.hpp>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFScrollView {
 public:
@@ -56,4 +56,4 @@ private:
     int  m_endLine        = 0;
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

@@ -1,10 +1,10 @@
 // CLFPasteCoalescer.cpp — 粘贴事件突发合并器实现
 // 状态机与线程模型详见设计文档 §2.1/§2.2
 
-#include "CLFUI/CLFPasteCoalescer.hpp"
+#include "CLFTUI/CLFPasteCoalescer.hpp"
 #include "CLFCore/CLFLogger.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 CLFPasteCoalescer::CLFPasteCoalescer(std::function<void()> wakeCb, int quietWindowMs,
                                      int pasteBurstMs)
@@ -163,4 +163,4 @@ bool CLFPasteCoalescer::consumePendingConfirmation() {
     return true;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

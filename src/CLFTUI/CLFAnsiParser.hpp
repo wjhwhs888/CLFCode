@@ -5,7 +5,7 @@
 // 同机制，2026-09-08 根因修复 v2）
 //
 // example:
-//auto segs = CLF::CLFUI::CLFAnsiParser::parse("\033[36m❯ \033[0m输入");
+//auto segs = CLF::CLFTUI::CLFAnsiParser::parse("\033[36m❯ \033[0m输入");
 //// segs = [{text:"❯ ", bold:false, fg:36}, {text:"输入", bold:false, fg:-1}]
 
 #pragma once
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 struct CLFAnsiSegment {
     std::string text;
@@ -35,4 +35,4 @@ public:
     static bool isSgrSequence(const std::string& seq);
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

@@ -14,7 +14,7 @@
 #include <string>
 #include <thread>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFPasteCoalescer {
 public:
@@ -82,4 +82,4 @@ private:
     int         m_pasteBurstMs;          // Return 前置突发判定窗口
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

@@ -1,12 +1,12 @@
 // CLFTerminal.cpp — ICLFOutput 实现 (FTXUI 驱动)
-#include "CLFUI/CLFTerminal.hpp"
-#include "CLFUI/CLFAnsi.hpp"
-#include "CLFUI/CLFAnsiParser.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFAnsi.hpp"
+#include "CLFTUI/CLFAnsiParser.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"
 // （平台层收敛 2026-09-23：原 windows.h include 为死 include——全文件零
 // Windows 符号使用，已删）
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 using CLF::CLFCore::CLFTextUtil;   // A2
 
 using namespace ftxui;
@@ -394,4 +394,4 @@ void CLFTerminal::clearThinking() {
     }
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

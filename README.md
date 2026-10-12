@@ -32,7 +32,7 @@ src/
 ├── CLFCapabilities/  — 能力层 (FileOps/Diff，阶段 2 插件化迁移单元)
 ├── CLFPluginApi/     — 插件 ABI (跨 DLL 共享接口，禁依赖其目录之外)
 ├── CLFTools/         — 工具实现 (文件/命令/搜索/网络)
-├── CLFUI/            — 终端 UI (FTXUI 组件树)
+├── CLFTUI/            — 终端 UI (FTXUI 组件树)
 ├── main.cpp          — 组合根 (依赖注入)
 └── test/             — 单元测试 (含测试插件 plugins/)
 ```

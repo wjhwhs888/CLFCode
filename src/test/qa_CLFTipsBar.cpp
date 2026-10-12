@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-#include "CLFUI/CLFTipsBar.hpp"
+#include "CLFTUI/CLFTipsBar.hpp"
 
 using namespace boost::ut;
-using CLF::CLFUI::CLFTipsBar;
+using CLF::CLFTUI::CLFTipsBar;
 using CLF::CLFTypes::ICLFProgressOutput;
 
 namespace {

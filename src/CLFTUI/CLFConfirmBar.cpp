@@ -1,9 +1,9 @@
 // CLFConfirmBar.cpp — 确认栏组件渲染实现
 
-#include "CLFUI/CLFConfirmBar.hpp"
-#include "CLFUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFConfirmBar.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 CLFConfirmBar::PromptParts CLFConfirmBar::splitPrompt(const std::string& prompt) {
     size_t nl = prompt.find('\n');
@@ -56,4 +56,4 @@ ftxui::Element CLFConfirmBar::render(const CLFTerminal::ContentSnapshot& snap) c
     return ftxui::vbox(std::move(all));
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

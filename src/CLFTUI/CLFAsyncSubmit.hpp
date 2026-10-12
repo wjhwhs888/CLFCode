@@ -7,7 +7,7 @@
 #include <functional>
 #include <thread>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFAsyncSubmit {
 public:
@@ -27,4 +27,4 @@ private:
     std::atomic<bool> m_submitting{false};
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

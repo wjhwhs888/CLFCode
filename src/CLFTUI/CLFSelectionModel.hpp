@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 // 渲染行来源类别（行映射表 RowMap 的每行记录）
 enum class RowKind {
@@ -74,4 +74,4 @@ private:
     bool m_active = false;
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

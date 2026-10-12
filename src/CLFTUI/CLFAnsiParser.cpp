@@ -5,9 +5,9 @@
 // 嵌套形态（cyan(bold(x)) → \033[36m\033[1m…\033[0m\033[0m）按顺序状态叠加，
 // 重置后回到"无样式"（CLFAnsi 包装均为成对 reset，不做栈恢复）
 
-#include "CLFUI/CLFAnsiParser.hpp"
+#include "CLFTUI/CLFAnsiParser.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 namespace {
 
@@ -114,4 +114,4 @@ bool CLFAnsiParser::isSgrSequence(const std::string& seq) {
     return true;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

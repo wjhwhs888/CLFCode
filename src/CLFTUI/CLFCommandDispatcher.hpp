@@ -14,7 +14,7 @@
 namespace CLF::CLFCore { class CLFAgentLoop; class CLFPluginManager; }
 namespace CLF::CLFTypes { class ICLFOutput; }
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 // ---- 命令 handler 签名 ----
 // 参数: 命令名 (/xxx)、参数字符串（不含命令名，已 trim）、Agent、历史目录、输出
@@ -86,4 +86,4 @@ private:
 // 注册所有内置斜杠命令（由 CLFCommandDispatcher 构造时调用）
 void registerBuiltinCommands(CLFCommandDispatcher& dispatcher);
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

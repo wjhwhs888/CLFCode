@@ -1,5 +1,5 @@
 // ICLFOutput.hpp — Agent → UI 输出抽象接口
-// 定义 Agent Core 与 UI 之间的合同, CLFCore 仅依赖此接口, 不依赖 CLFUI
+// 定义 Agent Core 与 UI 之间的合同, CLFCore 仅依赖此接口, 不依赖 CLFTUI
 //
 // 设计原则:
 //   - 零项目依赖 (仅 stdlib)

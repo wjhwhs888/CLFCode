@@ -15,7 +15,7 @@ CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交�
 └──────┬───────────────┬────────────────┬──────────┘
        │               │                │
 ┌──────▼─────────┐ ┌───▼────────────┐ ┌─▼──────────────┐
-│  CLFUI         │ │  CLFCore       │ │ CLFNetwork     │
+│  CLFTUI         │ │  CLFCore       │ │ CLFNetwork     │
 │  （终端界面）   │ │  （Agent 核心） │ │ （通信层）      │
 │ CLFRepl        │ │ CLFAgentLoop   │ │ CLFHttpClient  │
 │ CLFReplView    │ │ CLFContext     │ │ （HTTP/SSE）    │
@@ -87,7 +87,7 @@ CLFCode 是一个本地运行的 AI Coding Agent。用户通过终端 REPL 交�
 ### CLFNetwork — 通信层
 - `CLFHttpClient`：封装 cpp-httplib，同步 POST + SSE 流式 POST（跨 chunk 行缓冲）
 
-### CLFUI — 终端界面（FTXUI）
+### CLFTUI — 终端界面（FTXUI）
 - `CLFRepl`：主循环编排（run/render/生命周期装配）；任务面板行构建
 - `CLFReplView`：渲染器（内容区/状态行/滚动）
 - `CLFInputHandler`：输入事件处理（提交/快捷键/拖选）

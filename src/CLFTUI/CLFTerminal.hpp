@@ -15,7 +15,7 @@
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFTerminal : public CLF::CLFTypes::ICLFOutput {
 public:
@@ -163,4 +163,4 @@ private:
     void flushTable();
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

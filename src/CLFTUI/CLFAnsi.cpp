@@ -2,11 +2,11 @@
 // 平台层收敛（2026-09-23）：VT 开启与终端尺寸取数已下沉 CLFPlatform
 // （enableVirtualTerminal/consoleSize）——本类保留颜色包装与门控状态。
 
-#include "CLFUI/CLFAnsi.hpp"
+#include "CLFTUI/CLFAnsi.hpp"
 
 #include "CLFTypes/CLFPlatform.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 bool CLFAnsi::s_enabled = false;
 
@@ -30,4 +30,4 @@ int CLFAnsi::terminalWidth() {
     return CLF::CLFCore::CLFPlatform::consoleSize(w, h) ? w : -1;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

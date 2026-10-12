@@ -2,16 +2,16 @@
 // Renderer 闭包 178-484 + hitTest lambda 486-513 + CPR/ANSI 剥离两处同构收敛）
 // ⚠ 纯搬移批次纪律：逐行搬移不改行为；成员状态仍驻留 CLFRepl（friend 访问）
 
-#include "CLFUI/CLFReplView.hpp"
+#include "CLFTUI/CLFReplView.hpp"
 
-#include "CLFUI/CLFRepl.hpp"
-#include "CLFUI/CLFAnsiParser.hpp"
-#include "CLFUI/CLFAsyncSubmit.hpp"
-#include "CLFUI/CLFCommandDispatcher.hpp"
-#include "CLFUI/CLFConfirmBar.hpp"
-#include "CLFUI/CLFSelectionModel.hpp"
-#include "CLFUI/CLFTerminal.hpp"
-#include "CLFUI/CLFTipsBar.hpp"
+#include "CLFTUI/CLFRepl.hpp"
+#include "CLFTUI/CLFAnsiParser.hpp"
+#include "CLFTUI/CLFAsyncSubmit.hpp"
+#include "CLFTUI/CLFCommandDispatcher.hpp"
+#include "CLFTUI/CLFConfirmBar.hpp"
+#include "CLFTUI/CLFSelectionModel.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFTipsBar.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // A2：utf8SafeHead
@@ -29,7 +29,7 @@
 #include <windows.h>
 #endif
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 using CLF::CLFCore::CLFTextUtil;   // A2
 using namespace CLF::CLFCore;
 
@@ -558,4 +558,4 @@ bool CLFReplView::belowContent(int y) const {
     return y >= m_scrollView.contentHeight();
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

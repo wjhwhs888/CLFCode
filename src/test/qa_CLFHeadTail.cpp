@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "CLFTypes/CLFTypes.hpp"
-#include "CLFUI/CLFConfirmBar.hpp"
-#include "CLFUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFConfirmBar.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
 
 using namespace boost::ut;
 using CLF::CLFCore::headTailCapWithMarker;
@@ -94,7 +94,7 @@ const boost::ut::suite<"CLFHeadTail"> tests = [] {
     // ========== T3: emitError 首行化（P0-1） ==========
 
     "多行错误：仅首行可见"_test = [] {
-        CLF::CLFUI::CLFTerminal term;  // 无 screen，requestRefresh 安全跳过
+        CLF::CLFTUI::CLFTerminal term;  // 无 screen，requestRefresh 安全跳过
         term.emitError("first line\nsecond line\nthird line");
         auto snap = term.contentSnapshot();
         // emitError 不带换行 → 内容在 pendingLine（与改造前行为一致），两处都要查
@@ -108,7 +108,7 @@ const boost::ut::suite<"CLFHeadTail"> tests = [] {
     };
 
     "超长单行错误：截断含省略号，尾行内容丢弃"_test = [] {
-        CLF::CLFUI::CLFTerminal term;
+        CLF::CLFTUI::CLFTerminal term;
         std::string longMsg(300, 'a');
         longMsg += "\ntail-must-not-appear";
         term.emitError(longMsg);
@@ -144,14 +144,14 @@ const boost::ut::suite<"CLFHeadTail"> tests = [] {
     // ========== T8: 审批卡 prompt 拆分（P2-2） ==========
 
     "T8a splitPrompt：单行 → headline 全量，detail 空"_test = [] {
-        auto p = CLF::CLFUI::CLFConfirmBar::splitPrompt(
+        auto p = CLF::CLFTUI::CLFConfirmBar::splitPrompt(
             "工具 [write_file] 将修改文件: a.txt");
         expect(p.headline == "工具 [write_file] 将修改文件: a.txt");
         expect(p.detail.empty());
     };
 
     "T8b splitPrompt：首行 headline，其余 detail"_test = [] {
-        auto p = CLF::CLFUI::CLFConfirmBar::splitPrompt(
+        auto p = CLF::CLFTUI::CLFConfirmBar::splitPrompt(
             "工具 [execute_command] 需要执行高风险操作。\n参数: {\"cmd\":\"rm -rf\"}");
         expect(p.headline == "工具 [execute_command] 需要执行高风险操作。");
         expect(p.detail.find("参数:") != std::string::npos);

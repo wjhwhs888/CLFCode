@@ -9,10 +9,10 @@
 #include <chrono>
 #include <thread>
 
-#include "CLFUI/CLFPasteCoalescer.hpp"
+#include "CLFTUI/CLFPasteCoalescer.hpp"
 
 using namespace boost::ut;
-using CLF::CLFUI::CLFPasteCoalescer;
+using CLF::CLFTUI::CLFPasteCoalescer;
 
 namespace {
 

@@ -10,7 +10,7 @@
 
 #include <string>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFAnsi {
 public:
@@ -34,4 +34,4 @@ private:
     static bool s_enabled;
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

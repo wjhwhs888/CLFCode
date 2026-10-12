@@ -5,9 +5,9 @@
 
 #include <ftxui/dom/elements.hpp>
 
-#include "CLFUI/CLFTerminal.hpp"   // ContentSnapshot 参数完整类型
+#include "CLFTUI/CLFTerminal.hpp"   // ContentSnapshot 参数完整类型
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFConfirmBar {
 public:
@@ -24,4 +24,4 @@ public:
     static PromptParts splitPrompt(const std::string& prompt);
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

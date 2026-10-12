@@ -3,10 +3,10 @@
 // 滚动后随即 hitTest 扩展选区依赖此行为；clamp 边界与滚动提示行口径
 
 #include <boost/ut.hpp>
-#include "CLFUI/CLFScrollView.hpp"
+#include "CLFTUI/CLFScrollView.hpp"
 
 using namespace boost::ut;
-using CLF::CLFUI::CLFScrollView;
+using CLF::CLFTUI::CLFScrollView;
 
 static ftxui::Event wheelUp() {
     return ftxui::Event::Mouse(

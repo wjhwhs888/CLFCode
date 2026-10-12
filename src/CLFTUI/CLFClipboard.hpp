@@ -6,7 +6,7 @@
 
 #include <string>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFClipboard {
 public:
@@ -17,4 +17,4 @@ public:
     static void write(const std::string& text);
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

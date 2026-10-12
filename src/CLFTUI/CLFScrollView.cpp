@@ -1,12 +1,12 @@
 // CLFScrollView.cpp — 滚动视口实现
 
-#include "CLFUI/CLFScrollView.hpp"
+#include "CLFTUI/CLFScrollView.hpp"
 
 #include <algorithm>
 #include <string>
 #include <string_view>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 void CLFScrollView::update(int totalLines, int termHeight, int reservedLines) {
     // 自动滚动：新内容到达 → 回底部
@@ -132,4 +132,4 @@ void CLFScrollView::reset() {
     m_lastTotalLines = 0;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

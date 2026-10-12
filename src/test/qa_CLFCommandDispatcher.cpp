@@ -11,7 +11,7 @@
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
-#include "CLFUI/CLFCommandDispatcher.hpp"
+#include "CLFTUI/CLFCommandDispatcher.hpp"
 
 using namespace boost::ut;
 using CLF::CLFCore::CLFAgentLoop;
@@ -19,7 +19,7 @@ using CLF::CLFCore::CLFAgentConfig;
 using CLF::CLFNetwork::ICLFHttpClient;
 using CLF::CLFNetwork::CLFHttpResponse;
 using CLF::CLFTypes::ICLFOutput;
-using CLF::CLFUI::CLFCommandDispatcher;
+using CLF::CLFTUI::CLFCommandDispatcher;
 
 namespace {
 

@@ -1,6 +1,6 @@
 // CLFTipsBar.cpp — Tips 行实现（A5，设计-工具调用循环上限机制改造 §3.4）
 
-#include "CLFUI/CLFTipsBar.hpp"
+#include "CLFTUI/CLFTipsBar.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -11,7 +11,7 @@
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 using namespace CLF::CLFCore;  // CLFConfigLoader / CLFLogger（CLFRepl.cpp 同模式）
 
 namespace {
@@ -110,4 +110,4 @@ ftxui::Element CLFTipsBar::render(bool busy) const {
         | ftxui::color(isWarning ? ftxui::Color::RedLight : ftxui::Color::GrayDark);
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

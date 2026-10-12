@@ -50,6 +50,12 @@
   - CHANGELOG v0.9.0 段 + VERSION bump v0.9.0 + tag v0.9.0（用户授权）
 - **待办**：① thinking 治理批（等 v4.1 pro 出来再定）② 阶段 3/dsh（决策门挂起）③ 平台层第二期（Linux 三系统，§十五 矩阵待排期）④ 文案强化（中断文案加"先询问用户"——待用户拍板）
 
+### ▶ CLFUI → CLFTUI 模块重命名 ✅ 代码完成（2026-10-12，未提交推送）
+- **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
+- **实施（纯机械重构，类名零改动）**：`git mv src/CLFUI src/CLFTUI`（历史保留）→ src 全量 sed（目录/命名空间 `CLF::CLFTUI`/include 路径/CMake target `clf_ui`→`clf_tui`，41 文件）→ README + architecture_design 同步；插件零引用 ✓；CHANGELOG 历史段 / progress 历史记录 / plans 归档不动
+- **验证**：构建全过（ninja no work to do）→ ctest 39/39 全绿 → --version 冒烟 exit=0；旧构建产物 clf_ui.lib 已清理
+- **待办**：提交推送（用户指示）
+
 ### ▶ 闲置后新回合误报"无响应"修复 ✅✅ 全闭环（2026-10-12，已提交推送 29d335a）
 - **用户报告**：LLM 回复完成后闲置约 1 小时再提问，tips 行显示"⚠ 已 3600s 无响应"警告——显示有问题
 - **取证（CLFTipsBar.cpp 全链路）**：`tick()` 静默判定依据 = `activityCount()`（输出活动计数），**不感知 busy 状态**——回合结束后 timer 每 5s 持续 tick、activityCount 不再增长 → `m_silenceSec` 无限累积；用户闲置 1 小时再提问 → busy=true → 立即显示"⚠ 已 3600s 无响应"——把**用户闲置时间误判成 AI 无响应时间**。设计意图（A5 §3.4 + P4/P5 用例）= busy 期间无输出才警告

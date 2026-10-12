@@ -120,27 +120,27 @@ target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities clf
 target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
-# CLFUI — 终端 UI (依赖 CLFCore + CLFNetwork)
+# CLFTUI — 终端 UI (依赖 CLFCore + CLFNetwork)
 # ============================================================================
-add_library(clf_ui STATIC
-    CLFUI/CLFAnsi.cpp
-    CLFUI/CLFAnsiParser.cpp
-    CLFUI/CLFAsyncSubmit.cpp
-    CLFUI/CLFClipboard.cpp
-    CLFUI/CLFCommandDispatcher.cpp
-    CLFUI/CLFCommands.cpp
-    CLFUI/CLFConfirmBar.cpp
-    CLFUI/CLFInputHandler.cpp
-    CLFUI/CLFPasteCoalescer.cpp
-    CLFUI/CLFRepl.cpp
-    CLFUI/CLFReplView.cpp
-    CLFUI/CLFSelectionModel.cpp
-    CLFUI/CLFScrollView.cpp
-    CLFUI/CLFTerminal.cpp
-    CLFUI/CLFTipsBar.cpp
+add_library(clf_tui STATIC
+    CLFTUI/CLFAnsi.cpp
+    CLFTUI/CLFAnsiParser.cpp
+    CLFTUI/CLFAsyncSubmit.cpp
+    CLFTUI/CLFClipboard.cpp
+    CLFTUI/CLFCommandDispatcher.cpp
+    CLFTUI/CLFCommands.cpp
+    CLFTUI/CLFConfirmBar.cpp
+    CLFTUI/CLFInputHandler.cpp
+    CLFTUI/CLFPasteCoalescer.cpp
+    CLFTUI/CLFRepl.cpp
+    CLFTUI/CLFReplView.cpp
+    CLFTUI/CLFSelectionModel.cpp
+    CLFTUI/CLFScrollView.cpp
+    CLFTUI/CLFTerminal.cpp
+    CLFTUI/CLFTipsBar.cpp
 )
-target_link_libraries(clf_ui PUBLIC clf_core ftxui::screen ftxui::dom ftxui::component)
-target_include_directories(clf_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(clf_tui PUBLIC clf_core ftxui::screen ftxui::dom ftxui::component)
+target_include_directories(clf_tui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
 # CLFTools — 工具实现 (依赖 CLFCore)
@@ -162,7 +162,7 @@ target_include_directories(clf_tools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # 主程序
 # ============================================================================
 add_executable(CLFCode main.cpp)
-target_link_libraries(CLFCode PRIVATE clf_core clf_network clf_tools clf_ui ${CLF_OPENSSL_LIBS})
+target_link_libraries(CLFCode PRIVATE clf_core clf_network clf_tools clf_tui ${CLF_OPENSSL_LIBS})
 if(WIN32)
     target_link_libraries(CLFCode PRIVATE ws2_32 crypt32)
 endif()

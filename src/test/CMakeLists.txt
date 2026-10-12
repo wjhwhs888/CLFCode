@@ -44,35 +44,35 @@ clf_add_test(qa_CLFContextWindow    clf_core)
 clf_add_test(qa_CLFSystemComponents clf_core)
 clf_add_test(qa_CLFConfigLoader     clf_core)
 
-# —— clf_ui 渲染级（ftxui 组件 + Screen）——
-clf_add_test(qa_CLFInputSelection clf_ui)
+# —— clf_tui 渲染级（ftxui 组件 + Screen）——
+clf_add_test(qa_CLFInputSelection clf_tui)
 
-# —— clf_core + clf_ui ——
-clf_add_test(qa_CLFContext          clf_core clf_ui)
-clf_add_test(qa_CLFProtocolAdapter  clf_core clf_ui)
-clf_add_test(qa_CLFSecurityPolicy   clf_core clf_ui)
-clf_add_test(qa_CLFSessionManager   clf_core clf_ui)
-clf_add_test(qa_CLFStreamAccumulator clf_core clf_ui)
-clf_add_test(qa_CLFHeadTail         clf_core clf_ui)
-clf_add_test(qa_CLFPasteCoalescer   clf_core clf_ui)
-clf_add_test(qa_CLFSelectionModel   clf_core clf_ui)
-clf_add_test(qa_CLFScrollView       clf_core clf_ui)
-clf_add_test(qa_CLFInputRender      clf_core clf_ui)
-clf_add_test(qa_CLFTipsBar          clf_core clf_ui)
+# —— clf_core + clf_tui ——
+clf_add_test(qa_CLFContext          clf_core clf_tui)
+clf_add_test(qa_CLFProtocolAdapter  clf_core clf_tui)
+clf_add_test(qa_CLFSecurityPolicy   clf_core clf_tui)
+clf_add_test(qa_CLFSessionManager   clf_core clf_tui)
+clf_add_test(qa_CLFStreamAccumulator clf_core clf_tui)
+clf_add_test(qa_CLFHeadTail         clf_core clf_tui)
+clf_add_test(qa_CLFPasteCoalescer   clf_core clf_tui)
+clf_add_test(qa_CLFSelectionModel   clf_core clf_tui)
+clf_add_test(qa_CLFScrollView       clf_core clf_tui)
+clf_add_test(qa_CLFInputRender      clf_core clf_tui)
+clf_add_test(qa_CLFTipsBar          clf_core clf_tui)
 
 # —— clf_core + clf_capabilities ——
 clf_add_test(qa_CLFCapabilities     clf_core clf_capabilities)
 
-# —— clf_ui ——
-clf_add_test(qa_CLFAnsiParser       clf_ui)
+# —— clf_tui ——
+clf_add_test(qa_CLFAnsiParser       clf_tui)
 
 # —— clf_tools ——
 clf_add_test(qa_CLFSearchContent    clf_tools)
 
-# —— clf_core + clf_network + clf_ui + OpenSSL ——
-clf_add_test(qa_CLFAgentLoop  clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
-clf_add_test(qa_CLFTodoPanel  clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
-clf_add_test(qa_CLFCommandDispatcher clf_core clf_network clf_ui ${CLF_OPENSSL_LIBS})
+# —— clf_core + clf_network + clf_tui + OpenSSL ——
+clf_add_test(qa_CLFAgentLoop  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
+clf_add_test(qa_CLFTodoPanel  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
+clf_add_test(qa_CLFCommandDispatcher clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
 
 # —— clf_tools + OpenSSL（Windows 另需 ws2_32/crypt32）——
 if(WIN32)

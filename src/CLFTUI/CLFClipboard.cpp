@@ -3,11 +3,11 @@
 // UI 调用面零变化；原 Windows 实现整体搬移平台层，非 Windows 空实现
 // 补显式分支（清单 #1：原 write 整个函数被 #ifdef 包住连 #else 都没有）
 
-#include "CLFUI/CLFClipboard.hpp"
+#include "CLFTUI/CLFClipboard.hpp"
 
 #include "CLFTypes/CLFPlatform.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 std::string CLFClipboard::read() {
     return CLF::CLFCore::CLFPlatform::readClipboard();
@@ -17,4 +17,4 @@ void CLFClipboard::write(const std::string& text) {
     (void)CLF::CLFCore::CLFPlatform::writeClipboard(text);
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

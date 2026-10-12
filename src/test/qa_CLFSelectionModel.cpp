@@ -7,13 +7,13 @@
 #include <string>
 #include <vector>
 
-#include "CLFUI/CLFScrollView.hpp"
-#include "CLFUI/CLFSelectionModel.hpp"
+#include "CLFTUI/CLFScrollView.hpp"
+#include "CLFTUI/CLFSelectionModel.hpp"
 
 using namespace boost::ut;
-using CLF::CLFUI::CLFSelectionModel;
-using CLF::CLFUI::RowInfo;
-using CLF::CLFUI::RowKind;
+using CLF::CLFTUI::CLFSelectionModel;
+using CLF::CLFTUI::RowInfo;
+using CLF::CLFTUI::RowKind;
 
 namespace {
 
@@ -31,7 +31,7 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
     // ========== S1: 坐标映射（visibleRange/colToByte/提示行偏移） ==========
 
     "S1a visibleRange 与 topHintCount 口径分开"_test = [] {
-        CLF::CLFUI::CLFScrollView sv;
+        CLF::CLFTUI::CLFScrollView sv;
         sv.update(100, 30, 7);   // 100 行，视口 23 行 → [77, 100)
         auto [s, e] = sv.visibleRange();
         expect(s == 77 && e == 100);
@@ -46,7 +46,7 @@ const boost::ut::suite<"CLFSelectionModel"> tests = [] {
     };
 
     "S1b 鼠标坐标换算公式（0 基 + 提示行偏移 + clamp）"_test = [] {
-        CLF::CLFUI::CLFScrollView sv;
+        CLF::CLFTUI::CLFScrollView sv;
         sv.handleEvent(ftxui::Event::Special("\x1B[5~"));
         sv.update(100, 30, 7);
         auto [vs, ve] = sv.visibleRange();

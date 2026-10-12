@@ -3,21 +3,21 @@
 // ⚠ 纯搬移批次纪律：逐行搬移不改行为（含每分支事件消费返回值）；
 // 成员状态仍驻留 CLFRepl（friend 访问）
 
-#include "CLFUI/CLFInputHandler.hpp"
+#include "CLFTUI/CLFInputHandler.hpp"
 
-#include "CLFUI/CLFRepl.hpp"
-#include "CLFUI/CLFReplView.hpp"
-#include "CLFUI/CLFAsyncSubmit.hpp"
-#include "CLFUI/CLFClipboard.hpp"
-#include "CLFUI/CLFCommandDispatcher.hpp"
-#include "CLFUI/CLFPasteCoalescer.hpp"
-#include "CLFUI/CLFSelectionModel.hpp"
-#include "CLFUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFRepl.hpp"
+#include "CLFTUI/CLFReplView.hpp"
+#include "CLFTUI/CLFAsyncSubmit.hpp"
+#include "CLFTUI/CLFClipboard.hpp"
+#include "CLFTUI/CLFCommandDispatcher.hpp"
+#include "CLFTUI/CLFPasteCoalescer.hpp"
+#include "CLFTUI/CLFSelectionModel.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
 
 #include <chrono>
 #include <string_view>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 CLFInputHandler::CLFInputHandler(CLFRepl& repl, CLFTerminal* terminal, CLFReplView& view,
                                  std::string& inputText, ftxui::Ref<int> cursorPos,
@@ -459,4 +459,4 @@ bool CLFInputHandler::handle(ftxui::Event e) {
     return false;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

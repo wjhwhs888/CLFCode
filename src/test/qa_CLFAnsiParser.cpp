@@ -2,14 +2,14 @@
 // 覆盖：单段/多段解析、嵌套形态、重置、非 SGR 序列防御、strip
 
 #include <boost/ut.hpp>
-#include "CLFUI/CLFAnsiParser.hpp"
+#include "CLFTUI/CLFAnsiParser.hpp"
 
 using namespace boost::ut;
-using CLF::CLFUI::CLFAnsiParser;
+using CLF::CLFTUI::CLFAnsiParser;
 
 namespace {
 // 断言分段序列的简化 helper：text 列表
-std::vector<std::string> texts(const std::vector<CLF::CLFUI::CLFAnsiSegment>& segs) {
+std::vector<std::string> texts(const std::vector<CLF::CLFTUI::CLFAnsiSegment>& segs) {
     std::vector<std::string> out;
     for (const auto& s : segs) out.push_back(s.text);
     return out;

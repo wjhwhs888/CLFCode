@@ -24,7 +24,7 @@
 #include <ftxui/dom/node.hpp>
 #include "CLFTypes/CLFPeriodicTimer.hpp"   // unique_ptr 成员需要完整类型
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 class CLFTipsBar {
 public:
@@ -76,4 +76,4 @@ private:
     std::unique_ptr<CLF::CLFTypes::CLFPeriodicTimer> m_timer;
 };
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

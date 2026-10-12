@@ -1,12 +1,12 @@
 // CLFCommandDispatcher.cpp — REPL 命令分发实现（注册表模式）
 
-#include "CLFUI/CLFCommandDispatcher.hpp"
+#include "CLFTUI/CLFCommandDispatcher.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 
 #include <string>
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 CLFCommandDispatcher::CLFCommandDispatcher(CLF::CLFCore::CLFAgentLoop& agent,
                                            const std::string& historyDir,
@@ -74,4 +74,4 @@ bool CLFCommandDispatcher::handle(const std::string& input) {
     return false;
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

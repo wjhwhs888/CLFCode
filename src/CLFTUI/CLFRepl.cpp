@@ -6,21 +6,21 @@
 //   CatchEvent → CLFInputHandler（按键分发/粘贴/确认/选区/历史）
 //   本文件瘦壳 = run 编排 + 组件装配 + 生命周期收尾（A1-5 取证划界）
 
-#include "CLFUI/CLFRepl.hpp"
+#include "CLFTUI/CLFRepl.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"   // 拖选自动滚动定时（2026-09-20）
 #include "CLFTypes/CLFTextUtil.hpp"   // splitLines（多行输入逐行着色）
 #include "CLFTypes/CLFPlatform.hpp"   // 平台层收敛（2026-09-23）：setRawInputMode 原语
 #include "CLFTypes/ICLFOutput.hpp"
-#include "CLFUI/CLFAsyncSubmit.hpp"
-#include "CLFUI/CLFClipboard.hpp"
-#include "CLFUI/CLFCommandDispatcher.hpp"
-#include "CLFUI/CLFInputHandler.hpp"
-#include "CLFUI/CLFPasteCoalescer.hpp"
-#include "CLFUI/CLFReplView.hpp"
-#include "CLFUI/CLFSelectionModel.hpp"
-#include "CLFUI/CLFConfirmBar.hpp"
-#include "CLFUI/CLFScrollView.hpp"
-#include "CLFUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFAsyncSubmit.hpp"
+#include "CLFTUI/CLFClipboard.hpp"
+#include "CLFTUI/CLFCommandDispatcher.hpp"
+#include "CLFTUI/CLFInputHandler.hpp"
+#include "CLFTUI/CLFPasteCoalescer.hpp"
+#include "CLFTUI/CLFReplView.hpp"
+#include "CLFTUI/CLFSelectionModel.hpp"
+#include "CLFTUI/CLFConfirmBar.hpp"
+#include "CLFTUI/CLFScrollView.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
 #include "CLFCore/CLFAgentLoop.hpp"
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
@@ -42,7 +42,7 @@
 #undef max
 #endif
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 using namespace CLF::CLFCore;
 
 // ============================================================================
@@ -419,4 +419,4 @@ void CLFRepl::cycleMode() {
     m_agent.setSecurityMode(next);
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI

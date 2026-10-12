@@ -21,8 +21,8 @@
 #include "CLFCore/CLFPluginManager.hpp"      // 2.2b
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFCore/CLFSecurityPolicy.hpp"
-#include "CLFUI/CLFRepl.hpp"
-#include "CLFUI/CLFTerminal.hpp"
+#include "CLFTUI/CLFRepl.hpp"
+#include "CLFTUI/CLFTerminal.hpp"
 #include "CLFTools/CLFBuiltinTools.hpp"
 
 namespace {
@@ -157,13 +157,13 @@ int main(int argc, char* argv[]) {
     }
 
     // 交互模式
-    CLF::CLFUI::CLFTerminal terminal;
+    CLF::CLFTUI::CLFTerminal terminal;
     agent.setOutput(&terminal);
 
     std::string historyDir = projectRoot + "/doc/contextHistory";
     CLF::CLFCore::CLFSessionManager::migrateLegacyIncomplete(historyDir);
     CLF::CLFCore::CLFSessionManager::cleanupOld(historyDir, 30);
 
-    CLF::CLFUI::CLFRepl repl(agent, historyDir, &terminal, &pluginManager);   // 2.2c
+    CLF::CLFTUI::CLFRepl repl(agent, historyDir, &terminal, &pluginManager);   // 2.2c
     return repl.run();
 }

@@ -1,9 +1,9 @@
 // CLFAsyncSubmit.cpp — 异步提交线程管理实现
 
-#include "CLFUI/CLFAsyncSubmit.hpp"
+#include "CLFTUI/CLFAsyncSubmit.hpp"
 #include "CLFCore/CLFLogger.hpp"
 
-namespace CLF::CLFUI {
+namespace CLF::CLFTUI {
 
 CLFAsyncSubmit::~CLFAsyncSubmit() {
     join();
@@ -32,4 +32,4 @@ void CLFAsyncSubmit::join() {
     }
 }
 
-} // namespace CLF::CLFUI
+} // namespace CLF::CLFTUI
