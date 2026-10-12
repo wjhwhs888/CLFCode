@@ -50,6 +50,17 @@
   - CHANGELOG v0.9.0 段 + VERSION bump v0.9.0 + tag v0.9.0（用户授权）
 - **待办**：① thinking 治理批（等 v4.1 pro 出来再定）② 阶段 3/dsh（决策门挂起）③ 平台层第二期（Linux 三系统，§十五 矩阵待排期）④ 文案强化（中断文案加"先询问用户"——待用户拍板）
 
+### ▶▶ 事件化重构设计全套定稿 ✅✅（2026-10-12，明天动工）
+- **背景**：用户计划将 agent 接入其他项目作后端服务（Qt/HTML 新 UI）——推翻阶段 2 §七③"可替换 UI 非项目目标"前提；上游动机 = 用户发现 AgentLoop 承担 TUI 显示职责 + 自问自答在别机仍少量复现
+- **产出**：分析 2 份（`分析/分析-Agent后端服务化与多UI架构.md` 总分析 + `分析/分析-agentloop工具调用调度机制.md` 用户 dsh 调度调研——机制权威）+ 设计 5 份（`设计/设计-事件化重构.md` 总纲 + 分册 1 AgentLoop拆分与事件总线 / 分册 2 文案迁移与会话落库恢复 / 分册 3 并发工具调度器 / 占位册 跨进程协议与新UI接入）
+- **核心定案**：事件总线唯一通道（AgentLoop=生产者、总线=分发、前端=订阅者、Writer=消费者"产生就存盘"）；协议 v1 共 21 事件（四类：语义帧/增量旁路/双向/History 重放）；confirm 阻塞等事件 60s 超时默认拒绝；resume 走事件重放（History* 事件组，collectEchoLines 删除）；六步路线（拆函数→协议总线→适配器→文案迁移+落库→并发→跨进程占位）；TUI 零破坏承诺（ICLFOutput/CLFTerminal 零改动）；E2E 排后
+- **审查**：pro 全量审查 6 项修正（R1 双轨期双份渲染漏洞——适配器步骤 2 只记录不渲染；R2 qa 线程纪律 startDispatcher=false；R3 无人订阅缓冲裁剪为事件历史环；R4 TurnTimerGuard 保转圈删文案；R5 行号漂移修正；R6 文档同步入维护规则）
+- **dsh 防自问自答取证**（E:\deepseek-harness 源码全仓）：dsh 无提示词禁止/无后处理检测——"结构上不可能"（类型化事件溯源/inbox 唯一输入/UI 格式零存在/工具只认原生 tool_use/摘要模型无工具）。对照：我们 10 项 7 项本来有、2 项本次重构补（装饰出数据+输入唯一入口）、1 项多出（v0.9.1 双保险保留）——设计方向与 dsh 完全同构，改造后用户复现机验证
+- **用户 25 条决策全落档**（总纲 §五）：含四点架构定调/9 条议题定调/confirm 超时/event_log/装饰剥离/并发进度/labels 兼容/resume 重放/命名规范（事件化重构 1/2/3 + 占位册无号）/函数粒度 ≤50 行/裸指针纪律/生产者-消费者落盘/角色术语/自问自答关系/dsh 取证
+- **文件改动清单**（总纲 §七）：新增 8 源文件（CLFEvents/CLFEventBus/SessionWriter/SessionReplayer/ToolScheduler/TerminalEventAdapter/TerminalTexts）+ 6 测试套件；AgentLoop 单文件函数级拆分（用户定调：调度编排即单一职责）
+- **排期**：明天动工——分册 1 步骤 0（runTurn 拆 5 Section + 二级函数化，纯搬移零行为变化，ctest+实机逐字回归）→ 步骤 1-2 → 分册 2 → 分册 3
+- **提交**：本批分析+设计+进度已提交推送（commit 见 git log）
+
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
 - **实施（纯机械重构，类名零改动）**：`git mv src/CLFUI src/CLFTUI`（历史保留）→ src 全量 sed（目录/命名空间 `CLF::CLFTUI`/include 路径/CMake target `clf_ui`→`clf_tui`，41 文件）→ README + architecture_design 同步；插件零引用 ✓；CHANGELOG 历史段 / progress 历史记录 / plans 归档不动
