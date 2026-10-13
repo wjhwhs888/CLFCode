@@ -46,8 +46,14 @@ clf_add_test(qa_CLFMessageCodec     clf_core)
 clf_add_test(qa_CLFPasserby         clf_core)
 clf_add_test(qa_CLFTodoStore        clf_core)
 clf_add_test(qa_CLFSessionFileCtx   clf_core)
-clf_add_test(qa_CLFSessionReplayer  clf_core)
-clf_add_test(qa_CLFSessionWriter    clf_core)
+# W 系列引用 CLFAgentLoop（W5 端到端）→ httplib/OpenSSL 符号——显式链接
+# （同 qa_CLFAgentLoop 惯例；MSVC 链接需要）
+clf_add_test(qa_CLFSessionReplayer  clf_core ${CLF_OPENSSL_LIBS})
+if(WIN32)
+    clf_add_test(qa_CLFSessionWriter    clf_core ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
+else()
+    clf_add_test(qa_CLFSessionWriter    clf_core ${CLF_OPENSSL_LIBS})
+endif()
 clf_add_test(qa_CLFSummaryCache     clf_core)
 clf_add_test(qa_CLFContextWindow    clf_core)
 clf_add_test(qa_CLFSystemComponents clf_core)
@@ -74,7 +80,13 @@ clf_add_test(qa_CLFCapabilities     clf_core clf_capabilities)
 
 # —— clf_tui ——
 clf_add_test(qa_CLFAnsiParser       clf_tui)
-clf_add_test(qa_CLFTerminalEventAdapter clf_tui)
+# A5 集成用例引用 CLFAgentLoop → httplib/OpenSSL 符号——显式链接
+# （MSVC Release 链接实抓 LNK2019 BIO_*，2026-10-13；照 qa_CLFAgentLoop 惯例）
+if(WIN32)
+    clf_add_test(qa_CLFTerminalEventAdapter clf_tui ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
+else()
+    clf_add_test(qa_CLFTerminalEventAdapter clf_tui ${CLF_OPENSSL_LIBS})
+endif()
 
 # —— clf_tools ——
 clf_add_test(qa_CLFSearchContent    clf_tools)
