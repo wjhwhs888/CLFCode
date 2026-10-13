@@ -62,7 +62,13 @@
 - **提交**：本批分析+设计+进度已提交推送（854ffa2，7 文件 +1342 行）
 - **▶ 步骤 0 实施完成 ✅（2026-10-13，a3ed441）**：runTurn 440 行 → ~100 行编排骨架；Section 四函数（prepareTurn/requestAssistantTurn/executeToolCalls/runWrapUp）+ 二级九函数（buildRequestBody/streamRequest/handleStreamDelta/syncRequest/finalizeResponse/accumulatePartialUsage/abortTurn/interruptedResult/httpErrorResult/requestWrapUpBody）+ RAII 两件（TurnTimerGuard/TurnThinkingClock）+ lambda 成员化（applySelfWorkedMark/accumulateUsage）；finishTurn/appendWorked 零改动；ctest 39/39 全绿（qa_CLFAgentLoop 43 tests/40145 asserts = 行为等价实证）+ --version 冒烟；ICLFOutput/CLFTerminal/CLFRepl 零改动 ✓。**设计偏差 2 处已入 commit message**：① 流式日志留在 streamRequest（零行为变化优先于设计表签名）② wrapUp 不复用 finalizeResponse（现状无 usage/标记处理）
 - **▶ 前置：GCC 15（MinGW）全量构建兼容修复 ✅（2026-10-13，4cd6645）**：build/ 目录当天 09:57 用户用 CLion 自带 MinGW（GCC 15.2）新配置 → 全量重编暴露三层问题，逐层修根——① 编译层：deprecated-declarations 豁免收编（u8path 是 C++17 唯一正确写法，弃用标记属误伤）+ 原 4 豁免同步收编（此前经 CMAKE_CXX_FLAGS 手动传）+ FARPROC cast void* 中转 + NOMINMAX 条件定义 + 死 typedef 删 + qa multichar 修 ② 链接层：GNU ld 单遍 vs MSVC 多遍——clf_network/clf_core PUBLIC 链 OpenSSL/crypt32（接口完整性 CRP） ③ 运行时层：system32 旧版 OpenSSL DLL 抢先加载致 0xc0000139——CMake 新增 clf_deploy_runtime ALL target（DLL 部署三输出目录）+ qa_CLFAgentLoop MockOutput 声明前置 30 处（悬空虚调用，MSVC 栈槽残留侥幸不炸 GCC 15 暴露）+ CLFSessionManager 排序秒级精度文件名兜底 + 测试 -g
-- **待办**：① **实机回归**（步骤 0 验收 §1.3：正常对话/流式/同步/中断/触顶/异常重试/自发 Worked——输出逐字对比；bin/Debug 为 GCC 15 产物，DLL 已自动部署）② 步骤 1（CLFEvents.hpp 协议头）③ 步骤 2（CLFEventBus + 适配器）
+- **▶ 步骤 1-2 实施完成 ✅（2026-10-13，bbc7320）**：
+  - **步骤 1 协议头**：`CLFEvents.hpp`（CLFTypes 层，协议头即规范）——21 事件四类全集（含分册 2 的 History 组 6 个与 ResumeRequested 一并入枚举合同）+ CLFAgentEvent tagged union 手工版（每字段注释钉死使用事件）+ isDeltaEvent 通道判定；qa_CLFEvents E1-E3 + 21 事件枚举 static_assert 钉
+  - **步骤 2 总线**：`CLFEventBus.hpp/.cpp`——每订阅者一线程 + 异常隔离；Lossless 满阻塞生产者 / Coalescing 满丢旧留新；事件历史环 4096；publishRequestAndWait（ConfirmResponse 自动路由等待表）；startDispatcher=false 手动模式（qa 静态期纪律 R2）；**实施期实抓 2 缺陷修根**：消费路径 pop 缺 notify（B3 实抓：阻塞生产者永久睡）+ drainAll 持总线锁调 handler 死锁防护；qa_CLFEventBus B1-B11 机制全集
+  - **适配器**：`CLFTerminalEventAdapter`（CLFTUI 层）——R1 修正落地：只记录不渲染，零 ICLFOutput 调用，渲染映射留步骤 3
+  - **双轨挂接**（§2.3 归属决策表逐点）：AgentLoop（setEventBus + turnId 回合稳定 id；TurnStarted/ThinkingCleared/StatusChanged/ContentDelta/ReasoningDelta/Interrupted/TurnFinished(capReached)/TodoUpdated）+ ToolExecutor（构造加 bus 默认 nullptr 零破坏；ToolStarted/ToolFinished 8 出口配对发射）
+  - **验证**：ctest 42/42 全绿（+3 套件）+ --version 冒烟；qa A5 双轨集成用例（runTurn → 事件序列 + turnId 传播）；ICLFOutput/CLFTerminal/CLFRepl 零改动 ✓
+  - **待办**：① 实机回归（步骤 0-2 合并验证：观感逐字一致 + 双轨期无闪烁）② 分册 2（文案迁移与会话落库恢复——Writer/Replayer/History 重放）③ 分册 3（并发调度器 + 适配器渲染映射启用）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
