@@ -154,42 +154,8 @@ const boost::ut::suite<"CLFSessionFileCtx"> tests = [] {
         expect(found);
     };
 
-    "S6 collectEchoLines：jsonl 行级回显（turn+complete）与非 jsonl 投影"_test = [] {
-        auto dir = makeTempDir("clf_qa_filectx_s6");
-        fs::path p = dir.path() / "echo.jsonl";
-        {
-            std::ofstream f(p, std::ios::binary);
-            // header 行（不回显）
-            f << R"({"type":"header","title":"t","session_id":"s","timestamp":"2026-09-07 10:00:00","model":"m","skills":[]})" << "\n";
-            // turn 行：1 user + 1 assistant + 1 tool（tool 跳过）+ 尾随 todos
-            f << R"({"type":"turn","messages":[{"role":"user","content":"q1"},{"role":"assistant","content":"a1"},{"role":"tool","content":"skip me"}],"todos":[{"id":"1","content":"task x","status":"in_progress"}]})" << "\n";
-            // complete 行
-            f << R"({"type":"complete","todos":[{"id":"1","content":"task x","status":"completed"}]})" << "\n";
-            // summary 行（不回显）
-            f << R"({"type":"summary","valid":true,"method":"api","summary":"s"})" << "\n";
-        }
-        CLFSessionFileCtx ctx;
-        std::vector<CLFSessionEchoLine> echo;
-        ctx.collectEchoLines(p.string(), {}, echo);
-        expect(echo.size() == 4u);
-        expect(echo[0].m_kind == CLFSessionEchoLine::Kind::User);
-        expect(echo[0].m_content == std::string("q1"));
-        expect(echo[1].m_kind == CLFSessionEchoLine::Kind::Assistant);
-        expect(echo[1].m_content == std::string("a1"));
-        expect(echo[2].m_kind == CLFSessionEchoLine::Kind::TodoRound);
-        expect(echo[2].m_todos.size() == 1u);
-        expect(echo[3].m_kind == CLFSessionEchoLine::Kind::TodoComplete);
-
-        // 非 jsonl（.json 旧归档）：messages 投影，tool/system 跳过
-        std::vector<CLFMessage> msgs = {
-            makeMsg("system", "skip"), makeMsg("user", "u1"),
-            makeMsg("assistant", "a2"), makeMsg("tool", "skip")};
-        std::vector<CLFSessionEchoLine> echo2;
-        ctx.collectEchoLines(dir.string() + "/old.json", msgs, echo2);
-        expect(echo2.size() == 2u);
-        expect(echo2[0].m_kind == CLFSessionEchoLine::Kind::User);
-        expect(echo2[1].m_kind == CLFSessionEchoLine::Kind::Assistant);
-    };
 };
+
+// （分册 2 块 3：S6 collectEchoLines 用例迁移 qa_CLFSessionReplayer）
 
 int main() {}

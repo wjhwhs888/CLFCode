@@ -73,6 +73,9 @@ private:
     std::vector<CLF::CLFTypes::CLFAgentEvent> m_received;
     size_t                      m_semanticCount = 0;
     size_t                      m_deltaCount = 0;
+    // History 重放累积行（HistoryHeader 起收集 → ResumeDone 折叠块输出；
+    // TurnStarted 清空——live 回合开始弃残留，防止历史/live 交错）
+    std::vector<std::string>    m_historyLines;
     CLF::CLFTypes::CLFSubscription m_semanticSub;
     CLF::CLFTypes::CLFSubscription m_deltaSub;
 };

@@ -10,6 +10,7 @@
 #include "CLFCore/CLFPluginManager.hpp"   // 2.2c
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
+#include "CLFCore/CLFSessionReplayer.hpp"   // 分册 2 块 3：resume 回显事件重放
 #include "CLFCore/CLFSkillLoader.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // B4：splitLines（回显行拆分）
 
@@ -250,54 +251,14 @@ bool cmdResume(const std::string&, const std::string& args,
         int idx = 0;
         try { idx = std::stoi(args); } catch (...) {}
         if (idx >= 1 && idx <= static_cast<int>(sessions.size())) {
-            // B4：结构化行 → 回显文案 + 折叠块（原 restoreSession 内联渲染搬至 UI，
-            // core 不再拼 UI 文案——P0-6 关闭）
-            std::vector<CLFSessionEchoLine> echoLines;
-            if (agent.restoreSession(sessions[idx - 1].m_path, &echoLines)) {
-                std::vector<std::string> renderLines;
-                int userCount = 0, assistantCount = 0;
-                auto appendLines = [&](const std::string& text) {
-                    auto ls = CLFTextUtil::splitLines(text, /*keepEmpty=*/true);
-                    renderLines.insert(renderLines.end(), ls.begin(), ls.end());
-                };
-                for (const auto& l : echoLines) {
-                    switch (l.m_kind) {
-                    case CLFSessionEchoLine::Kind::User:
-                        // 与实时回显同款视觉锚点（青色加粗 ❯）——resume 后视觉一致
-                        appendLines(CLFTerminal::cyan(CLFTerminal::bold("❯ "))
-                                    + CLFTerminal::bold(l.m_content));
-                        ++userCount;
-                        break;
-                    case CLFSessionEchoLine::Kind::Assistant:
-                        appendLines(l.m_content);
-                        ++assistantCount;
-                        break;
-                    case CLFSessionEchoLine::Kind::TodoRound: {
-                        size_t done = 0;
-                        for (const auto& t : l.m_todos)
-                            if (t.m_status == "completed") ++done;
-                        std::string summary = "📋 本轮清单 " + std::to_string(done)
-                            + "/" + std::to_string(l.m_todos.size()) + "：";
-                        for (const auto& t : l.m_todos) {
-                            const std::string icon = (t.m_status == "completed") ? "✓"
-                                : (t.m_status == "in_progress") ? "⏳" : "○";
-                            summary += " " + icon + " " + t.m_content + " ·";
-                        }
-                        summary.resize(summary.size() - 2);   // 去掉末尾 " ·"
-                        renderLines.push_back(summary);
-                        break;
-                    }
-                    case CLFSessionEchoLine::Kind::TodoComplete:
-                        // 多行格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
-                        renderLines.push_back("📋 任务清单（全部完成）:");
-                        for (const auto& t : l.m_todos)
-                            renderLines.push_back("  ✓ " + t.m_content);
-                        break;
-                    }
+            // 分册 2 块 3：回显重做——restoreSession 重建 context（数据层）→
+            // CLFSessionReplayer 重放 History* 事件 → 适配器渲染折叠块
+            // （与正常对话同一渲染路径；core/UI 两套显示逻辑消灭）
+            const std::string target = sessions[idx - 1].m_path;
+            if (agent.restoreSession(target)) {
+                if (auto* bus = agent.eventBus()) {
+                    CLFSessionReplayer::replay(target, bus);
                 }
-                if (output) output->showFoldedBlock(
-                    "● 会话已恢复 · " + std::to_string(userCount + assistantCount)
-                        + " 条消息（ctrl+r 展开）", renderLines);
                 // F18: 恢复后状态点回到干净状态
                 if (output) output->setStatusKind(ICLFOutput::StatusKind::None);
             } else {

@@ -911,15 +911,14 @@ void CLFAgentLoop::generateAndCacheSummary() {
     m_summaryCache.generate(m_window.apply(m_context.getMessages()));
 }
 
-bool CLFAgentLoop::restoreSession(const std::string& filePath,
-                                  std::vector<CLFSessionEchoLine>* outEcho) {
+bool CLFAgentLoop::restoreSession(const std::string& filePath) {
     CLFLogger::instance().info("[Restore] loading: " + filePath);
 
     std::vector<CLFMessage> messages;
     std::vector<std::string> skills;
     CLFSessionSummary summary;
     std::vector<CLFTodoItem> todos;         // S2-6: 旧会话文件无 todos 字段 → 空清单
-    std::vector<CLFTodoItem> completeTodos; // jsonl complete 行（折叠块回显用，J6）
+    std::vector<CLFTodoItem> completeTodos; // jsonl complete 行（loadJsonl 解析）
     CLFSessionInfo headerInfo;
 
     // J3: 按扩展名分流——.jsonl 走追加式解析，.json 走覆盖式（旧归档永久兼容）
@@ -942,7 +941,7 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath,
     // todo_write 时以新数据重现（create/update 置面板显示——现成机制）
     m_sessionFileCtx.setResumedFrom(filePath);
     setTodoPanelDone(true);
-    (void)completeTodos;   // 行级回显直接解析 complete 行；此输出保留 API 完整性
+    (void)completeTodos;   // 分册 2 块 3：回显走事件重放（Replayer）——此输出保留 API 完整性
 
     CLFLogger::instance().info("[Restore] loaded: "
                                + std::to_string(messages.size()) + " msgs, "
@@ -952,16 +951,8 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath,
 
     m_context.clear();
 
-    // ① B4：结构化回显行收集（core 不拼 UI 文案；渲染由 UI 层 cmdResume 完成，
-    //    P0-6 关闭）。messages 已驻留 m_context，回显只是显示投影——R1 裁决不做懒加载。
-    //    C2：行级解析/投影在 CLFSessionFileCtx
-    if (outEcho) {
-        std::vector<CLFSessionEchoLine> echoLines;
-        m_sessionFileCtx.collectEchoLines(filePath, messages, echoLines);
-        *outEcho = std::move(echoLines);
-    }
-
     // ② 恢复非 system 消息（全部跳过 system，由后续步骤重建）
+    // （分册 2 块 3：① 结构化回显行收集删除——回显走事件重放）
     for (const auto& msg : messages) {
         if (msg.m_role == "system") continue;
         m_context.appendMessage(msg);

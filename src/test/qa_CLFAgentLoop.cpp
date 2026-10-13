@@ -861,29 +861,19 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto agent = std::make_unique<CLFAgentLoop>(config, mock);
         agent->setOutput(&out);
 
-        // B4：结构化行输出（折叠块渲染已移 UI 层 cmdResume——core 不再拼 UI 文案）
-        std::vector<CLF::CLFCore::CLFSessionEchoLine> echoLines;
-        bool ok = agent->restoreSession(path, &echoLines);
+        // 分册 2 块 3：回显走事件重放（restoreSession 只做数据层重建——签名无 outEcho）
+        bool ok = agent->restoreSession(path);
         expect(ok);
 
-        // 历史内容不进滚动区（emitContent 直灌路径已废除）
+        // 历史内容不进滚动区（回显由 History* 事件经适配器渲染折叠块——
+        // 此处无适配器装配，MockOutput 零内容即证 core 不直灌）
         bool leaked = false;
         for (const auto& c : out.contents)
             if (c.find("hello") != std::string::npos
                 || c.find("world") != std::string::npos)
                 leaked = true;
         expect(!leaked);
-
-        // 结构化行：User "hello" + Assistant "world"
-        bool hasUser = false, hasAssistant = false;
-        for (const auto& l : echoLines) {
-            if (l.m_kind == CLF::CLFCore::CLFSessionEchoLine::Kind::User
-                && l.m_content == "hello") hasUser = true;
-            if (l.m_kind == CLF::CLFCore::CLFSessionEchoLine::Kind::Assistant
-                && l.m_content == "world") hasAssistant = true;
-        }
-        expect(hasUser);
-        expect(hasAssistant);
+        // History* 事件重放断言在 qa_CLFSessionReplayer 套件
     };
 
     "T6c 中断于工具执行中：恰好一条中断消息 + Warn"_test = [] {

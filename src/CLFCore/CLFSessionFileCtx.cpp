@@ -122,58 +122,6 @@ void CLFSessionFileCtx::appendSummaryLine(const CLFSessionSummary& summary) {
     }
 }
 
-void CLFSessionFileCtx::collectEchoLines(const std::string& filePath,
-                                         const std::vector<CLFMessage>& messages,
-                                         std::vector<CLFSessionEchoLine>& outEcho) const {
-    // J3: 按扩展名分流——.jsonl 走追加式解析，.json 走覆盖式（旧归档永久兼容）
-    const bool isJsonl = filePath.size() >= 6
-                      && filePath.compare(filePath.size() - 6, 6, ".jsonl") == 0;
-    if (isJsonl) {
-        // J6: jsonl 行级回显（设计-会话追加式保存.jsonl §3.6）——
-        // turn 行 → User/Assistant 行 + 尾随 TodoRound 行；
-        // complete 行 → TodoComplete 行；todo_snapshot/summary/header 行不回显
-        std::ifstream file(fs::u8path(filePath));
-        std::string line;
-        while (std::getline(file, line)) {
-            if (line.empty()) continue;
-            nlohmann::json obj;
-            try { obj = nlohmann::json::parse(line); } catch (...) { continue; }
-            const std::string type = obj.value("type", "");
-
-            if (type == JsonlType::kTurn) {
-                std::vector<CLFMessage>  turnMsgs;
-                std::vector<CLFTodoItem> turnTodos;
-                if (!CLFMessageCodec::parseTurnLine(obj, turnMsgs, &turnTodos)) continue;
-                for (const auto& msg : turnMsgs) {
-                    if (msg.m_role == "user") {
-                        outEcho.push_back({CLFSessionEchoLine::Kind::User,
-                                           msg.m_content, {}});
-                    } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                        outEcho.push_back({CLFSessionEchoLine::Kind::Assistant,
-                                           msg.m_content, {}});
-                    }
-                    // tool 消息跳过（终端不需要显示）
-                }
-                if (!turnTodos.empty())
-                    outEcho.push_back({CLFSessionEchoLine::Kind::TodoRound,
-                                       "", std::move(turnTodos)});
-            } else if (type == JsonlType::kComplete) {
-                std::vector<CLFTodoItem> completeLine;
-                if (!CLFMessageCodec::parseCompleteLine(obj, completeLine)) continue;
-                outEcho.push_back({CLFSessionEchoLine::Kind::TodoComplete,
-                                   "", std::move(completeLine)});
-            }
-        }
-    } else {
-        for (const auto& msg : messages) {
-            if (msg.m_role == "user") {
-                outEcho.push_back({CLFSessionEchoLine::Kind::User, msg.m_content, {}});
-            } else if (msg.m_role == "assistant" && !msg.m_content.empty()) {
-                outEcho.push_back({CLFSessionEchoLine::Kind::Assistant, msg.m_content, {}});
-            }
-            // tool / system 消息跳过（终端不需要显示）
-        }
-    }
-}
+// （分册 2 块 3：collectEchoLines 删除——回显走 CLFSessionReplayer 事件重放）
 
 } // namespace CLF::CLFCore

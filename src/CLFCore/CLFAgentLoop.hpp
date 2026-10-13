@@ -58,6 +58,8 @@ public:
     // 并行发事件（双轨：直调保留 + 事件发射；分册 2/3 再切轨）。
     // nullptr = 不发射（既有测试/装配零改动）
     void setEventBus(CLF::CLFTypes::CLFEventBus* bus) { m_eventBus = bus; }
+    // 只读访问（分册 2 块 3：cmdResume 重放 History* 事件用）
+    CLF::CLFTypes::CLFEventBus* eventBus() const { return m_eventBus; }
 
     // 执行一轮对话（含 tool-calling 循环）
     std::string runTurn(const std::string& userInput);
@@ -84,11 +86,11 @@ public:
 
     // —— 会话持久化 ——
 
-    // 从会话文件恢复（跳过 system 消息，重新注入 skills）
-    // B4：回显外移——outEcho 非空时输出结构化回显行（UI 层渲染折叠块；
-    // core 不再拼 UI 文案，P0-6 关闭）；nullptr = 仅恢复不回显（测试路径）
-    bool restoreSession(const std::string& filePath,
-                        std::vector<CLFSessionEchoLine>* outEcho = nullptr);
+    // 从会话文件恢复（跳过 system 消息，重新注入 skills）。
+    // 分册 2 块 3：回显重做——outEcho/collectEchoLines 删除，回显走事件
+    // 重放（CLFSessionReplayer → History* 事件 → 适配器渲染），core 只做
+    // 数据层重建（"与正式请求后端接收信息是一个流程"）
+    bool restoreSession(const std::string& filePath);
 
     //待办清单读写（S2-6：随会话持久化，不独立落盘）
     // 由 todo_write 工具 handler 通过捕获的 agent 引用调用

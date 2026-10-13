@@ -5,6 +5,7 @@
 
 #include "CLFTypes/CLFEvents.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"
+#include "CLFTypes/CLFTextUtil.hpp"   // splitLines（HistoryAssistant 多行拆分）
 
 namespace CLF::CLFTUI {
 
@@ -99,6 +100,11 @@ void CLFTerminalEventAdapter::onEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
         if (m_output && m_labels) {
             m_statusTimer = std::make_unique<StatusTimer>(m_output, *m_labels);
         }
+        // live 回合开始：弃 History 残留（防历史/live 交错）
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            m_historyLines.clear();
+        }
         break;
 
     case CLFEventType::TurnFinished:
@@ -110,6 +116,52 @@ void CLFTerminalEventAdapter::onEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
         stopStatusTimer();
         renderInterrupted();
         break;
+
+    // —— 分册 2 块 3：History 重放渲染（resume 回显——与正常对话同一渲染路径）——
+    case CLFEventType::HistoryHeader: {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_historyLines.clear();
+        std::string head = "● 会话回显";
+        if (!ev.m_startedAt.empty()) head += " · " + ev.m_startedAt;
+        if (!ev.m_model.empty()) head += " · " + ev.m_model;
+        m_historyLines.push_back(head);
+        break;
+    }
+    case CLFEventType::HistoryUser: {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_historyLines.push_back("● 用户 " + ev.m_text);
+        break;
+    }
+    case CLFEventType::HistoryAssistant: {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        // 多行文本拆分（splitLines——折叠块逐行渲染）
+        auto ls = CLF::CLFCore::CLFTextUtil::splitLines(ev.m_text, /*keepEmpty=*/true);
+        m_historyLines.insert(m_historyLines.end(), ls.begin(), ls.end());
+        break;
+    }
+    case CLFEventType::HistoryToolTrace: {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        std::string line = "  ↳ " + ev.m_name;
+        if (!ev.m_ok) line += " ✗";
+        if (!ev.m_summary.empty()) line += " " + ev.m_summary;
+        m_historyLines.push_back(line);
+        break;
+    }
+    case CLFEventType::HistorySummary: {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_historyLines.push_back("📦 摘要：" + ev.m_text);
+        break;
+    }
+    case CLFEventType::ResumeDone: {
+        // 折叠块输出（复用 showFoldedBlock——Ctrl+R 展开语义不变）
+        std::lock_guard<std::mutex> lk(m_mutex);
+        if (m_output && !m_historyLines.empty()) {
+            const std::string summary = "● 已恢复会话（ctrl+r 展开）";
+            m_output->showFoldedBlock(summary, m_historyLines);
+        }
+        m_historyLines.clear();
+        break;
+    }
 
     case CLFEventType::ConfirmRequested:
         // 分册 2 块 1（设计 5.2）：confirm 切总线路径——Terminal::confirm

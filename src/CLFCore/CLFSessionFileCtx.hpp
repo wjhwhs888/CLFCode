@@ -54,14 +54,7 @@ public:
 
     // 追加 summary 行（summary 无效或无活动文件 → 跳过；失败 warn 不抛）
     void appendSummaryLine(const CLFSessionSummary& summary);
-
-    // restoreSession 回显行收集（B4：core 不拼 UI 文案，UI 消费结构化行）：
-    // jsonl → 逐行解析（turn → User/Assistant + 尾随 TodoRound；complete →
-    // TodoComplete；其余行不回显）；非 jsonl → 由 messages 投影
-    // （tool/system 跳过）。isJsonl 按扩展名判定。
-    void collectEchoLines(const std::string& filePath,
-                          const std::vector<CLFMessage>& messages,
-                          std::vector<CLFSessionEchoLine>& outEcho) const;
+    // （分册 2 块 3：collectEchoLines 删除——回显走 CLFSessionReplayer 事件重放）
 
 private:
     std::string       m_activeSessionFile;   // 活动会话文件（防御性互斥）
