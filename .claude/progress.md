@@ -74,7 +74,13 @@
     - **Codec/SessionManager**：JsonlType::kEventLog + serializeTurnLine 加 turnId（默认空零破坏）+ serializeEventLog + appendEventLog（老文件未知类型静默跳过安全网兼容）
     - **主程序装配**（CLFRepl 构造）：bus → adapter（记录版）→ writer（门面 lambda 查活动文件）→ agent.setEventBus；**轮末差集追加调用退役**（防双写；appendTurnLine 方法保留供 qa V 系列）
     - **验证**：qa_CLFSessionWriter W1-W5（含端到端 AgentLoop 全链路）+ ctest 43/43 + 冒烟；实机落库行为待用户随块 1 验收
-  - **待办**：① **块 1 文案迁移切轨**（✻/📋/⏹ 出 finalContent 归适配器渲染 + 状态行自计时 + TipsBar 事件计数 + confirm 切总线——qa 断言迁移面大，W5 装饰断言届时启用）② 块 3 resume 回显重做（Replayer + History 渲染 + collectEchoLines 删除）③ 分册 3（并发调度器 + 渲染映射收尾）④ 实机回归（随块 1 后合并）
+  - **▶ 分册 2 块 1 装饰文案迁移切轨完成 ✅（2026-10-13，6b6961f）**：
+    - **core 删除**：appendWorked 整体删除（✻ 不进 finalContent）；finishTurn 📋 emit 删（complete 落库+置位保留）；emitInterrupted 只剩日志+事件（⏹/清推理/Warn 全迁）；TurnTimerGuard 状态行文案删（只剩转圈 requestRefresh）
+    - **协议补字段**：TurnFinished.m_modelDeclaredEnd（自发宣告 → 适配器不拼 ✻——尊重宣告跨层保持）
+    - **适配器装饰渲染启用**（renderToOutput 开关，记录版默认）：TurnFinished → 📋+✻（格式逐字搬移）；Interrupted → ⏹+清推理+Warn；状态行自计时 StatusTimer（TurnStarted 起/回合结束停，≥15s 阈值+按秒去重原语义）；TUI 文案副本 m_timerLabels（设计 1.4）
+    - **qa 迁移**：T6a/b/c、W5b、V2 装 render 适配器；A5-6 改 result.empty()；新增 A6/A6b/A7/A8 逐字断言
+    - **验证**：ctest 43/43 + 冒烟；**实机观感逐字对比待用户验收**（时序偏差 = 分册 1 §六观察项——适配器渲染在分发线程直调，与 TurnTimerGuard 跨线程同模式）
+  - **待办**：① **实机验收块 1**（✻/📋/⏹ 观感逐字 + 状态行计时正常 + jsonl 落库含 turnId/event_log 无装饰）② 块 1 收尾（TipsBar 事件计数 + confirm 切总线 60s 超时 + Exception/kTurnCapNotice 迁移）③ 块 3 resume 回显重做（Replayer + History 渲染 + collectEchoLines 删除）④ 分册 3（并发调度器 + 渲染映射收尾）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
