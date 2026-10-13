@@ -69,6 +69,7 @@ constexpr ConfigField kConfigFields[] = {
     // —— agent（Agent 行为参数）——
     {"agent", "max_context_window",       ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxContextWindow},
     {"agent", "max_tool_call_iterations", ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxToolCallIterations},
+    {"agent", "max_parallel_tool_calls", ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_maxParallelToolCalls},
     {"agent", "context_compression",      ConfigFieldType::Bool, nullptr, nullptr, nullptr, &CLFAgentConfig::m_contextCompression},
     {"agent", "auto_summary_threshold",   ConfigFieldType::Int, nullptr, &CLFAgentConfig::m_autoSummaryThreshold},
     {"agent", "model_max_tokens",         ConfigFieldType::IntMap, nullptr, nullptr, nullptr, nullptr, nullptr, &CLFAgentConfig::m_modelMaxTokens},

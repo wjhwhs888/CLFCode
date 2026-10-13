@@ -99,6 +99,9 @@ struct CLFAgentConfig {
     // A5：默认 48（原 16）——触顶语义改造后上限定义"阶段粒度"而非"任务容量"，
     // 触顶是阶段完成点不是失败（设计-工具调用循环上限机制改造 §3.2）
     int         m_maxToolCallIterations = 48;
+    // 并行工具调用上限（事件化重构分册 3，dsh §10）：默认 10；1 = 完全串行
+    // （安全阀——串行 = 现行为）；校验 ≥1
+    int         m_maxParallelToolCalls = 10;
     bool        m_contextCompression    = false;
     // S3-1: 自动摘要触发阈值（剩余窗口 < 阈值时触发，受 m_contextCompression 开关控制）
     int         m_autoSummaryThreshold  = 4000;
@@ -143,6 +146,12 @@ struct CLFTool {
     bool m_isSearch = false;  // 计入 searchCount 桶
     bool m_isRead   = false;  // 计入 readCount/progressReads 桶
     std::function<std::string(const std::string&)> m_handler; // 参数为 JSON string
+    // 并发安全判定（事件化重构分册 3，dsh §2）：nullptr = 独占（fail-closed
+    // 默认——所有现工具初始全部独占，声明一个放开一个）；接收参数 JSON
+    // 原文，返回严格 true 才允许并行。约束（dsh §16.2）：判定内不抛异常
+    // 表达"不安全"——直接返回 false。纯调度元数据，不进工具描述/schema
+    // （不泄漏给模型——dsh §2.3）
+    std::function<bool(const std::string& argsJson)> m_isConcurrencySafe;
 };
 
 // ============================================================================

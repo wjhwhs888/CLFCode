@@ -41,6 +41,7 @@ clf_add_test(qa_CLFFileOps          clf_capabilities)
 
 # —— clf_core ——
 clf_add_test(qa_CLFToolExecutor     clf_core)
+clf_add_test(qa_CLFToolScheduler    clf_core)
 clf_add_test(qa_CLFRetryPolicy      clf_core)
 clf_add_test(qa_CLFMessageCodec     clf_core)
 clf_add_test(qa_CLFPasserby         clf_core)

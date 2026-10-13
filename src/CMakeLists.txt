@@ -126,6 +126,7 @@ add_library(clf_core STATIC
     CLFCore/CLFSystemPromptBuilder.cpp
     CLFCore/CLFTodoStore.cpp
     CLFCore/CLFToolExecutor.cpp
+    CLFCore/CLFToolScheduler.cpp
 )
 target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities clf_plugin_api)
 if(MINGW)
