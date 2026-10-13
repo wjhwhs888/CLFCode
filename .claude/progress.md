@@ -60,6 +60,9 @@
 - **文件改动清单**（总纲 §七）：新增 8 源文件（CLFEvents/CLFEventBus/SessionWriter/SessionReplayer/ToolScheduler/TerminalEventAdapter/TerminalTexts）+ 6 测试套件；AgentLoop 单文件函数级拆分（用户定调：调度编排即单一职责）
 - **排期**：明天动工——分册 1 步骤 0（runTurn 拆 5 Section + 二级函数化，纯搬移零行为变化，ctest+实机逐字回归）→ 步骤 1-2 → 分册 2 → 分册 3
 - **提交**：本批分析+设计+进度已提交推送（854ffa2，7 文件 +1342 行）
+- **▶ 步骤 0 实施完成 ✅（2026-10-13，a3ed441）**：runTurn 440 行 → ~100 行编排骨架；Section 四函数（prepareTurn/requestAssistantTurn/executeToolCalls/runWrapUp）+ 二级九函数（buildRequestBody/streamRequest/handleStreamDelta/syncRequest/finalizeResponse/accumulatePartialUsage/abortTurn/interruptedResult/httpErrorResult/requestWrapUpBody）+ RAII 两件（TurnTimerGuard/TurnThinkingClock）+ lambda 成员化（applySelfWorkedMark/accumulateUsage）；finishTurn/appendWorked 零改动；ctest 39/39 全绿（qa_CLFAgentLoop 43 tests/40145 asserts = 行为等价实证）+ --version 冒烟；ICLFOutput/CLFTerminal/CLFRepl 零改动 ✓。**设计偏差 2 处已入 commit message**：① 流式日志留在 streamRequest（零行为变化优先于设计表签名）② wrapUp 不复用 finalizeResponse（现状无 usage/标记处理）
+- **▶ 前置：GCC 15（MinGW）全量构建兼容修复 ✅（2026-10-13，4cd6645）**：build/ 目录当天 09:57 用户用 CLion 自带 MinGW（GCC 15.2）新配置 → 全量重编暴露三层问题，逐层修根——① 编译层：deprecated-declarations 豁免收编（u8path 是 C++17 唯一正确写法，弃用标记属误伤）+ 原 4 豁免同步收编（此前经 CMAKE_CXX_FLAGS 手动传）+ FARPROC cast void* 中转 + NOMINMAX 条件定义 + 死 typedef 删 + qa multichar 修 ② 链接层：GNU ld 单遍 vs MSVC 多遍——clf_network/clf_core PUBLIC 链 OpenSSL/crypt32（接口完整性 CRP） ③ 运行时层：system32 旧版 OpenSSL DLL 抢先加载致 0xc0000139——CMake 新增 clf_deploy_runtime ALL target（DLL 部署三输出目录）+ qa_CLFAgentLoop MockOutput 声明前置 30 处（悬空虚调用，MSVC 栈槽残留侥幸不炸 GCC 15 暴露）+ CLFSessionManager 排序秒级精度文件名兜底 + 测试 -g
+- **待办**：① **实机回归**（步骤 0 验收 §1.3：正常对话/流式/同步/中断/触顶/异常重试/自发 Worked——输出逐字对比；bin/Debug 为 GCC 15 产物，DLL 已自动部署）② 步骤 1（CLFEvents.hpp 协议头）③ 步骤 2（CLFEventBus + 适配器）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
