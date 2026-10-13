@@ -86,7 +86,11 @@
     - **实抓缺陷**：turnId 跳号（turn-1 → turn-3）= **中断回合不落库**（无 TurnFinished → writer 跳过）——旧差集路径中断轮落 user 消息，事件化切换回归。**修根**：writeTurnLine 收敛 TurnFinished/Interrupted 两路径（withAssistant 区分——中断轮落 user + 已执行工具 + event_log）；W6 回归钉
   - **▶ 块 1 收尾完成 ✅（2026-10-13，33c698b）**：TipsBar 事件计数（构造加 bus 默认 nullptr；ContentDelta+ToolFinished 双订阅驱动静默判定，P8 回归）+ confirm 切总线（publishRequestAndWait 60s 超时；适配器 ConfirmRequested → Terminal::confirm——mutex+cv 跨线程安全取证；confirmDialog 绑定删除；A9 往返用例）+ 触顶文案迁移（kTurnCapNotice 出 finalContent 归适配器 capReached 渲染）；**实抓总线缺陷修根**：drainAll 持队列锁调 handler 回调 publish 自死锁（A9 实抓）→ 锁外调 handler；Exception 行保留 core（随分册 3 ContentDelta 渲染同批——记录偏差）
   - **▶▶ 分册 2 全部完成 ✅✅（2026-10-13，d61ad80 块 3）**：resume 回显重做——CLFSessionReplayer（jsonl → History* 事件重放；event_log 权威 + 老文件 turn 内 tool 兜底；worked 行/📋 段行级精确剥离 + 老文件无 turnId 临时 id；实抓 UTF-8 字节比较 bug 修根）+ 适配器 History 渲染（累积 → ResumeDone 折叠块输出；TurnStarted 清空防交错）+ restoreSession 去 outEcho + cmdResume 重放 + collectEchoLines 整体删除；qa R1-R5；**ctest 44/44 全绿** + 冒烟
-  - **待办**：① **实机验收块 3**（resume 回显：工具痕迹 + 摘要可见（痛点根治）；老会话正常回显；观感变化 = 装饰行消失属预期）② 分册 3（并发工具调度器 + ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）
+  - **▶ confirm 实机问题双修 ✅（2026-10-13，f260533 + 0e391b9）**：
+    - **问题 1（60s 确认框不消失）修根**：适配器在分发线程调 Terminal::confirm（无限等待）——总线 60s 超时已按拒绝继续但确认条挂起。修法：CLFTerminal 加 confirmWithTimeout（wait_for 超时主动关闭确认条 + refresh）；适配器 dynamic_cast → 59s（略短于总线 60s——响应先于超时）
+    - **问题 2（第二次取消崩溃）两处修复**：① confirm 谓词无锁读 m_confirmActive——注释声称经 m_mutex 实际无锁，数据竞争 UB（连续确认竞态窗口崩溃候选）→ 谓词加锁（锁序 confirmMutex→mutex 与 submitConfirm 一致无死锁）② A9b 回归钉（连续两次取消往返——mock 层不崩 → 崩溃在 FTXUI 层放大竞态的推断）
+    - **待用户实机复测**：重建后复现原场景（等 60s / 连续两次取消）——若问题 2 仍复现，用 CLion 自带 gdb（bin/gdb/win/x64/bin/gdb.exe）抓 bt 取证
+  - **待办**：① **实机复测 confirm 双修 + 验收块 3**（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3（并发工具调度器 + ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
