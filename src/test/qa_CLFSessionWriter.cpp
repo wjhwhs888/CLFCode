@@ -249,6 +249,66 @@ expect(writer.pumpOnce() == 40_u);   // 全量处理不丢
         // 装饰断言（✻ 不在落库内容）留待分册 2 块 1 文案迁移完成后启用
         expect(msgs[1]["content"].get<std::string>().find("好") != std::string::npos);
     };
+
+    "W6 中断回合落库：user 输入 + 已执行工具痕迹（无 assistant）"_test = [] {
+        CLFTest::CLFTestTempDir dir{"clf_writer_w6_"};
+        CLFSessionFileCtx ctx;
+        ctx.setHistoryDir(dir.string());
+        const std::string path = ctx.beginSessionFile("中断回合", "m", {});
+
+        CLFEventBus bus(false);
+        CLFSessionWriter writer(&bus,
+                                [&ctx] { return ctx.getActiveSessionFile(); },
+                                /*startThread=*/false);
+
+        // TurnStarted → ToolFinished（已执行 1 个）→ Interrupted
+        CLFAgentEvent s = makeEvent(CLFEventType::TurnStarted);
+        s.m_turnId = "turn-9";
+        s.m_text = "帮我跑命令";
+        bus.publish(s);
+        CLFAgentEvent t = makeEvent(CLFEventType::ToolFinished);
+        t.m_turnId = "turn-9";
+        t.m_callId = "call_x";
+        t.m_name = "execute_command";
+        t.m_ok = true;
+        t.m_summary = "部分输出";
+        bus.publish(t);
+        CLFAgentEvent i = makeEvent(CLFEventType::Interrupted);
+        i.m_turnId = "turn-9";
+        bus.publish(i);
+
+        bus.drainAll();
+        writer.pumpOnce();
+
+        const auto lines = readLines(path);
+        expect(lines.size() == 3_u);          // header + turn + event_log
+        const auto& turn = lines[1];
+        expect(turn["turnId"] == "turn-9");   // 中断轮不跳号（实机实抓回归钉）
+        const auto& msgs = turn["messages"];
+        expect(msgs.size() == 2_u);           // user + tool（无 assistant）
+        expect(msgs[0]["role"] == "user");
+        expect(msgs[0]["content"] == "帮我跑命令");
+        expect(msgs[1]["role"] == "tool");
+        expect(msgs[1]["content"] == "部分输出");
+        expect(lines[2]["type"] == "event_log");
+        expect(lines[2]["callId"] == "call_x");
+
+        // 下一回合正常（状态已清空——TurnStarted 重新累积）
+        CLFAgentEvent s2 = makeEvent(CLFEventType::TurnStarted);
+        s2.m_turnId = "turn-10";
+        s2.m_text = "继续";
+        bus.publish(s2);
+        CLFAgentEvent f2 = makeEvent(CLFEventType::TurnFinished);
+        f2.m_turnId = "turn-10";
+        f2.m_text = "完成";
+        bus.publish(f2);
+        bus.drainAll();
+        writer.pumpOnce();
+        const auto lines2 = readLines(path);
+        expect(lines2.size() == 4_u);         // + turn（无工具 → 无 event_log）
+        expect(lines2[3]["turnId"] == "turn-10");
+        expect(lines2[3]["messages"].size() == 2_u);  // 仅 user + assistant
+    };
 };
 
 int main() {}

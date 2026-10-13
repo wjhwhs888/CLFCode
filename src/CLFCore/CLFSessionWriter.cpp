@@ -110,7 +110,14 @@ void CLFSessionWriter::handleEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
     }
 
     case CLFEventType::TurnFinished:
-        handleTurnFinished(ev);
+        writeTurnLine(ev, /*withAssistant=*/true);
+        break;
+
+    case CLFEventType::Interrupted:
+        // 中断回合落库：user 输入 + 已执行工具痕迹（无 assistant——中断无
+        // 最终文本）。旧差集路径中断轮落 user 消息——事件化回归修根
+        // （实机实抓：turnId 序列跳号 = 中断轮丢失，2026-10-13）
+        writeTurnLine(ev, /*withAssistant=*/false);
         break;
 
     default:
@@ -118,7 +125,11 @@ void CLFSessionWriter::handleEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
     }
 }
 
-void CLFSessionWriter::handleTurnFinished(const CLF::CLFTypes::CLFAgentEvent& ev) {
+// TurnFinished / Interrupted 共用：组装本轮消息（user + [assistant] + tools）
+// → 落 turn 行 + event_log 明细 → 清本轮状态。withAssistant=false = 中断
+// 回合（无最终文本，仅 user + 已执行工具）
+void CLFSessionWriter::writeTurnLine(const CLF::CLFTypes::CLFAgentEvent& ev,
+                                     bool withAssistant) {
     const std::string path = m_activeFileGetter ? m_activeFileGetter() : "";
     const std::string ts = CLFSessionManager::timestampNow();
 
@@ -132,7 +143,7 @@ void CLFSessionWriter::handleTurnFinished(const CLF::CLFTypes::CLFAgentEvent& ev
         user.m_content = m_userInput;
         messages.push_back(std::move(user));
     }
-    if (!ev.m_text.empty()) {
+    if (withAssistant && !ev.m_text.empty()) {
         CLFMessage assistant;
         assistant.m_role = "assistant";
         assistant.m_content = ev.m_text;

@@ -58,8 +58,9 @@ private:
     void writerLoop();                                     // 落盘线程循环
     // 单事件落盘处理（落盘线程 / pumpOnce 共用）
     void handleEvent(const CLF::CLFTypes::CLFAgentEvent& ev);
-    // TurnFinished → 组装 turn 行（user/assistant/tool 消息）+ event_log 明细
-    void handleTurnFinished(const CLF::CLFTypes::CLFAgentEvent& ev);
+    // TurnFinished/Interrupted 共用 → 组装 turn 行（user/[assistant]/tool 消息）
+    // + event_log 明细（withAssistant=false = 中断回合，无最终文本）
+    void writeTurnLine(const CLF::CLFTypes::CLFAgentEvent& ev, bool withAssistant);
 
     CLF::CLFTypes::CLFEventBus* m_bus = nullptr;
     std::function<std::string()> m_activeFileGetter;  // 活动文件查询器（借用门面）
