@@ -68,7 +68,13 @@
   - **适配器**：`CLFTerminalEventAdapter`（CLFTUI 层）——R1 修正落地：只记录不渲染，零 ICLFOutput 调用，渲染映射留步骤 3
   - **双轨挂接**（§2.3 归属决策表逐点）：AgentLoop（setEventBus + turnId 回合稳定 id；TurnStarted/ThinkingCleared/StatusChanged/ContentDelta/ReasoningDelta/Interrupted/TurnFinished(capReached)/TodoUpdated）+ ToolExecutor（构造加 bus 默认 nullptr 零破坏；ToolStarted/ToolFinished 8 出口配对发射）
   - **验证**：ctest 42/42 全绿（+3 套件）+ --version 冒烟；qa A5 双轨集成用例（runTurn → 事件序列 + turnId 传播）；ICLFOutput/CLFTerminal/CLFRepl 零改动 ✓
-  - **待办**：① 实机回归（步骤 0-2 合并验证：观感逐字一致 + 双轨期无闪烁）② 分册 2（文案迁移与会话落库恢复——Writer/Replayer/History 重放）③ 分册 3（并发调度器 + 适配器渲染映射启用）
+  - **▶ 分册 2 前半完成 ✅（2026-10-13，f28a8ae）**：CLFSessionWriter 落库订阅者 + 主程序装配切换
+    - **协议补字段**：TurnFinished.m_text = assistant 最终全文（落库数据源，流式/同步均发）
+    - **CLFSessionWriter**（CLFCore 新增）：两层队列（订阅回调只入队 → 落盘线程事件到达即写）；TurnFinished 组装 turn 行（turnId 新字段）+ event_log 明细行（一行一工具、seq 保序）；TodoUpdated 即时快照；工具内容截断口径统一（truncateToolResult）；析构三序（退订→停线程→兜底 drain）；失败仅 warn
+    - **Codec/SessionManager**：JsonlType::kEventLog + serializeTurnLine 加 turnId（默认空零破坏）+ serializeEventLog + appendEventLog（老文件未知类型静默跳过安全网兼容）
+    - **主程序装配**（CLFRepl 构造）：bus → adapter（记录版）→ writer（门面 lambda 查活动文件）→ agent.setEventBus；**轮末差集追加调用退役**（防双写；appendTurnLine 方法保留供 qa V 系列）
+    - **验证**：qa_CLFSessionWriter W1-W5（含端到端 AgentLoop 全链路）+ ctest 43/43 + 冒烟；实机落库行为待用户随块 1 验收
+  - **待办**：① **块 1 文案迁移切轨**（✻/📋/⏹ 出 finalContent 归适配器渲染 + 状态行自计时 + TipsBar 事件计数 + confirm 切总线——qa 断言迁移面大，W5 装饰断言届时启用）② 块 3 resume 回显重做（Replayer + History 渲染 + collectEchoLines 删除）③ 分册 3（并发调度器 + 渲染映射收尾）④ 实机回归（随块 1 后合并）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
