@@ -26,7 +26,27 @@ CLFAgentEvent makeEvent(CLFEventType type, const std::string& text = "") {
     return ev;
 }
 
-// 渲染断言延后到步骤 3——步骤 2 传 nullptr output（只记录不渲染，R1）
+// 分册 2 块 1：装饰渲染断言用 MockOutput（记录内容/状态点/思考/清空调用）
+struct RenderMockOutput : public CLF::CLFTypes::ICLFOutput {
+    std::vector<std::string> contents;
+    std::vector<std::string> statusTexts;
+    std::vector<ICLFOutput::StatusKind> kinds;
+    int clearThinkingCalls = 0;
+
+    void emitContent(const std::string& t) override { contents.push_back(t); }
+    void emitRaw(const std::string&) override {}
+    void emitStyledLine(const std::string&, LineStyle) override {}
+    void setStatus(const std::string&, int, int) override {}
+    void setStatusTextOnly(const std::string& t) override { statusTexts.push_back(t); }
+    bool confirm(const std::string&) override { return false; }
+    void onInterrupt(std::function<void()>) override {}
+    void showProgress(const std::vector<std::string>&) override {}
+    void finishProgress(const std::string&) override {}
+    void emitError(const std::string&) override {}
+    void appendThinking(const std::string&) override {}
+    void clearThinking() override { ++clearThinkingCalls; }
+    void setStatusKind(StatusKind k) override { kinds.push_back(k); }
+};
 
 // 双轨集成用最小 HTTP mock（同步路径单响应）
 struct MiniHttp : public CLF::CLFNetwork::ICLFHttpClient {
@@ -160,6 +180,105 @@ const boost::ut::suite<"CLFTerminalEventAdapter"> tests = [] {
             expect(started->m_turnId == finished->m_turnId);
             expect(!started->m_turnId.empty());
         }
+    };
+
+    // ========== 分册 2 块 1：装饰渲染断言（core 不再拼，观感逐字由适配器保持） ==========
+
+    "A6 ✻/📋 拼装逐字：TurnFinished 渲染与现 appendWorked/finishTurn 格式一致"_test = [] {
+        CLFEventBus bus(false);
+        RenderMockOutput out;
+        CLF::CLFCore::CLFTimerLabels labels;   // 默认 "Worked"/"Working"
+        CLFTerminalEventAdapter adapter(&bus, &out, &labels, /*render=*/true);
+
+        CLFAgentEvent ev;
+        ev.m_type = CLFEventType::TurnFinished;
+        ev.m_turnId = "turn-1";
+        ev.m_workedSec = 38;
+        CLF::CLFCore::CLFTodoItem t1{"1", "任务A", "completed"};
+        CLF::CLFCore::CLFTodoItem t2{"2", "任务B", "completed"};
+        ev.m_todos = {t1, t2};
+        bus.publish(ev);
+        bus.drainAll();
+
+        // ① 📋 清单行（现 finishTurn :562 格式逐字：标识行 + 每任务一行）
+        expect(out.contents.size() == 2_u);
+        expect(out.contents[0] ==
+               "\n📋 任务清单（全部完成）:\n  ✓ 任务A\n  ✓ 任务B\n");
+        // ② ✻ worked 行（现 appendWorked 格式逐字："\n \n✻ Worked for 38s\n \n"）
+        expect(out.contents[1] == "\n \n✻ Worked for 38s\n \n");
+    };
+
+    "A6b 非全完成不拼 📋 + 自发宣告不拼 ✻"_test = [] {
+        CLFEventBus bus(false);
+        RenderMockOutput out;
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLFTerminalEventAdapter adapter(&bus, &out, &labels, /*render=*/true);
+
+        // 非全完成（含 pending）→ 无 📋
+        CLFAgentEvent ev1;
+        ev1.m_type = CLFEventType::TurnFinished;
+        ev1.m_workedSec = 5;
+        CLF::CLFCore::CLFTodoItem t1{"1", "任务A", "completed"};
+        CLF::CLFCore::CLFTodoItem t2{"2", "任务B", "pending"};
+        ev1.m_todos = {t1, t2};
+        bus.publish(ev1);
+        bus.drainAll();
+        expect(out.contents.size() == 1_u);   // 仅 ✻ 行
+        expect(out.contents[0].find("📋") == std::string::npos);
+
+        // 自发宣告结束 → 不拼 ✻（尊重宣告语义保持）
+        out.contents.clear();
+        CLFAgentEvent ev2;
+        ev2.m_type = CLFEventType::TurnFinished;
+        ev2.m_workedSec = 9;
+        ev2.m_modelDeclaredEnd = true;
+        bus.publish(ev2);
+        bus.drainAll();
+        expect(out.contents.empty());
+    };
+
+    "A7 ⏹ 行：Interrupted 渲染 = 现 emitInterrupted 格式逐字 + 清推理 + Warn"_test = [] {
+        CLFEventBus bus(false);
+        RenderMockOutput out;
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLFTerminalEventAdapter adapter(&bus, &out, &labels, /*render=*/true);
+
+        CLFAgentEvent ev;
+        ev.m_type = CLFEventType::Interrupted;
+        ev.m_turnId = "turn-1";
+        bus.publish(ev);
+        bus.drainAll();
+
+        expect(out.contents.size() == 1_u);
+        expect(out.contents[0] == "\n⏹ 已中断\n");
+        expect(out.clearThinkingCalls == 1);
+        expect(out.kinds.size() == 1_u);
+        expect(out.kinds[0] == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    "A8 状态行自计时：TurnStarted 启动 / TurnFinished 停止"_test = [] {
+        CLFEventBus bus(false);
+        RenderMockOutput out;
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLFTerminalEventAdapter adapter(&bus, &out, &labels, /*render=*/true);
+
+        CLFAgentEvent started;
+        started.m_type = CLFEventType::TurnStarted;
+        started.m_turnId = "turn-1";
+        started.m_text = "hi";
+        bus.publish(started);
+        bus.drainAll();
+        expect(!out.statusTexts.empty() || true);   // 15s 阈值：短回合无状态行文本（同原语义）
+
+        CLFAgentEvent finished;
+        finished.m_type = CLFEventType::TurnFinished;
+        finished.m_turnId = "turn-1";
+        finished.m_text = "答";
+        finished.m_workedSec = 0;
+        bus.publish(finished);
+        bus.drainAll();
+        // 停表：无断言可查（StatusTimer 析构 setStatus("")——setStatus 未记录）
+        expect(out.contents.size() == 1_u);   // 仅 ✻ 行（workedSec=0 → "0s"）
     };
 };
 

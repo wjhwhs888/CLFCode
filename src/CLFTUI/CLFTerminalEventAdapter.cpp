@@ -1,10 +1,10 @@
 // CLFTerminalEventAdapter.cpp — 总线订阅者 → ICLFOutput 映射适配器实现
-// 步骤 2（R1 审查修正）：只记录不渲染——零 ICLFOutput 调用；步骤 3 切轨
-// 时启用渲染映射（分册 1 §3.4 映射表）。
+// 步骤 2：只记录不渲染；分册 2 块 1：装饰渲染启用（✻/📋/⏹/状态行自计时）。
 
 #include "CLFTUI/CLFTerminalEventAdapter.hpp"
 
 #include "CLFTypes/CLFEvents.hpp"
+#include "CLFTypes/CLFPeriodicTimer.hpp"
 
 namespace CLF::CLFTUI {
 
@@ -12,10 +12,48 @@ using CLF::CLFTypes::CLFAgentEvent;
 using CLF::CLFTypes::CLFEventBus;
 using CLF::CLFTypes::CLFEventType;
 using CLF::CLFTypes::ChannelPolicy;
+using CLF::CLFTypes::CLFPeriodicTimer;
+using CLF::CLFTypes::ICLFOutput;
+
+// 状态行自计时器（原 AgentLoop turnTimer 的状态行职责迁移——设计 4.2：
+// 50ms 驱动照旧；转圈 requestRefresh 保留在 TurnTimerGuard，职责一分为二）
+class CLFTerminalEventAdapter::StatusTimer {
+public:
+    StatusTimer(ICLFOutput* out, const CLF::CLFCore::CLFTimerLabels& labels)
+        : m_out(out)
+        , m_labels(labels)
+        , m_timer(std::chrono::milliseconds(50), [this]() {
+              if (!m_out) return;
+              const auto s = std::chrono::duration_cast<std::chrono::seconds>(
+                  std::chrono::steady_clock::now() - m_start).count();
+              // P1-1 原语义：≥15s 才显示 + 按秒去重（dsh 规则）
+              if (s >= 15 && s != m_lastShownSec) {
+                  m_lastShownSec = s;
+                  m_out->setStatusTextOnly(
+                      m_labels.working + " for "
+                      + std::to_string(static_cast<int>(s)) + "s…");
+              }
+              m_out->requestRefresh();
+          }) {}
+
+    ~StatusTimer() {
+        m_timer.stop();
+        if (m_out) m_out->setStatus("");
+    }
+
+private:
+    ICLFOutput* m_out;
+    CLF::CLFCore::CLFTimerLabels m_labels;   // 文案副本（UI 侧持有——设计 1.4）
+    std::chrono::steady_clock::time_point m_start{std::chrono::steady_clock::now()};
+    int m_lastShownSec = -1;   // 声明先于 m_timer（析构逆序：定时器先停）
+    CLFPeriodicTimer m_timer;
+};
 
 CLFTerminalEventAdapter::CLFTerminalEventAdapter(CLF::CLFTypes::CLFEventBus* bus,
-                                                 CLF::CLFTypes::ICLFOutput* output)
-    : m_bus(bus), m_output(output) {
+                                                 CLF::CLFTypes::ICLFOutput* output,
+                                                 const CLF::CLFCore::CLFTimerLabels* labels,
+                                                 bool renderToOutput)
+    : m_bus(bus), m_output(output), m_labels(labels), m_render(renderToOutput) {
     if (!m_bus) return;
     // 语义帧（Lossless 保序不丢）+ 增量帧（Coalescing 丢旧留新）双订阅
     m_semanticSub = m_bus->subscribe(
@@ -26,25 +64,87 @@ CLFTerminalEventAdapter::CLFTerminalEventAdapter(CLF::CLFTypes::CLFEventBus* bus
         ChannelPolicy::Coalescing);
 }
 
+CLFTerminalEventAdapter::~CLFTerminalEventAdapter() {
+    if (m_semanticSub.m_bus) m_semanticSub.unsubscribe();
+    if (m_deltaSub.m_bus) m_deltaSub.unsubscribe();
+}
+
 void CLFTerminalEventAdapter::onEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
-    std::lock_guard<std::mutex> lk(m_mutex);
-    m_received.push_back(ev);
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_received.push_back(ev);
+        switch (ev.m_type) {
+        case CLFEventType::ContentDelta:
+        case CLFEventType::ReasoningDelta:
+        case CLFEventType::ThinkingCleared:
+            ++m_deltaCount;
+            break;
+        default:
+            ++m_semanticCount;
+            break;
+        }
+    }
+    if (!m_render) return;   // 步骤 2 记录版：零 ICLFOutput 调用
+
+    // —— 分册 2 块 1：装饰渲染（流式/工具渲染留分册 3）——
     switch (ev.m_type) {
-    case CLFEventType::ContentDelta:
-    case CLFEventType::ReasoningDelta:
-    case CLFEventType::ThinkingCleared:
-        ++m_deltaCount;
+    case CLFEventType::TurnStarted:
+        // 状态行自计时启动（用户定调 7：UI 自计时）
+        stopStatusTimer();
+        if (m_output && m_labels) {
+            m_statusTimer = std::make_unique<StatusTimer>(m_output, *m_labels);
+        }
         break;
+
+    case CLFEventType::TurnFinished:
+        stopStatusTimer();
+        renderTurnFinished(ev);
+        break;
+
+    case CLFEventType::Interrupted:
+        stopStatusTimer();
+        renderInterrupted();
+        break;
+
     default:
-        ++m_semanticCount;
         break;
     }
-    // 步骤 3 渲染映射（分册 1 §3.4 映射表）：
-    //   StatusChanged → setStatusKind / ContentDelta → emitContent /
-    //   ReasoningDelta → appendThinking / ThinkingCleared → clearThinking /
-    //   ToolStarted → showProgress / ToolFinished → finishProgress /
-    //   ConfirmRequested → confirm → ConfirmResponse（经总线 reply 通道）/
-    //   TodoUpdated / TurnFinished / Interrupted → 分册 2 迁移
+}
+
+// 收尾装饰：① 📋 清单行（全完成）② ✻ worked 行——现 finishTurn :562 与
+// appendWorked 格式逐字搬移（core 不再拼，观感不变）
+void CLFTerminalEventAdapter::renderTurnFinished(const CLF::CLFTypes::CLFAgentEvent& ev) {
+    if (!m_output) return;
+    if (!ev.m_todos.empty()) {
+        bool allDone = true;
+        for (const auto& t : ev.m_todos) {
+            if (t.m_status != "completed") { allDone = false; break; }
+        }
+        if (allDone) {
+            std::string summary = "\n📋 任务清单（全部完成）:";
+            for (const auto& t : ev.m_todos)
+                summary += "\n  ✓ " + t.m_content;
+            m_output->emitContent(summary + "\n");
+        }
+    }
+    // ✻ worked 行（模型自发宣告结束时不拼——与现 finishTurn 语义一致）
+    if (ev.m_modelDeclaredEnd) return;
+    const std::string worked = "\n \n✻ "
+        + (m_labels ? m_labels->worked : std::string("Worked"))
+        + " for " + CLF::CLFCore::formatDurationSeconds(ev.m_workedSec) + "\n \n";
+    m_output->emitContent(worked);
+}
+
+// ⏹ 中断行 + 清推理 + Warn——现 emitInterrupted 整体迁适配器（设计 1.1）
+void CLFTerminalEventAdapter::renderInterrupted() {
+    if (!m_output) return;
+    m_output->emitContent("\n⏹ 已中断\n");
+    m_output->clearThinking();
+    m_output->setStatusKind(ICLFOutput::StatusKind::Warn);
+}
+
+void CLFTerminalEventAdapter::stopStatusTimer() {
+    m_statusTimer.reset();   // 析构停表 + setStatus("")
 }
 
 } // namespace CLF::CLFTUI

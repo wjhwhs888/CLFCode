@@ -83,15 +83,13 @@ void CLFAgentLoop::setOutput(CLF::CLFTypes::ICLFOutput* output) {
 // ============================================================================
 
 // ② 回合计时 RAII（原 runTurn :158-188 搬移）：
-// Timer #2——StatusLine 持续计时 + 转圈动画驱动（50ms = 20Hz）。
-// 用 CLFPeriodicTimer（条件变量唤醒）而非 sleep 轮询：后者 join 时平均要
-// 空等 ~0.8s，每个 runTurn 白白多花近一秒。异常兜底已在定时器内部
-// （B1 教训：线程体逸出异常会 std::terminate，静默退出码 3）。
-// F13 升级（2026-09-09 D4 定案）：1Hz → 20Hz。CPR 查询关闭后
-// （TrackCursorPosition(false) 修 CLion 中文输入抖动），转圈动画失去
-// 事件源——静止期仅 1Hz 兜底致秒跳一帧卡顿。50ms 驱动让转圈
-// （100ms/帧）恢复流畅，仅 turn 生命周期内驱动（回合结束即停，
-// 不违背"流静止则动画静止"——静止的是对话流，转圈仍可见）。
+// Timer #2——转圈动画驱动（50ms = 20Hz）。用 CLFPeriodicTimer（条件变量
+// 唤醒）而非 sleep 轮询：后者 join 时平均要空等 ~0.8s。异常兜底已在定时器
+// 内部（B1 教训：线程体逸出异常会 std::terminate，静默退出码 3）。
+// F13 升级（2026-09-09 D4 定案）：1Hz → 20Hz——CPR 查询关闭后转圈动画
+// 失去事件源；50ms 驱动让转圈（100ms/帧）恢复流畅，仅 turn 生命周期内驱动。
+// 分册 2 块 1（设计 4.2 审查补充）：状态行计时文案迁适配器自计时
+// （StatusTimer）——guard 职责只剩转圈 requestRefresh，一分为二。
 class CLFAgentLoop::TurnTimerGuard {
 public:
     explicit TurnTimerGuard(CLFAgentLoop* loop)
@@ -99,16 +97,6 @@ public:
         , m_out(loop->m_output)  // 析构清理用构造时快照（原 TurnGuard 语义）
         , m_timer(std::chrono::milliseconds(50), [this]() {
               if (!m_loop->m_output) return;
-              auto s = std::chrono::duration_cast<std::chrono::seconds>(
-                  std::chrono::steady_clock::now() - m_turnStart).count();
-              // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）；50ms
-              // 周期下按秒去重——同一秒只 setStatusTextOnly 一次
-              if (s >= 15 && s != m_lastShownSec) {
-                  m_lastShownSec = s;
-                  m_loop->m_output->setStatusTextOnly(
-                      m_loop->m_labels.working + " for "
-                      + std::to_string(static_cast<int>(s)) + "s…");
-              }
               m_loop->m_output->requestRefresh();
           }) {}
 
@@ -117,14 +105,13 @@ public:
         if (m_out) m_out->setStatus("");
     }
 
-    // finishTurn / appendWorked 的计时基准（原 turnStart 局部变量）
+    // finishTurn 的计时基准（原 turnStart 局部变量）
     std::chrono::steady_clock::time_point turnStart() const { return m_turnStart; }
 
 private:
     CLFAgentLoop* m_loop;
     CLF::CLFTypes::ICLFOutput* m_out;
     std::chrono::steady_clock::time_point m_turnStart{std::chrono::steady_clock::now()};
-    int m_lastShownSec = -1;  // 声明先于 m_timer（析构逆序：定时器先停）
     CLF::CLFTypes::CLFPeriodicTimer m_timer;
 };
 
@@ -377,13 +364,12 @@ std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
     CLFLogger::instance().info("[Turn] max tool iterations reached ("
         + std::to_string(m_config.m_maxToolCallIterations) + "), wrap-up request");
     if (!requestWrapUpBody(finalContent)) return std::string("[Interrupted]");
-    // 顺序：总结文本 → 提示文案 → worked（§3.2.1）
+    // 顺序：总结文本 → 提示文案（✻ worked 行分册 2 块 1 迁适配器——§3.2.1）
     if (m_output && m_config.m_stream) {
         m_output->emitContent(kTurnCapNotice);
     } else {
         finalContent += kTurnCapNotice;
     }
-    appendWorked(finalContent, turnStart);
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     // 事件化重构步骤 2：TurnFinished 双轨发射（触顶路径——capReached 标志）
@@ -705,18 +691,8 @@ void CLFAgentLoop::accumulateUsage(const CLFAssistantResponse& usageSrc) {
 
 // ============================================================================
 // A5 收尾 helper（设计-工具调用循环上限机制改造 §3.2.1）
+// 分册 2 块 1：appendWorked 删除——✻ worked 行迁适配器（TurnFinished 渲染）
 // ============================================================================
-
-void CLFAgentLoop::appendWorked(std::string& finalContent,
-                                std::chrono::steady_clock::time_point turnStart) {
-    auto s = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - turnStart).count();
-    std::string worked = "\n \n✻ " + m_labels.worked + " for "
-                       + formatDurationSeconds(s) + "\n \n";
-    finalContent += worked;
-    if (m_output && m_config.m_stream)
-        m_output->emitContent(worked);  // stream 路径需显式 emit
-}
 
 std::string CLFAgentLoop::finishTurn(
     std::string& finalContent,
@@ -726,7 +702,8 @@ std::string CLFAgentLoop::finishTurn(
     // T6: todo 全完成收尾（设计-任务清单UI显示 §3.7，2026-09-02）
     // 判定（C2：收敛至 CLFTodoStore::allDoneSnapshot）：非空 && 全部 completed
     // && !todoPanelDone（无 m_todoDirty，§八 补丁 5）
-    // 时序：总结已流式输出完毕 → 清单行 → ✻ worked（顺序=显示顺序）
+    // 分册 2 块 1：② 显示（📋 收尾行 emit）迁适配器（TurnFinished 渲染）；
+    // ① 数据（complete 行落盘）与 ③ 置位保留 core
     if (!m_todoStore.isTodoPanelDone()) {
         const auto todosSnapshot = m_todoStore.allDoneSnapshot();
         if (!todosSnapshot.empty()) {
@@ -737,27 +714,13 @@ std::string CLFAgentLoop::finishTurn(
                     todosSnapshot, CLFSessionManager::timestampNow());
                 CLFSessionManager::appendComplete(sessionFile, line);
             }
-            // ② 显示：emit 收尾行（try/catch 隔离——异常不得逸出到外层
-            //    catch（重试处理），最高优先级原则 §一）
-            // 格式（2026-09-02 实机验收调整）：标识行 + 每任务一行
-            try {
-                if (m_output) {
-                    std::string summary = "\n📋 任务清单（全部完成）:";
-                    for (const auto& t : todosSnapshot)
-                        summary += "\n  ✓ " + t.m_content;
-                    m_output->emitContent(summary + "\n");
-                }
-            } catch (...) {}
             // ③ 显示：置位（面板隐藏，等待下一次 create）
             m_todoStore.setTodoPanelDone(true);
         }
     }
 
-    // 模型自发宣告结束 → 不重复拼 worked（模型输出中的标记行保留在
-    // finalContent 内——尊重宣告，2026-09-23 用户拍板）
-    if (!modelDeclaredEnd) {
-        appendWorked(finalContent, turnStart);
-    }
+    // 分册 2 块 1：✻ worked 行不再拼 finalContent/emit——适配器按
+    // TurnFinished 渲染（m_modelDeclaredEnd 时抑制——自发宣告语义保持）
     m_context.addMessage("assistant", finalContent);
     // P1-1: 完成点显式接线（TurnGuard 不设 kind，F20）；kind 由调用方按
     // 结束原因传入：自然停/concluded = Done，max-tokens = Warn（A5 §3.2.1）
@@ -773,6 +736,7 @@ std::string CLFAgentLoop::finishTurn(
             std::chrono::steady_clock::now() - turnStart).count();
         ev.m_todos = m_todoStore.getTodos();
         ev.m_capReached = false;
+        ev.m_modelDeclaredEnd = modelDeclaredEnd;  // 自发宣告 → 适配器不拼 ✻
         m_eventBus->publish(ev);
     }
     CLFLogger::instance().info("[Turn] done, content="
@@ -1061,7 +1025,8 @@ CLFAgentLoop::HttpErrorAction CLFAgentLoop::handleHttpError(
 }
 
 void CLFAgentLoop::emitInterrupted() {
-    // P0-5: 统一文案（原 9 处两版文案）+ clearThinking + Warn 状态点
+    // P0-5: 统一文案（原 9 处两版文案）——分册 2 块 1：⏹ 行/clearThinking/
+    // Warn 状态点迁适配器（Interrupted 事件渲染）；core 只留日志 + 事件。
     // 所有调用点后立即 return——一轮内不可重复发射（F17 裁决）
     // W2 修复（2026-09-23 中断时效性 批C-3）：中断路径零日志痕迹——
     // 补日志（本次破案曾靠 ToolExec 日志间接判别，中断自身不可判读）
@@ -1073,10 +1038,6 @@ void CLFAgentLoop::emitInterrupted() {
         ev.m_turnId = m_currentTurnId;
         m_eventBus->publish(ev);
     }
-    if (!m_output) return;
-    m_output->emitContent("\n⏹ 已中断\n");
-    m_output->clearThinking();
-    m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
 }
 
 void CLFAgentLoop::injectSystemPrompt() {

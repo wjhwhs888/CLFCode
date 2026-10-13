@@ -223,10 +223,6 @@ private:
                            CLF::CLFTypes::ICLFOutput::StatusKind kind,
                            bool modelDeclaredEnd = false);
 
-    // A5：worked 行拼接（完成分支与触顶路径两处复用；stream 模式内含显式 emit）
-    void appendWorked(std::string& finalContent,
-                      std::chrono::steady_clock::time_point turnStart);
-
     // 构建 Builder Context（injectSystemPrompt + rebuildSystemMessage 共用）
     CLFSystemPromptBuilder::Context buildSystemPromptContext() const;
 

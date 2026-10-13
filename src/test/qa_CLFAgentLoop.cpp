@@ -14,6 +14,8 @@
 #include "CLFCore/CLFMessageCodec.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
+#include "CLFTUI/CLFTerminalEventAdapter.hpp"  // 分册 2 块 1：装饰渲染断言迁移
+#include "CLFTypes/CLFEventBus.hpp"
 
 using namespace boost::ut;
 using CLF::CLFCore::CLFAgentLoop;
@@ -361,6 +363,11 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = std::make_unique<CLFAgentLoop>(config, mock);
         agent->setOutput(&out);
+        // 分册 2 块 1：⏹/Warn 迁适配器——render 版适配器断言（事件驱动渲染）
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
 
         mock->hookAfterLine = 1;  // 第 2 行之后触发中断
         mock->onLineHook = [&] { out.fireInterrupt(); };
@@ -371,6 +378,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         });
 
         std::string result = agent->runTurn("hi");
+        bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
         expect(result == "[Interrupted]");
         expect(out.interruptEmissions() == 1);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
@@ -385,6 +393,11 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = std::make_unique<CLFAgentLoop>(config, mock);
         agent->setOutput(&out);
+        // 分册 2 块 1：⏹/Warn 迁适配器——render 版适配器断言
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
 
         mock->pushResponse("", "timeout");  // 非致命 → 进入可中断重试等待
 
@@ -393,6 +406,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         std::this_thread::sleep_for(std::chrono::milliseconds(150));  // 已进入等待循环
         out.fireInterrupt();
         runner.join();
+        bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
 
         expect(result == "[Interrupted]");
         expect(out.interruptEmissions() == 1);
@@ -434,6 +448,11 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = std::make_unique<CLFAgentLoop>(config, mock);
         agent->setOutput(&out);
+        // 分册 2 块 1：⏹ 迁适配器——render 版适配器断言
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
 
         mock->hookAfterLine = 1;  // 第 2 行之后触发 abort（仅 HTTP 层）
         mock->onLineHook = [&] { mock->abort(); };
@@ -444,6 +463,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         });
 
         std::string result = agent->runTurn("hi");
+        bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
         expect(result == "[Interrupted]");
         expect(mock->streamCallCount() == 1);
         expect(out.interruptEmissions() == 1);
@@ -874,6 +894,11 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = std::make_unique<CLFAgentLoop>(config, mock);
         agent->setOutput(&out);
+        // 分册 2 块 1：⏹/Warn 迁适配器——render 版适配器断言
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
 
         CLFTool slowTool;
         slowTool.m_name = "slow_read";
@@ -904,6 +929,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         std::this_thread::sleep_for(std::chrono::milliseconds(150));  // handler 执行中
         out.fireInterrupt();
         runner.join();
+        bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
 
         expect(result == "[Interrupted]");
         expect(out.interruptEmissions() == 1);
@@ -989,12 +1015,18 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;   // 先于 VSetup 声明：逆序析构时 agent（s 成员）先死、out 后死
         VSetup s;
         s.agent->setOutput(&out);
+        // 分册 2 块 1：📋 收尾行迁适配器——render 版适配器断言
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        s.agent->setEventBus(&bus);
         s.agent->beginSessionFile("任务会话");
         s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "completed"}});
 
         s.pushStop("总结");
         s.agent->runTurn("完成吧");
         s.agent->appendTurnLine();
+        bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
 
         expect(s.agent->isTodoPanelDone());   // 面板置位
 
@@ -1285,7 +1317,9 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         std::string result = agent->runTurn("go");
 
         expect(mock->syncCallCount() == 2);
-        expect(result.find("✻") != std::string::npos);   // worked 行
+        // 分册 2 块 1：✻ worked 行出 finalContent（适配器渲染）——concluded
+        // 后无文本 → 结果为空串；worked 渲染断言在 qa_CLFTerminalEventAdapter
+        expect(result.empty());
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Done);
     };
 

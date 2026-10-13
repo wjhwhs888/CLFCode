@@ -106,6 +106,8 @@ struct CLFAgentEvent {
     int         m_statusKind{0};   // StatusChanged（数值 = ICLFOutput::StatusKind 枚举序）
     long long   m_workedSec{0};    // TurnFinished
     bool        m_capReached{false}; // TurnFinished（触顶标志）
+    bool        m_modelDeclaredEnd{false}; // TurnFinished（模型自发宣告结束 →
+                                           // 适配器不拼 ✻ worked 行——分册 2 块 1）
     // CLFTodoItem 位于 CLF::CLFCore（CLFTypes.hpp 历史命名布局）——限定名引用
     std::vector<CLF::CLFCore::CLFTodoItem> m_todos; // TodoUpdated / TurnFinished（全量快照）
 

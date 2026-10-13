@@ -125,8 +125,10 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
     // → agent 注入（双轨发射）。writer 经门面 lambda 查询活动文件——不暴露
     // 内部 CLFSessionFileCtx
     m_eventBus = std::make_unique<CLF::CLFTypes::CLFEventBus>();
+    // 分册 2 块 1：装饰渲染启用（✻/📋/⏹/状态行自计时——core 侧对应直调
+    // 已删除，观感由适配器保持逐字）
     m_eventAdapter = std::make_unique<CLFTerminalEventAdapter>(
-        m_eventBus.get(), m_output);
+        m_eventBus.get(), m_output, &m_timerLabels, /*renderToOutput=*/true);
     m_sessionWriter = std::make_unique<CLF::CLFCore::CLFSessionWriter>(
         m_eventBus.get(),
         [this]() { return m_agent.getActiveSessionFile(); });

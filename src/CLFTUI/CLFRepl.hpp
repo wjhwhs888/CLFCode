@@ -82,6 +82,9 @@ private:
     std::unique_ptr<CLF::CLFTypes::CLFEventBus> m_eventBus;
     std::unique_ptr<CLFTerminalEventAdapter>    m_eventAdapter;
     std::unique_ptr<CLF::CLFCore::CLFSessionWriter> m_sessionWriter;
+    // TUI 侧计时文案副本（设计 1.4：显示文案归 UI；默认值与 AgentLoop
+    // 构造默认一致——labels 定制化留后续瘦身批）
+    CLF::CLFCore::CLFTimerLabels m_timerLabels;
     CLF::CLFCore::CLFPasserby m_passerby;   // 会话节奏观察器（构造于 m_output 之后）
 
     // 快捷键状态
