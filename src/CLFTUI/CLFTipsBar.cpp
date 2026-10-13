@@ -10,6 +10,7 @@
 #include "CLFCore/CLFConfigLoader.hpp"
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"
+#include "CLFTypes/CLFEventBus.hpp"   // 分册 2 块 1：事件活动计数
 
 namespace CLF::CLFTUI {
 using namespace CLF::CLFCore;  // CLFConfigLoader / CLFLogger（CLFRepl.cpp 同模式）
@@ -33,12 +34,26 @@ CLFTipsBar::CLFTipsBar(CLF::CLFTypes::ICLFProgressOutput* output,
                        int rotateIntervalSec,
                        int silenceThresholdSec,
                        std::string tipsPath,
-                       bool startTimer)
+                       bool startTimer,
+                       CLF::CLFTypes::CLFEventBus* bus)
     : m_output(output)
     , m_entries(loadEntries(tipsPath))
     , m_rotateIntervalSec(rotateIntervalSec)
-    , m_silenceThresholdSec(silenceThresholdSec) {
-    if (m_output) m_lastActivity = m_output->activityCount();
+    , m_silenceThresholdSec(silenceThresholdSec)
+    , m_bus(bus) {
+    if (!m_bus && m_output) m_lastActivity = m_output->activityCount();
+    if (m_bus) {
+        // 分册 2 块 1（设计 4.2）：活动数据源切事件——ToolFinished（语义帧）
+        // + ContentDelta（增量帧）双订阅；handler 只加原子计数（快操作）
+        m_subSemanticId = m_bus->subscribe(
+            [this](const CLF::CLFTypes::CLFAgentEvent&) {
+                m_eventActivity.fetch_add(1);
+            }, CLF::CLFTypes::ChannelPolicy::Lossless).m_id;
+        m_subDeltaId = m_bus->subscribe(
+            [this](const CLF::CLFTypes::CLFAgentEvent&) {
+                m_eventActivity.fetch_add(1);
+            }, CLF::CLFTypes::ChannelPolicy::Coalescing).m_id;
+    }
     if (startTimer) {
         // 构造即启动（项目惯例）；析构自动 stop（CLFPeriodicTimer 析构即 stop）
         m_timer = std::make_unique<CLF::CLFTypes::CLFPeriodicTimer>(
@@ -47,7 +62,14 @@ CLFTipsBar::CLFTipsBar(CLF::CLFTypes::ICLFProgressOutput* output,
     }
 }
 
-CLFTipsBar::~CLFTipsBar() = default;  // m_timer 析构即 stop
+CLFTipsBar::~CLFTipsBar() {
+    // 退订（分发线程 drain 完剩余事件后退出）
+    if (m_bus) {
+        if (m_subSemanticId >= 0) m_bus->unsubscribe(m_subSemanticId);
+        if (m_subDeltaId >= 0) m_bus->unsubscribe(m_subDeltaId);
+    }
+    // m_timer 析构即 stop
+}
 
 std::vector<std::string> CLFTipsBar::loadEntries(const std::string& tipsPath) const {
     const std::string path = tipsPath.empty()
@@ -80,7 +102,10 @@ void CLFTipsBar::tick() {
         ++m_rotateIndex;
         return;
     }
-    const uint64_t now = m_output ? m_output->activityCount() : 0;
+    // 分册 2 块 1：活动数据源——有总线走事件计数（模型/工具活动），
+    // 无总线兼容旧路径 activityCount
+    const uint64_t now = m_bus ? m_eventActivity.load()
+                               : (m_output ? m_output->activityCount() : 0);
     if (now != m_lastActivity.load()) {
         // 有输出活动 → 静默清零（异常消除回灰轮播）
         m_silenceSec = 0;

@@ -199,12 +199,18 @@ size_t CLFEventBus::drainAll() {
     }
     size_t drained = 0;
     for (auto* s : subs) {
-        std::lock_guard<std::mutex> qlk(s->queueMutex);
-        while (!s->queue.empty()) {
-            CLFAgentEvent ev = std::move(s->queue.front());
-            s->queue.pop_front();
+        for (;;) {
+            CLFAgentEvent ev;
+            {
+                std::unique_lock<std::mutex> qlk(s->queueMutex);
+                if (s->queue.empty()) break;
+                ev = std::move(s->queue.front());
+                s->queue.pop_front();
+                s->queueCv.notify_one();  // 腾出空位 → 唤醒阻塞的生产者（Lossless 背压）
+            }
+            // 锁外调 handler：handler 可能回调 publish（同一订阅再入队——
+            // 持队列锁会自死锁；A9 confirm 往返实抓，2026-10-13）
             ++drained;
-            s->queueCv.notify_one();  // 腾出空位 → 唤醒阻塞的生产者（Lossless 背压）
             try {
                 s->handler(ev);
             } catch (...) {}  // B6：订阅者异常隔离

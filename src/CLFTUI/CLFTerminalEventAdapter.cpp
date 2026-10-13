@@ -8,6 +8,11 @@
 
 namespace CLF::CLFTUI {
 
+// 触顶提示文案（分册 2 块 1 迁入——原 AgentLoop 匿名命名空间常量逐字：
+// 用户可见；非 [Error] 开头——触顶是阶段完成点，不是错误）
+constexpr const char* kTurnCapNotice =
+    "\n(已达工具调用上限，任务可能未完成——输入「继续」可接着做)\n";
+
 using CLF::CLFTypes::CLFAgentEvent;
 using CLF::CLFTypes::CLFEventBus;
 using CLF::CLFTypes::CLFEventType;
@@ -106,6 +111,20 @@ void CLFTerminalEventAdapter::onEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
         renderInterrupted();
         break;
 
+    case CLFEventType::ConfirmRequested:
+        // 分册 2 块 1（设计 5.2）：confirm 切总线路径——Terminal::confirm
+        // 内部 mutex+cv 等待 UI 线程处理确认条（跨线程安全）；应答经
+        // publish 路由回等待表（publishRequestAndWait 在 AgentLoop 线程唤醒）
+        if (m_output) {
+            const bool accepted = m_output->confirm(ev.m_prompt);
+            CLFAgentEvent reply;
+            reply.m_type = CLFEventType::ConfirmResponse;
+            reply.m_requestId = ev.m_requestId;
+            reply.m_accepted = accepted;
+            m_bus->publish(reply);
+        }
+        break;
+
     default:
         break;
     }
@@ -126,6 +145,11 @@ void CLFTerminalEventAdapter::renderTurnFinished(const CLF::CLFTypes::CLFAgentEv
                 summary += "\n  ✓ " + t.m_content;
             m_output->emitContent(summary + "\n");
         }
+    }
+    // 触顶提示文案（分册 2 块 1 迁入——原 runWrapUp 顺序：总结文本 →
+    // 提示文案 → worked）
+    if (ev.m_capReached) {
+        m_output->emitContent(kTurnCapNotice);
     }
     // ✻ worked 行（模型自发宣告结束时不拼——与现 finishTurn 语义一致）
     if (ev.m_modelDeclaredEnd) return;

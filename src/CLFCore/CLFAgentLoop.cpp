@@ -36,9 +36,7 @@ namespace {
 constexpr const char* kTurnCapWrapUpPrompt =
     "已达本轮工具调用上限。请总结已完成的工作与剩余工作，不要调用工具。";
 
-// 触顶提示文案（用户可见；非 [Error] 开头——触顶是阶段完成点，不是错误）
-constexpr const char* kTurnCapNotice =
-    "\n(已达工具调用上限，任务可能未完成——输入「继续」可接着做)\n";
+// （分册 2 块 1：kTurnCapNotice 迁适配器——core 不再拼提示文案）
 
 } // anonymous namespace
 
@@ -364,12 +362,8 @@ std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
     CLFLogger::instance().info("[Turn] max tool iterations reached ("
         + std::to_string(m_config.m_maxToolCallIterations) + "), wrap-up request");
     if (!requestWrapUpBody(finalContent)) return std::string("[Interrupted]");
-    // 顺序：总结文本 → 提示文案（✻ worked 行分册 2 块 1 迁适配器——§3.2.1）
-    if (m_output && m_config.m_stream) {
-        m_output->emitContent(kTurnCapNotice);
-    } else {
-        finalContent += kTurnCapNotice;
-    }
+    // 顺序：总结文本 → ✻ worked（分册 2 块 1 迁适配器 §3.2.1）。触顶提示
+    // 文案同迁（适配器按 TurnFinished.capReached 渲染）——finalContent 纯净
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     // 事件化重构步骤 2：TurnFinished 双轨发射（触顶路径——capReached 标志）

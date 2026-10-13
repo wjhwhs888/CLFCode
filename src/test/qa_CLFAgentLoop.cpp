@@ -1269,12 +1269,23 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 2);
         agent->setOutput(&out);
+        // 分册 2 块 1：触顶提示文案迁适配器——render 版适配器断言
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
         std::string result = agent->runTurn("大任务");
+        bus.drainAll();
 
         expect(mock->syncCallCount() == 3);   // 2 工具轮 + 1 收尾请求
         expect(result.find("已完成 A-F") != std::string::npos);
         expect(result.find("[Error]") == std::string::npos);
-        expect(result.find("已达工具调用上限") != std::string::npos);   // 提示文案
+        // finalContent 纯净（提示文案出返回——适配器渲染）
+        expect(result.find("已达工具调用上限") == std::string::npos);
+        bool hasNotice = false;
+        for (const auto& c : out.contents)
+            if (c.find("已达工具调用上限") != std::string::npos) hasNotice = true;
+        expect(hasNotice);   // 适配器按 capReached 渲染
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     };
 
@@ -1286,9 +1297,19 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 1);
         agent->setOutput(&out);
+        // 分册 2 块 1：触顶提示文案迁适配器
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
         std::string result = agent->runTurn("go");   // 不抛 = 独立 try/catch 兜住
+        bus.drainAll();
 
-        expect(result.find("已达工具调用上限") != std::string::npos);
+        expect(result.find("已达工具调用上限") == std::string::npos);  // 出返回
+        bool hasNotice = false;
+        for (const auto& c : out.contents)
+            if (c.find("已达工具调用上限") != std::string::npos) hasNotice = true;
+        expect(hasNotice);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     };
 
@@ -1384,7 +1405,13 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 2, /*stream=*/true);
         agent->setOutput(&out);
+        // 分册 2 块 1：触顶提示文案迁适配器——render 版适配器断言
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
+        agent->setEventBus(&bus);
         std::string result = agent->runTurn("大任务");
+        bus.drainAll();
 
         expect(mock->streamCallCount() == 2);   // 主循环流式
         expect(mock->syncCallCount() == 1);     // 仅收尾请求同步

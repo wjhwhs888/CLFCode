@@ -114,16 +114,12 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
     , m_dispatcher(std::make_unique<CLFCommandDispatcher>(
           agent, historyDir, output, nullptr, pluginManager))
     , m_passerby(m_output) {
-    m_agent.setConfirmCallback(
-        [this](const std::string& prompt) { return confirmDialog(prompt); });
     // J3: jsonl 会话文件目录注入（beginSessionFile 建文件用，设计 §3.9）
     m_agent.setHistoryDir(historyDir);
-    // A5：Tips 行（默认 5s 轮播 / 300s 静默阈值；数据源 config/tips.txt + 内置兜底）
-    m_tipsBar = std::make_unique<CLFTipsBar>(m_output);
     // 事件化重构装配（分册 1 §3.4 + 分册 2 §2.3）：
-    // bus 创建 → adapter 订阅（步骤 2 记录版）→ writer 落库订阅（产生就存盘）
-    // → agent 注入（双轨发射）。writer 经门面 lambda 查询活动文件——不暴露
-    // 内部 CLFSessionFileCtx
+    // bus 创建 → adapter 订阅 → writer 落库订阅（产生就存盘）→ agent 注入
+    // （双轨发射）。writer 经门面 lambda 查询活动文件——不暴露内部
+    // CLFSessionFileCtx
     m_eventBus = std::make_unique<CLF::CLFTypes::CLFEventBus>();
     // 分册 2 块 1：装饰渲染启用（✻/📋/⏹/状态行自计时——core 侧对应直调
     // 已删除，观感由适配器保持逐字）
@@ -133,6 +129,22 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
         m_eventBus.get(),
         [this]() { return m_agent.getActiveSessionFile(); });
     m_agent.setEventBus(m_eventBus.get());
+    // 分册 2 块 1（设计 5.2）：confirm 切总线路径——publishRequestAndWait
+    // 阻塞等 ConfirmResponse（60s 超时默认拒绝，用户拍板参照 Claude Code）；
+    // 适配器 ConfirmRequested → Terminal::confirm（其内部 mutex+cv 等待
+    // UI 线程——跨线程安全）→ 回 ConfirmResponse。旧 confirmDialog 绑定删除
+    static std::atomic<uint64_t> s_confirmSeq{0};
+    m_agent.setConfirmCallback([bus = m_eventBus.get()](const std::string& prompt) {
+        CLF::CLFTypes::CLFAgentEvent req;
+        req.m_type = CLF::CLFTypes::CLFEventType::ConfirmRequested;
+        req.m_requestId = "confirm-" + std::to_string(++s_confirmSeq);
+        req.m_prompt = prompt;
+        return bus->publishRequestAndWait(req, std::chrono::seconds(60));
+    });
+    // A5：Tips 行（默认 5s 轮播 / 300s 静默阈值；数据源 config/tips.txt +
+    // 内置兜底）。分册 2 块 1（设计 4.2）：活动数据源切事件计数
+    m_tipsBar = std::make_unique<CLFTipsBar>(m_output, 5, 300, "", true,
+                                             m_eventBus.get());
 }
 
 CLFRepl::~CLFRepl() = default;
@@ -420,11 +432,8 @@ void CLFRepl::submit(const std::string& input) {
     CLFLogger::instance().info("[Submit] exit, tools=" + std::to_string(st.totalCalls));
 }
 
-bool CLFRepl::confirmDialog(const std::string& prompt) {
-    auto* term = dynamic_cast<CLFTerminal*>(m_output);
-    if (term) return term->confirm(prompt);
-    return false;
-}
+// 分册 2 块 1（设计 5.2）：confirmDialog 删除——confirm 走总线路径
+// （ConfirmRequested → 适配器 → Terminal::confirm → ConfirmResponse）
 
 void CLFRepl::cycleMode() {
     auto next = CLFSecurityPolicy::nextMode(

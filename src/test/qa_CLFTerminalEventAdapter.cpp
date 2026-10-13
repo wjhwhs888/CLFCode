@@ -15,6 +15,7 @@ using CLF::CLFTypes::CLFAgentEvent;
 using CLF::CLFTypes::CLFEventBus;
 using CLF::CLFTypes::CLFEventType;
 using CLF::CLFTypes::ICLFOutput;
+using CLF::CLFTypes::ChannelPolicy;
 using CLF::CLFTUI::CLFTerminalEventAdapter;
 
 namespace {
@@ -254,6 +255,51 @@ const boost::ut::suite<"CLFTerminalEventAdapter"> tests = [] {
         expect(out.clearThinkingCalls == 1);
         expect(out.kinds.size() == 1_u);
         expect(out.kinds[0] == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    };
+
+    "A9 confirm 总线往返（分册 2 块 1）：ConfirmRequested → confirm → ConfirmResponse"_test = [] {
+        CLFEventBus bus(false);
+        // confirm 返回 true 的 mock
+        struct ConfirmOutput : RenderMockOutput {
+            bool confirm(const std::string&) override { return true; }
+        };
+        ConfirmOutput out;
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLFTerminalEventAdapter adapter(&bus, &out, &labels, /*render=*/true);
+
+        int responses = 0;
+        bool accepted = false;
+        std::string gotRequestId;
+        bus.subscribe([&](const CLFAgentEvent& ev) {
+            if (ev.m_type == CLFEventType::ConfirmResponse) {
+                ++responses;
+                accepted = ev.m_accepted;
+                gotRequestId = ev.m_requestId;
+            }
+        }, ChannelPolicy::Lossless);
+
+        // 请求-响应往返：publishRequestAndWait 在独立线程（模拟 AgentLoop 阻塞）
+        CLFAgentEvent req;
+        req.m_type = CLFEventType::ConfirmRequested;
+        req.m_requestId = "req-a9";
+        req.m_prompt = "允许吗？";
+        bool ok = false;
+        std::thread caller([&] {
+            ok = bus.publishRequestAndWait(req, std::chrono::milliseconds(1000));
+        });
+        // drainAll 在适配器分发线程角色（模拟分发）：ConfirmRequested →
+        // 适配器 confirm → publish ConfirmResponse → 路由唤醒 caller
+        // 注意：caller 阻塞在等待表——先 drain 一轮让事件进订阅队列
+        // （publishRequestAndWait 内部已 publish 请求事件），drainAll 消费
+        // 适配器队列 → confirm → 响应 publish → 唤醒
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        bus.drainAll();
+        caller.join();
+
+        expect(ok);                      // 确认通过
+        expect(responses == 1);          // 响应到达订阅者
+        expect(accepted);                // accepted 原样回传
+        expect(gotRequestId == "req-a9");
     };
 
     "A8 状态行自计时：TurnStarted 启动 / TurnFinished 停止"_test = [] {

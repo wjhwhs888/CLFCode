@@ -55,7 +55,6 @@ public:
     ~CLFRepl();
 
     int  run();
-    bool confirmDialog(const std::string& prompt);
     void submit(const std::string& input);
     void cycleMode();
     // 拖选自动滚动开关（2026-09-20 记事本式边缘滚动）：选区激活时开启、
@@ -74,14 +73,14 @@ private:
     CLF::CLFTypes::ICLFOutput*  m_output;
     std::string m_historyDir;
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
-    // A5：Tips 行（输入框上方；ticker 构造即启动，析构即停）
-    std::unique_ptr<CLFTipsBar> m_tipsBar;
     // 事件化重构（分册 1 步骤 2 / 分册 2 §2.3）装配：
-    // 声明顺序 = 析构逆序的保证——bus 先声明（最后析构），writer/adapter
-    // 析构退订时 bus 仍有效
+    // 声明顺序 = 析构逆序的保证——bus 先声明（最后析构），writer/adapter/
+    // TipsBar 析构退订时 bus 仍有效
     std::unique_ptr<CLF::CLFTypes::CLFEventBus> m_eventBus;
     std::unique_ptr<CLFTerminalEventAdapter>    m_eventAdapter;
     std::unique_ptr<CLF::CLFCore::CLFSessionWriter> m_sessionWriter;
+    // A5：Tips 行（输入框上方；ticker 构造即启动，析构即停）
+    std::unique_ptr<CLFTipsBar> m_tipsBar;
     // TUI 侧计时文案副本（设计 1.4：显示文案归 UI；默认值与 AgentLoop
     // 构造默认一致——labels 定制化留后续瘦身批）
     CLF::CLFCore::CLFTimerLabels m_timerLabels;

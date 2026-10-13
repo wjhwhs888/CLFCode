@@ -24,6 +24,8 @@
 #include <ftxui/dom/node.hpp>
 #include "CLFTypes/CLFPeriodicTimer.hpp"   // unique_ptr 成员需要完整类型
 
+namespace CLF::CLFTypes { class CLFEventBus; }
+
 namespace CLF::CLFTUI {
 
 class CLFTipsBar {
@@ -32,11 +34,15 @@ public:
     // rotateIntervalSec / silenceThresholdSec 构造参数可注入（qa 用小值不等真实时间）
     // tipsPath 非空 = 指定数据文件（qa 注入临时文件/不存在路径测兜底）；空 = resolvePath 查找链
     // startTimer=false 供 qa 手动 tick()（避免后台定时器与断言竞态）
+    // bus（分册 2 块 1，设计 4.2）：非空 = 静默判定数据源切事件计数
+    //   （ContentDelta + ToolFinished——模型/工具活动）；nullptr = 兼容
+    //   旧路径 activityCount（接口保留，分册 3 并发后事件也会驱动）
     explicit CLFTipsBar(CLF::CLFTypes::ICLFProgressOutput* output,
                         int rotateIntervalSec   = 5,
                         int silenceThresholdSec = 300,
                         std::string tipsPath    = "",
-                        bool startTimer         = true);
+                        bool startTimer         = true,
+                        CLF::CLFTypes::CLFEventBus* bus = nullptr);
     ~CLFTipsBar();
 
     CLFTipsBar(const CLFTipsBar&)            = delete;
@@ -74,6 +80,11 @@ private:
     std::atomic<uint64_t>        m_lastActivity{0}; // 上次 tick 时的活动计数
     mutable std::atomic<bool>    m_busy{false};     // busy 快照（render 每帧写 / tick 读）
     std::unique_ptr<CLF::CLFTypes::CLFPeriodicTimer> m_timer;
+    // 分册 2 块 1：事件活动计数（总线订阅——分发线程写原子，ticker 读）
+    CLF::CLFTypes::CLFEventBus*  m_bus = nullptr;
+    std::atomic<uint64_t>        m_eventActivity{0};
+    int                          m_subSemanticId = -1;  // ToolFinished（语义帧）
+    int                          m_subDeltaId = -1;     // ContentDelta（增量帧）
 };
 
 } // namespace CLF::CLFTUI

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "CLFTUI/CLFTipsBar.hpp"
+#include "CLFTypes/CLFEventBus.hpp"   // P8 事件活动计数
 
 using namespace boost::ut;
 using CLF::CLFTUI::CLFTipsBar;
@@ -148,6 +149,40 @@ const boost::ut::suite<"CLFTipsBar"> tests = [] {
 
         expect(bar.currentLine(false).empty());   // 空闲不打扰
         expect(!bar.currentLine(true).empty());   // 请求中显示
+
+        std::filesystem::remove(path);
+    };
+
+    "P8 事件活动计数（分册 2 块 1）：ContentDelta/ToolFinished 驱动静默判定"_test = [] {
+        const std::string path = writeTipsFile({"条目一"});
+        MockOutput out;
+        CLF::CLFTypes::CLFEventBus bus(false);
+        CLFTipsBar bar(&out, 1, 3, path, /*startTimer=*/false, &bus);
+        bar.setBusy(true);
+
+        bar.tick();   // 无活动 → silence=1
+        bar.tick();   // silence=2
+        expect(bar.currentLine(true).find("无响应") == std::string::npos);
+
+        // 事件活动（模型流式输出 + 工具完成）→ 活动计数变化 → 静默清零
+        CLF::CLFTypes::CLFAgentEvent cd;
+        cd.m_type = CLF::CLFTypes::CLFEventType::ContentDelta;
+        cd.m_text = "增量";
+        bus.publish(cd);
+        CLF::CLFTypes::CLFAgentEvent tf;
+        tf.m_type = CLF::CLFTypes::CLFEventType::ToolFinished;
+        tf.m_callId = "c1";
+        tf.m_name = "read_file";
+        bus.publish(tf);
+        bus.drainAll();
+
+        bar.tick();   // 活动变化 → 清零
+        expect(bar.currentLine(true).find("无响应") == std::string::npos);
+        bar.tick();   // silence=1
+        bar.tick();   // silence=2
+        expect(bar.currentLine(true).find("无响应") == std::string::npos);
+        bar.tick();   // silence=3 → 触发（此后无新事件）
+        expect(bar.currentLine(true).find("无响应") != std::string::npos);
 
         std::filesystem::remove(path);
     };
