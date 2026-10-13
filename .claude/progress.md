@@ -90,7 +90,8 @@
     - **问题 1（60s 确认框不消失）修根**：适配器在分发线程调 Terminal::confirm（无限等待）——总线 60s 超时已按拒绝继续但确认条挂起。修法：CLFTerminal 加 confirmWithTimeout（wait_for 超时主动关闭确认条 + refresh）；适配器 dynamic_cast → 59s（略短于总线 60s——响应先于超时）
     - **问题 2（第二次取消崩溃）两处修复**：① confirm 谓词无锁读 m_confirmActive——注释声称经 m_mutex 实际无锁，数据竞争 UB（连续确认竞态窗口崩溃候选）→ 谓词加锁（锁序 confirmMutex→mutex 与 submitConfirm 一致无死锁）② A9b 回归钉（连续两次取消往返——mock 层不崩 → 崩溃在 FTXUI 层放大竞态的推断）
     - **待用户实机复测**：重建后复现原场景（等 60s / 连续两次取消）——若问题 2 仍复现，用 CLion 自带 gdb（bin/gdb/win/x64/bin/gdb.exe）抓 bt 取证
-  - **待办**：① **实机复测 confirm 双修 + 验收块 3**（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3（并发工具调度器 + ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）
+  - **▶ SSL 事故闭环 ✅（2026-10-13 晚，用户解决）**：API SSL 验证失败根因 = 我 rm -rf bin 时破坏项目根目录 ACL 保护状态（Everyone DENY + 低完整性标签）→ 从该目录启动的进程证书验证全挂（同 exe 复制 C 盘全通实证；与代码/构建/工具链无关）。用户恢复 DENY 项 + 复制重建项目目录后解决。教训已入 memory（acl-and-rm-discipline：项目目录保护项不要动、不用 rm -rf 删项目目录）。confirm 双修用户复测通过（无崩溃）✓
+  - **待办**：① 分册 3 并发工具调度器（设计已就绪：CLFTool m_isConcurrencySafe + classifyMode + CLFToolScheduler 四阶段 + maxParallelToolCalls 配置 + qa 全组——第一批零行为变化设施先行）② resume 回显（块 3）实机验收 ③ 事件化重构全量实机回归（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3（并发工具调度器 + ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
