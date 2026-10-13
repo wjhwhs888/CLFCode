@@ -80,7 +80,11 @@
     - **适配器装饰渲染启用**（renderToOutput 开关，记录版默认）：TurnFinished → 📋+✻（格式逐字搬移）；Interrupted → ⏹+清推理+Warn；状态行自计时 StatusTimer（TurnStarted 起/回合结束停，≥15s 阈值+按秒去重原语义）；TUI 文案副本 m_timerLabels（设计 1.4）
     - **qa 迁移**：T6a/b/c、W5b、V2 装 render 适配器；A5-6 改 result.empty()；新增 A6/A6b/A7/A8 逐字断言
     - **验证**：ctest 43/43 + 冒烟；**实机观感逐字对比待用户验收**（时序偏差 = 分册 1 §六观察项——适配器渲染在分发线程直调，与 TurnTimerGuard 跨线程同模式）
-  - **待办**：① **实机验收块 1**（✻/📋/⏹ 观感逐字 + 状态行计时正常 + jsonl 落库含 turnId/event_log 无装饰）② 块 1 收尾（TipsBar 事件计数 + confirm 切总线 60s 超时 + Exception/kTurnCapNotice 迁移）③ 块 3 resume 回显重做（Replayer + History 渲染 + collectEchoLines 删除）④ 分册 3（并发调度器 + 渲染映射收尾）
+  - **▶ 实机验收 ✅（2026-10-13 用户）+ 会话记录取证实抓 1 缺陷已修（615817c）**：
+    - 用户验收块 1："目前没发现问题"（✻/📋/⏹/状态行观感逐字 ✓）
+    - **会话记录取证**（doc/contextHistory 最新 2 个 jsonl）：turnId ✓ / event_log 工具痕迹完整（含 ok=false、seq 保序）✓ / assistant 无 ✻/📋 ✓ / todo_snapshot 状态演进清晰 ✓
+    - **实抓缺陷**：turnId 跳号（turn-1 → turn-3）= **中断回合不落库**（无 TurnFinished → writer 跳过）——旧差集路径中断轮落 user 消息，事件化切换回归。**修根**：writeTurnLine 收敛 TurnFinished/Interrupted 两路径（withAssistant 区分——中断轮落 user + 已执行工具 + event_log）；W6 回归钉
+  - **待办**：① 块 1 收尾（TipsBar 事件计数 + confirm 切总线 60s 超时 + Exception/kTurnCapNotice 迁移）② 块 3 resume 回显重做（Replayer + History 渲染 + collectEchoLines 删除——用户痛点根治）③ 分册 3（并发调度器 + 渲染映射收尾）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
