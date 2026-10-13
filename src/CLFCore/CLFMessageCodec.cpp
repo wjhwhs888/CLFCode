@@ -271,7 +271,8 @@ std::string CLFMessageCodec::serializeHeaderLine(const std::string& title,
 
 std::string CLFMessageCodec::serializeTurnLine(const std::vector<CLFMessage>& messages,
                                                const std::string& ts,
-                                               const std::vector<CLFTodoItem>* todos) {
+                                               const std::vector<CLFTodoItem>* todos,
+                                               const std::string& turnId) {
     nlohmann::json line;
     line["type"]     = JsonlType::kTurn;
     line["ts"]       = ts;
@@ -280,6 +281,29 @@ std::string CLFMessageCodec::serializeTurnLine(const std::vector<CLFMessage>& me
     if (todos && !todos->empty()) {
         line["todos"] = todosToJson(*todos);
     }
+    // 分册 2：回合稳定 id（空串 = 不写——老调用点/老文件兼容）
+    if (!turnId.empty()) {
+        line["turnId"] = turnId;
+    }
+    return dumpLine(line);
+}
+
+std::string CLFMessageCodec::serializeEventLog(const std::string& turnId,
+                                               const std::string& ts,
+                                               const std::string& callId,
+                                               const std::string& name,
+                                               bool ok,
+                                               const std::string& summary,
+                                               uint64_t seq) {
+    nlohmann::json line;
+    line["type"]    = JsonlType::kEventLog;
+    line["ts"]      = ts;
+    line["turnId"]  = turnId;
+    line["callId"]  = callId;
+    line["name"]    = name;
+    line["ok"]      = ok;
+    line["summary"] = summary;
+    line["seq"]     = seq;
     return dumpLine(line);
 }
 

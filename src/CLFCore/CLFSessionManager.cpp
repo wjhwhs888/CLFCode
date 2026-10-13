@@ -448,6 +448,10 @@ bool CLFSessionManager::appendSummary(const std::string& jsonlPath, const std::s
     return appendLine(jsonlPath, line, "summary");
 }
 
+bool CLFSessionManager::appendEventLog(const std::string& jsonlPath, const std::string& line) {
+    return appendLine(jsonlPath, line, "event_log");
+}
+
 bool CLFSessionManager::loadJsonl(const std::string& filePath,
                                   std::vector<CLFMessage>& outMessages,
                                   std::vector<std::string>* outSkills,

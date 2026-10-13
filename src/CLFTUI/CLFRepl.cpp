@@ -120,6 +120,17 @@ CLFRepl::CLFRepl(CLF::CLFCore::CLFAgentLoop& agent, const std::string& historyDi
     m_agent.setHistoryDir(historyDir);
     // A5：Tips 行（默认 5s 轮播 / 300s 静默阈值；数据源 config/tips.txt + 内置兜底）
     m_tipsBar = std::make_unique<CLFTipsBar>(m_output);
+    // 事件化重构装配（分册 1 §3.4 + 分册 2 §2.3）：
+    // bus 创建 → adapter 订阅（步骤 2 记录版）→ writer 落库订阅（产生就存盘）
+    // → agent 注入（双轨发射）。writer 经门面 lambda 查询活动文件——不暴露
+    // 内部 CLFSessionFileCtx
+    m_eventBus = std::make_unique<CLF::CLFTypes::CLFEventBus>();
+    m_eventAdapter = std::make_unique<CLFTerminalEventAdapter>(
+        m_eventBus.get(), m_output);
+    m_sessionWriter = std::make_unique<CLF::CLFCore::CLFSessionWriter>(
+        m_eventBus.get(),
+        [this]() { return m_agent.getActiveSessionFile(); });
+    m_agent.setEventBus(m_eventBus.get());
 }
 
 CLFRepl::~CLFRepl() = default;
@@ -398,8 +409,8 @@ void CLFRepl::submit(const std::string& input) {
     m_passerby.onTurnFinished();
 
     auto st = m_agent.getLastToolStats();
-    // J4: 轮末 turn 行追加（替换覆盖式 saveSession(false)）——jsonl 追加式保存
-    m_agent.appendTurnLine();
+    // J4（事件化重构分册 2 切换）：轮末 turn 行落库由 CLFSessionWriter 事件
+    // 驱动（TurnFinished 到达即写）——此处差集追加调用退役，防双写
     try {
         if (m_output) m_output->setStatus("");
         if (m_output) m_output->emitContent("\n");

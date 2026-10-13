@@ -114,6 +114,7 @@ add_library(clf_core STATIC
     CLFCore/CLFSecurityPolicy.cpp
     CLFCore/CLFSessionFileCtx.cpp
     CLFCore/CLFSessionManager.cpp
+    CLFCore/CLFSessionWriter.cpp
     CLFCore/CLFSessionSummarizer.cpp
     CLFCore/CLFSkillLoader.cpp
     CLFCore/CLFSubprocessRunner.cpp

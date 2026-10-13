@@ -19,11 +19,13 @@
 #include "CLFTUI/CLFSelectionModel.hpp"
 #include "CLFTUI/CLFTerminal.hpp"   // ContentSnapshot 值成员需要完整类型
 #include "CLFTUI/CLFTipsBar.hpp"    // A5：Tips 行（unique_ptr 成员）
+#include "CLFTUI/CLFTerminalEventAdapter.hpp"  // 事件化重构装配（unique_ptr 成员）
 #include "CLFCore/CLFPasserby.hpp" // 会话节奏观察器（值成员）
+#include "CLFCore/CLFSessionWriter.hpp"   // 事件化重构分册 2：落库订阅者装配
 #include "CLFTypes/CLFTypes.hpp"   // CLFTodoItem（buildTodoPanelLines 参数）
 
 namespace CLF::CLFCore { class CLFAgentLoop; class CLFPluginManager; }
-namespace CLF::CLFTypes { class ICLFOutput; }
+namespace CLF::CLFTypes { class ICLFOutput; class CLFEventBus; }
 
 namespace CLF::CLFTUI {
 
@@ -74,6 +76,12 @@ private:
     std::unique_ptr<CLFCommandDispatcher> m_dispatcher;
     // A5：Tips 行（输入框上方；ticker 构造即启动，析构即停）
     std::unique_ptr<CLFTipsBar> m_tipsBar;
+    // 事件化重构（分册 1 步骤 2 / 分册 2 §2.3）装配：
+    // 声明顺序 = 析构逆序的保证——bus 先声明（最后析构），writer/adapter
+    // 析构退订时 bus 仍有效
+    std::unique_ptr<CLF::CLFTypes::CLFEventBus> m_eventBus;
+    std::unique_ptr<CLFTerminalEventAdapter>    m_eventAdapter;
+    std::unique_ptr<CLF::CLFCore::CLFSessionWriter> m_sessionWriter;
     CLF::CLFCore::CLFPasserby m_passerby;   // 会话节奏观察器（构造于 m_output 之后）
 
     // 快捷键状态

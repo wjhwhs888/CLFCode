@@ -26,6 +26,10 @@ inline constexpr const char* kTurn         = "turn";
 inline constexpr const char* kTodoSnapshot = "todo_snapshot";
 inline constexpr const char* kComplete     = "complete";
 inline constexpr const char* kSummary      = "summary";
+// 事件化重构分册 2（2026-10-13）：工具调用/结果事件明细——一行一工具，
+// 回合末随 turn 落盘，恢复时完整重建"当时执行了什么"（用户痛点根治）。
+// 老文件无此行 = 兼容跳过（既有"未知类型静默跳过"安全网）
+inline constexpr const char* kEventLog     = "event_log";
 } // namespace JsonlType
 
 class CLFMessageCodec {
@@ -67,15 +71,26 @@ public:
                                            const std::string& sessionId,
                                            const std::string& model,
                                            const std::vector<std::string>& skills = {});
+    // turnId：回合稳定 id（分册 2 新增字段——跨面对齐键；空串 = 不写，
+    // 老调用点零改动）；老文件无此字段解析时兼容跳过
     static std::string serializeTurnLine(const std::vector<CLFMessage>& messages,
                                          const std::string& ts,
-                                         const std::vector<CLFTodoItem>* todos = nullptr);
+                                         const std::vector<CLFTodoItem>* todos = nullptr,
+                                         const std::string& turnId = "");
     static std::string serializeTodoSnapshot(const std::vector<CLFTodoItem>& todos,
                                              const std::string& ts);
     static std::string serializeCompleteLine(const std::vector<CLFTodoItem>& todos,
                                              const std::string& ts);
     static std::string serializeSummaryLine(const CLFSessionSummary& summary,
                                             const std::string& ts);
+    // 工具事件明细行（分册 2 §2.2）：一行一工具，回合末随 turn 落盘
+    static std::string serializeEventLog(const std::string& turnId,
+                                         const std::string& ts,
+                                         const std::string& callId,
+                                         const std::string& name,
+                                         bool ok,
+                                         const std::string& summary,
+                                         uint64_t seq);
 
     static bool parseTurnLine(const nlohmann::json& obj,
                               std::vector<CLFMessage>& outMessages,

@@ -41,7 +41,8 @@ enum class CLFEventType : uint8_t {
     ToolFinished,     // 工具完成（payload: callId / name / ok / summary / errorKind）——完成可乱序
     StatusChanged,    // 状态点（payload: statusKind 数值 = ICLFOutput::StatusKind 枚举序）
     TodoUpdated,      // 清单变化（payload: todos 全量快照）
-    TurnFinished,     // 回合结束（payload: turnId / workedSec / todos / capReached）
+    TurnFinished,     // 回合结束（payload: turnId / workedSec / todos / capReached /
+                      //   text=assistant 最终全文——分册 2 补充：落库数据源，流式/同步均发）
     Interrupted,      // 回合被中断（无 payload）
 
     // ② Live 输出（core → UI，增量旁路通道，可合并丢弃——渲染只需最新画面）
@@ -90,8 +91,8 @@ struct CLFAgentEvent {
 
     // —— 内容 / 输入 ——
     std::string m_text;       // ContentDelta / ReasoningDelta / UserInput /
-                              // TurnStarted.input / HistoryUser / HistoryAssistant /
-                              // HistorySummary
+                              // TurnStarted.input / TurnFinished（assistant 最终全文）/
+                              // HistoryUser / HistoryAssistant / HistorySummary
 
     // —— 工具 ——
     std::string m_callId;     // ToolStarted / ToolFinished / HistoryToolTrace

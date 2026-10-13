@@ -95,6 +95,7 @@ public:
     static bool appendTodoSnapshot(const std::string& jsonlPath, const std::string& line);
     static bool appendComplete(const std::string& jsonlPath, const std::string& line);
     static bool appendSummary(const std::string& jsonlPath, const std::string& line);
+    static bool appendEventLog(const std::string& jsonlPath, const std::string& line);  // 分册 2 §2.2
 
     // 逐行解析 jsonl 会话文件（设计 §3.4.2，2026-09-02）
     // turn 行 messages 按行序并入 outMessages；header 行元数据 → outHeaderInfo

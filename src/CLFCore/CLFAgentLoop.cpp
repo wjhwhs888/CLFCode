@@ -387,10 +387,12 @@ std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     // 事件化重构步骤 2：TurnFinished 双轨发射（触顶路径——capReached 标志）
+    // 分册 2：m_text = finalContent（落库数据源——writer 据此重建 assistant 消息）
     if (m_eventBus) {
         CLF::CLFTypes::CLFAgentEvent ev;
         ev.m_type = CLF::CLFTypes::CLFEventType::TurnFinished;
         ev.m_turnId = m_currentTurnId;
+        ev.m_text = finalContent;
         ev.m_workedSec = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - turnStart).count();
         ev.m_todos = m_todoStore.getTodos();
@@ -761,10 +763,12 @@ std::string CLFAgentLoop::finishTurn(
     // 结束原因传入：自然停/concluded = Done，max-tokens = Warn（A5 §3.2.1）
     if (m_output) m_output->setStatusKind(kind);
     // 事件化重构步骤 2：TurnFinished 双轨发射（自然停/concluded 路径）
+    // 分册 2：m_text = finalContent（落库数据源——writer 据此重建 assistant 消息）
     if (m_eventBus) {
         CLF::CLFTypes::CLFAgentEvent ev;
         ev.m_type = CLF::CLFTypes::CLFEventType::TurnFinished;
         ev.m_turnId = m_currentTurnId;
+        ev.m_text = finalContent;
         ev.m_workedSec = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - turnStart).count();
         ev.m_todos = m_todoStore.getTodos();
