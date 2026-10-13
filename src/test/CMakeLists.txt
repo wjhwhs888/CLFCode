@@ -17,6 +17,11 @@ function(clf_add_test name)
     add_executable(${name} ${name}.cpp)
     # 共享测试设施头（CLFTestTempDir.hpp 等，2026-09-22 引入）
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    # GCC/Clang：Debug 符号（根 CMAKE_CXX_FLAGS_DEBUG 为空——手动配置无 -g，
+    # 段错误取证需要行号；2026-10-13）
+    if(NOT MSVC)
+        target_compile_options(${name} PRIVATE -g)
+    endif()
     target_link_libraries(${name} PRIVATE ${ARGN})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src")
@@ -70,9 +75,17 @@ clf_add_test(qa_CLFAnsiParser       clf_tui)
 clf_add_test(qa_CLFSearchContent    clf_tools)
 
 # —— clf_core + clf_network + clf_tui + OpenSSL ——
-clf_add_test(qa_CLFAgentLoop  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
-clf_add_test(qa_CLFTodoPanel  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
-clf_add_test(qa_CLFCommandDispatcher clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
+# （clf_network 含 httplib schannel 证书 API——Windows 另需 ws2_32/crypt32，
+#   GCC 15 链接实抓 undefined Cert* 符号，2026-10-13）
+if(WIN32)
+    clf_add_test(qa_CLFAgentLoop  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
+    clf_add_test(qa_CLFTodoPanel  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
+    clf_add_test(qa_CLFCommandDispatcher clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
+else()
+    clf_add_test(qa_CLFAgentLoop  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
+    clf_add_test(qa_CLFTodoPanel  clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
+    clf_add_test(qa_CLFCommandDispatcher clf_core clf_network clf_tui ${CLF_OPENSSL_LIBS})
+endif()
 
 # —— clf_tools + OpenSSL（Windows 另需 ws2_32/crypt32）——
 if(WIN32)

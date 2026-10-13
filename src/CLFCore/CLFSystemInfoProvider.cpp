@@ -28,9 +28,11 @@ std::string CLFSystemInfoProvider::detectOsInfo() {
     // 平台层收敛时下沉 CLFPlatform 版本原语）
     auto* ntdll = GetModuleHandleW(L"ntdll.dll");
     using RtlGetVersionFn = LONG(WINAPI*)(RTL_OSVERSIONINFOW*);
+    // void* 中转：GCC 15 -Wcast-function-type（-Werror 下）不认可 FARPROC
+    // 直转函数指针；void*→函数指针是 GCC 文档认可的豁免路径（MSVC 语义等价）
     const auto rtlGetVersion = ntdll
         ? reinterpret_cast<RtlGetVersionFn>(
-              GetProcAddress(ntdll, "RtlGetVersion"))
+              reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion")))
         : nullptr;
     if (rtlGetVersion) {
         RTL_OSVERSIONINFOW vi = {};

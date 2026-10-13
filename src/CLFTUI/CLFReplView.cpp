@@ -24,7 +24,11 @@
 #ifdef _WIN32
 // NOMINMAX：禁 windows.h 的 min/max 宏（本文件使用 std::min——C2589 实抓，
 // 宏展开破坏 std::min 调用；全文件无裸 min/max 宏依赖，零影响）
+// 条件定义：CLion 自带 MinGW 的 os_defines.h 已预定义（值 1）——重复定义
+// 触发 GCC -Werror
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 // 拖选坐标自校准（GetConsoleScreenBufferInfo：CLion 的 ConPTY 不响应 CPR）
 #include <windows.h>
 #endif
@@ -146,7 +150,6 @@ ftxui::Element CLFReplView::render() {
     int wrapW = (termW > 20) ? termW : 78;
 
     // 显示宽度工具统一走 CLFSelectionModel（渲染硬换行 / 选区换算 / 高亮拆分共用）
-    using Sel = CLFSelectionModel;
 
     // ---- 行映射表 + 行文本 + 行样式（选区坐标与提取的依据，每帧重建） ----
     // 行样式码：0=无 1=绿(Add) 2=红(Remove) 3=dim

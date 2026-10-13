@@ -22,6 +22,15 @@ if(MSVC)
     add_compile_options(/W4 /utf-8)
 else()
     add_compile_options(-Wall -Wextra -Werror)
+    # GCC 15（MinGW）兼容豁免（2026-10-13 收编入版本库——此前经
+    # CMAKE_CXX_FLAGS 配置时手动传入，新 build 目录不再需要手动传参）：
+    #   deprecated-declarations：fs::u8path(string) 是 C++17 下唯一正确写法
+    #     （char8_t 重载 C++20 才有），GCC 15 弃用标记属标准演进误伤
+    #   unused-variable / missing-field-initializers / parentheses /
+    #   unused-function：全仓既有豁免类别
+    add_compile_options(-Wno-error=unused-variable -Wno-error=missing-field-initializers
+                        -Wno-error=parentheses -Wno-error=unused-function
+                        -Wno-error=deprecated-declarations)
 endif()
 
 # 第三方头文件路径（SYSTEM 语义：第三方库的弃用/风格警告不受本工程
@@ -67,5 +76,29 @@ endif()
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib/$<CONFIG>)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib/$<CONFIG>)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+
+# MinGW 运行时 DLL 部署（2026-10-13 GCC 15 实抓修根）：
+# Windows DLL 搜索顺序 = exe 目录 → system32 → PATH——本机 system32 有旧版
+# libcrypto-4-x64.dll（第三方软件安装），抢先加载致 ENTRYPOINT_NOT_FOUND
+# （0xc0000139）。DLL 随产物同目录部署是唯一可靠解（exe/插件/测试插件
+# 三个输出目录各一份；copy_if_different 幂等）。
+if(MINGW)
+    get_filename_component(_MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_RUNTIME_DLLS
+        "${_MINGW_BIN}/libgcc_s_seh-1.dll"
+        "${_MINGW_BIN}/libstdc++-6.dll"
+        "${_MINGW_BIN}/libwinpthread-1.dll"
+        "C:/Program Files/OpenSSL-Win64/bin/libcrypto-4-x64.dll"
+        "C:/Program Files/OpenSSL-Win64/bin/libssl-4-x64.dll")
+    add_custom_target(clf_deploy_runtime ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_RUNTIME_DLLS}
+                "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_RUNTIME_DLLS}
+                "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_RUNTIME_DLLS}
+                "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins_test"
+        COMMENT "Deploy MinGW/OpenSSL runtime DLLs to output dirs"
+        VERBATIM)
+endif()
 
 add_subdirectory(src)

@@ -22,7 +22,10 @@ const boost::ut::suite<"CLFContext"> tests = [] {
 
     "token 估算：纯中文按 1.5 token/字"_test = [] {
         CLFContext ctx;
-        std::string chinese(100, '\xe6\x9d\x8e'); // 100 个中文字符（UTF-8 3字节）
+        // 100 个"李"（UTF-8 3 字节）；'\xe6\x9d\x8e' 多字节字面量在
+        // GCC -Wmultichar 下报错（MSVC 只取末字节蒙混）——逐字节拼接
+        std::string chinese;
+        for (int i = 0; i < 100; ++i) chinese += "\xe6\x9d\x8e";
         ctx.addMessage("user", chinese);
         // 100 字 × 1.5 = 150 token
         expect(ctx.estimateTokens() >= 140 && ctx.estimateTokens() <= 160);

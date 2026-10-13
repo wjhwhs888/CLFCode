@@ -370,7 +370,13 @@ std::vector<CLFSessionInfo> CLFSessionManager::list(const std::string& dirPath, 
 
     std::sort(entries.begin(), entries.end(),
         [](const fs::directory_entry& a, const fs::directory_entry& b) {
-            return a.last_write_time() > b.last_write_time();
+            const auto ta = a.last_write_time();
+            const auto tb = b.last_write_time();
+            // 时间相等（MinGW libstdc++ 秒级精度下同秒写入）→ 文件名降序兜底：
+            // 会话文件名前缀即时间戳，字典序 = 时间序——排序确定性修根
+            // （MSVC 100ns 精度下此分支不触发；2026-10-13 GCC 15 实抓）
+            if (ta != tb) return ta > tb;
+            return a.path().filename().u8string() > b.path().filename().u8string();
         });
 
     int remaining = limit - static_cast<int>(result.size());
