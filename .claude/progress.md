@@ -84,7 +84,9 @@
     - 用户验收块 1："目前没发现问题"（✻/📋/⏹/状态行观感逐字 ✓）
     - **会话记录取证**（doc/contextHistory 最新 2 个 jsonl）：turnId ✓ / event_log 工具痕迹完整（含 ok=false、seq 保序）✓ / assistant 无 ✻/📋 ✓ / todo_snapshot 状态演进清晰 ✓
     - **实抓缺陷**：turnId 跳号（turn-1 → turn-3）= **中断回合不落库**（无 TurnFinished → writer 跳过）——旧差集路径中断轮落 user 消息，事件化切换回归。**修根**：writeTurnLine 收敛 TurnFinished/Interrupted 两路径（withAssistant 区分——中断轮落 user + 已执行工具 + event_log）；W6 回归钉
-  - **待办**：① 块 1 收尾（TipsBar 事件计数 + confirm 切总线 60s 超时 + Exception/kTurnCapNotice 迁移）② 块 3 resume 回显重做（Replayer + History 渲染 + collectEchoLines 删除——用户痛点根治）③ 分册 3（并发调度器 + 渲染映射收尾）
+  - **▶ 块 1 收尾完成 ✅（2026-10-13，33c698b）**：TipsBar 事件计数（构造加 bus 默认 nullptr；ContentDelta+ToolFinished 双订阅驱动静默判定，P8 回归）+ confirm 切总线（publishRequestAndWait 60s 超时；适配器 ConfirmRequested → Terminal::confirm——mutex+cv 跨线程安全取证；confirmDialog 绑定删除；A9 往返用例）+ 触顶文案迁移（kTurnCapNotice 出 finalContent 归适配器 capReached 渲染）；**实抓总线缺陷修根**：drainAll 持队列锁调 handler 回调 publish 自死锁（A9 实抓）→ 锁外调 handler；Exception 行保留 core（随分册 3 ContentDelta 渲染同批——记录偏差）
+  - **▶▶ 分册 2 全部完成 ✅✅（2026-10-13，d61ad80 块 3）**：resume 回显重做——CLFSessionReplayer（jsonl → History* 事件重放；event_log 权威 + 老文件 turn 内 tool 兜底；worked 行/📋 段行级精确剥离 + 老文件无 turnId 临时 id；实抓 UTF-8 字节比较 bug 修根）+ 适配器 History 渲染（累积 → ResumeDone 折叠块输出；TurnStarted 清空防交错）+ restoreSession 去 outEcho + cmdResume 重放 + collectEchoLines 整体删除；qa R1-R5；**ctest 44/44 全绿** + 冒烟
+  - **待办**：① **实机验收块 3**（resume 回显：工具痕迹 + 摘要可见（痛点根治）；老会话正常回显；观感变化 = 装饰行消失属预期）② 分册 3（并发工具调度器 + ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
 - **用户拍板**：CLFUI 改 CLFTUI——TUI（Terminal UI）语义更精确，与底层 FTXUI 库命名呼应；影响面 355 处 / 66 文件
