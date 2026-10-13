@@ -80,12 +80,14 @@ add_library(clf_network STATIC
     CLFNetwork/CLFHttpClient.cpp
     CLFNetwork/CLFThinkingIndicator.cpp
 )
-# OpenSSL + schannel 证书 API（ws2_32/crypt32）是 clf_network 成员的固有依赖
-# （httplib header-only 直接引用）——PUBLIC 入接口（CRP：消费方不必各自补链；
-# GCC 15 MinGW 链接实抓 undefined BIO_*/Cert* 符号，2026-10-13）
-target_link_libraries(clf_network PUBLIC clf_types ${CLF_OPENSSL_LIBS})
-if(WIN32)
-    target_link_libraries(clf_network PUBLIC ws2_32 crypt32)
+target_link_libraries(clf_network PUBLIC clf_types)
+if(MINGW)
+    # OpenSSL + schannel 证书 API（ws2_32/crypt32）是 clf_network 成员的固有
+    # 依赖（httplib header-only 直接引用）——仅 MinGW 收窄（GCC 15 链接实抓
+    # undefined BIO_*/Cert* 符号，2026-10-13）。MSVC 保持原链接组合不变——
+    # 用户实抓：PUBLIC imported target 传递改变 MSVC 链接组合致 API SSL
+    # 验证失败，回退（2026-10-13 用户指引）
+    target_link_libraries(clf_network PUBLIC ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
 endif()
 target_include_directories(clf_network PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -125,12 +127,14 @@ add_library(clf_core STATIC
     CLFCore/CLFTodoStore.cpp
     CLFCore/CLFToolExecutor.cpp
 )
-# ${CLF_OPENSSL_LIBS}：clf_core 成员（SummaryCache/Summarizer/AgentLoop）经
-# httplib 直接引用 OpenSSL 符号。PUBLIC 使其进入接口展开区（CMake 深度优先：
-# 接口成员紧跟二次展开的 clf_core 之后）——GNU ld 单遍解析静态库时，二次
-# clf_core 引用的 OpenSSL 符号仍可回头解析（MSVC link.exe 天然多遍无此问题；
-# GCC 15 链接实抓，2026-10-13）
-target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities clf_plugin_api ${CLF_OPENSSL_LIBS})
+target_link_libraries(clf_core PUBLIC clf_types clf_network clf_capabilities clf_plugin_api)
+if(MINGW)
+    # ${CLF_OPENSSL_LIBS}：clf_core 成员（SummaryCache/Summarizer/AgentLoop）
+    # 经 httplib 直接引用 OpenSSL 符号——仅 MinGW 收窄（GNU ld 单遍解析静态库
+    # 需要接口展开；MSVC link.exe 天然多遍无此问题，保持原链接组合——
+    # 2026-10-13 用户指引回退）
+    target_link_libraries(clf_core PUBLIC ${CLF_OPENSSL_LIBS})
+endif()
 target_include_directories(clf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ============================================================================
