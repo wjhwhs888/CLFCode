@@ -55,7 +55,7 @@ if ((Test-Path $vcvars) -and -not $env:VCToolsInstallDir) {
 }
 
 # 删除旧 exe，防止"构建失败但 exe 残留"时静默打包陈旧产物
-$exe = "$ScriptDir\bin\Release\CLFCode.exe"
+$exe = "$ScriptDir\cmake-build-release\bin\Release\CLFCode.exe"
 Remove-Item $exe -ErrorAction SilentlyContinue
 
 cmake --build "$ScriptDir\$BuildDir" --target CLFCode clf_plugin_fileops clf_plugin_command clf_plugin_search clf_plugin_web --config Release -j6 2>&1 | Select-Object -Last 5
@@ -86,11 +86,11 @@ foreach ($d in @("$ReleaseDir\bin\Release", "$ReleaseDir\config", "$ReleaseDir\d
 }
 
 # Copy exe
-Copy-Item "$ScriptDir\bin\Release\CLFCode.exe" "$ReleaseDir\bin\Release\" -Force
+Copy-Item "$ScriptDir\cmake-build-release\bin\Release\CLFCode.exe" "$ReleaseDir\bin\Release\" -Force
 
 # 插件 DLL（v0.8.0+：主程序启动扫描 exe 目录/plugins 加载能力域插件——
 # 必须随包，缺失则文件/命令/搜索/网络四域工具全部不可用）
-$pluginSrc = "$ScriptDir\bin\Release\plugins"
+$pluginSrc = "$ScriptDir\cmake-build-release\bin\Release\plugins"
 $requiredPlugins = @('tools.fileops.dll', 'tools.command.dll', 'tools.search.dll', 'tools.web.dll')
 $missingPlugins = $requiredPlugins | Where-Object { -not (Test-Path "$pluginSrc\$_") }
 if ($missingPlugins.Count -gt 0) {

@@ -3,7 +3,7 @@
 # 由顶层 option(CLF_BUILD_TESTS) 控制是否 add_subdirectory 本目录。
 # 约定：
 #   - 一个测试 = 一个 target = 同名 .cpp（qa_XXX → qa_XXX.cpp）
-#   - 产物输出沿用顶层设定：${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/
+#   - 产物输出沿用顶层设定：${CMAKE_BINARY_DIR}/bin/$<CONFIG>/
 #   - 测试专用 C++20（Boost.UT 要求）；子目录作用域，不影响 src/ 的 C++17
 #   - WORKING_DIRECTORY 显式固定为 ${CMAKE_BINARY_DIR}/src——与迁移前
 #     add_test 位于 src/CMakeLists.txt 时的默认值完全一致（消除行为差异）
@@ -110,7 +110,7 @@ add_subdirectory(plugins)
 clf_add_test(qa_CLFPluginManager clf_core)
 # 插件目录绝对路径注入（多配置生成器下 $<CONFIG> 展开为实际配置）
 target_compile_definitions(qa_CLFPluginManager PRIVATE
-    CLF_TEST_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins_test")
+    CLF_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/bin/$<CONFIG>/plugins_test")
 # 测试插件头（plugins/TestPluginCommon.hpp：qa 与插件共享的第二服务接口定义）
 target_include_directories(qa_CLFPluginManager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # 运行期依赖：测试插件 DLL 须先构建
@@ -132,12 +132,12 @@ add_dependencies(qa_CLFPluginManager
 clf_add_test(qa_CLFPluginFileOps clf_core clf_tools ${CLF_OPENSSL_LIBS})
 target_compile_definitions(qa_CLFPluginFileOps PRIVATE
     # 生产插件目录（tools.fileops.dll）——与测试插件目录（plugins_test）隔离
-    CLF_FILEOPS_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
+    CLF_FILEOPS_PLUGIN_DIR="${CMAKE_BINARY_DIR}/bin/$<CONFIG>/plugins")
 add_dependencies(qa_CLFPluginFileOps clf_plugin_fileops)
 
 # —— 2.3 三域插件全链路（command/search/web）——
 clf_add_test(qa_CLFPluginDomains clf_core ${CLF_OPENSSL_LIBS})
 target_compile_definitions(qa_CLFPluginDomains PRIVATE
-    CLF_PROD_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
+    CLF_PROD_PLUGIN_DIR="${CMAKE_BINARY_DIR}/bin/$<CONFIG>/plugins")
 add_dependencies(qa_CLFPluginDomains
     clf_plugin_command clf_plugin_search clf_plugin_web)

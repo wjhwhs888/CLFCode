@@ -33,7 +33,7 @@ function(clf_add_plugin TARGET_NAME OUTPUT_BASENAME)
         # 运行时库**不硬设**——跟随全局配置（Debug=MDd / Release=MD），与宿主/
         # clf_types 同运行时（"统一运行时"§3.5 的正确实现；2.2a 实抓：硬钉 /MD
         # 链接 clf_types 静态库报 LNK2038 RuntimeLibrary 不匹配）
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/${ARG_PLUGIN_DIR}"   # .dll
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/${ARG_PLUGIN_DIR}"   # .dll
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib/$<CONFIG>/${ARG_PLUGIN_DIR}"   # 导入库
     )
 endfunction()

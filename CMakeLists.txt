@@ -31,6 +31,9 @@ else()
     add_compile_options(-Wno-error=unused-variable -Wno-error=missing-field-initializers
                         -Wno-error=parentheses -Wno-error=unused-function
                         -Wno-error=deprecated-declarations)
+    # Debug 构建带符号（默认 CMAKE_CXX_FLAGS_DEBUG 为空——手动配置时无 -g，
+    # 段错误取证需要行号；2026-10-13 插件加载崩溃取证实抓）
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 endif()
 
 # 第三方头文件路径（SYSTEM 语义：第三方库的弃用/风格警告不受本工程
@@ -72,10 +75,14 @@ else()
     message(WARNING "OpenSSL not found — HTTPS disabled.")
 endif()
 
-# 输出目录
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib/$<CONFIG>)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib/$<CONFIG>)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+# 输出目录（2026-10-13 修根：按构建目录隔离——此前多构建目录共享
+# 源码 bin/$<CONFIG>，MSVC 与 MinGW 产物互相覆盖混装：MSVC exe 加载 GCC
+# 插件 → 跨工具链虚调用 ABI 不兼容 → 启动崩溃（CLFPluginManager::loadDll
+# plugin->name() strlen 崩，实机实抓）。隔离后各构建配置产物自洽——正是
+# "防止不兼容"的根治。插件扫描路径 = exe 目录/plugins 相对路径自动跟随）
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/$<CONFIG>)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/$<CONFIG>)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/$<CONFIG>)
 
 # MinGW 运行时 DLL 部署（2026-10-13 GCC 15 实抓修根）：
 # Windows DLL 搜索顺序 = exe 目录 → system32 → PATH——本机 system32 有旧版
@@ -92,11 +99,11 @@ if(MINGW)
         "C:/Program Files/OpenSSL-Win64/bin/libssl-4-x64.dll")
     add_custom_target(clf_deploy_runtime ALL
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_RUNTIME_DLLS}
-                "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_RUNTIME_DLLS}
-                "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/plugins"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_RUNTIME_DLLS}
-                "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins_test"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/plugins_test"
         COMMENT "Deploy MinGW/OpenSSL runtime DLLs to output dirs"
         VERBATIM)
 endif()
