@@ -315,9 +315,15 @@ bool CLFTerminal::confirm(const std::string& prompt) {
     }
     requestRefresh();
 
-    // 同步等待主线程 (FTXUI Loop) 处理用户选择
+    // 同步等待主线程 (FTXUI Loop) 处理用户选择。
+    // 谓词经 m_mutex 读取激活态（锁序 confirmMutex→mutex 与 submitConfirm
+    // 一致——原实现谓词无锁读为数据竞争 UB，连续确认场景崩溃候选，
+    // 2026-10-13 实机实抓修根）
     std::unique_lock lock(m_confirmMutex);
-    m_confirmCv.wait(lock, [this] { return !m_confirmActive; });
+    m_confirmCv.wait(lock, [this] {
+        std::lock_guard stateLock(m_mutex);
+        return !m_confirmActive;
+    });
 
     // P2-2: 确认结束后清 prompt（防残影）
     {
@@ -341,10 +347,14 @@ bool CLFTerminal::confirmWithTimeout(const std::string& prompt,
     }
     requestRefresh();
 
-    // 同步等待主线程处理用户选择；超时 → 主动关闭确认条（默认拒绝语义）
+    // 同步等待主线程处理用户选择；超时 → 主动关闭确认条（默认拒绝语义）。
+    // 谓词经 m_mutex 读取（同 confirm——消数据竞争，锁序一致）
     std::unique_lock lock(m_confirmMutex);
     const bool got = m_confirmCv.wait_for(
-        lock, timeout, [this] { return !m_confirmActive; });
+        lock, timeout, [this] {
+            std::lock_guard stateLock(m_mutex);
+            return !m_confirmActive;
+        });
     if (!got) {
         m_confirmResult = false;
         {
