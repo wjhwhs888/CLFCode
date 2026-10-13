@@ -24,9 +24,11 @@
 #include "CLFCore/CLFSummaryCache.hpp"
 #include "CLFCore/CLFTodoStore.hpp"
 
-namespace CLF::CLFNetwork { class ICLFHttpClient; }
+namespace CLF::CLFNetwork { class ICLFHttpClient; class CLFThinkingIndicator; }
 namespace CLF::CLFPluginApi { class ICLFFileService; }
 namespace CLF::CLFCore {
+
+class CLFStreamAccumulator;  // 事件化重构步骤 0：流式回调拆分引用（仅声明）
 
 class CLFAgentLoop {
 public:
@@ -224,6 +226,75 @@ private:
 
     // 重建 system 消息（/skill 动态注入后调用）
     void rebuildSystemMessage();
+
+    // ===== 事件化重构步骤 0（2026-10-13）：runTurn Section 拆分 =====
+    // 纯搬移零行为变化：runTurn 瘦身为编排层，请求/工具/触顶三大段提为
+    // 成员函数；以下结果类型与 RAII 辅助随拆分新增（RAII 定义见 cpp）。
+
+    // 单次模型请求结果（requestAssistantTurn 返回；Action 指示编排层下一步）
+    struct TurnRequestResult {
+        enum class Action { Continue, Retry, ReturnError, ReturnInterrupted };
+        Action               m_action = Action::Continue;
+        std::string          m_errorText;  // ReturnError：拼接在 "[Error] " 之后
+        CLFAssistantResponse m_response;   // Continue：已解析的响应
+    };
+
+    // 工具执行段结果（executeToolCalls 返回）
+    struct ToolExecutionOutcome {
+        bool m_interrupted = false;  // 执行后被中断（emitInterrupted 已发射）
+        bool m_concluded   = false;  // 任一工具结果声明回合结束
+    };
+
+    // RAII 辅助（定义见 cpp；此处仅声明以支持 out-of-line 定义）
+    class TurnTimerGuard;    // ② 回合计时器（50ms 状态行计时 + 析构停表复位）
+    class TurnThinkingClock; // ③ 迭代思考计时器（1s 计数，析构即停）
+
+    // —— Section 函数（runTurn 拆分）——
+    // ① 回合准备（日志/中断重置/摘要/记账/状态点）；false = 摘要期被中断
+    bool prepareTurn(const std::string& userInput);
+    // ④ 单次模型请求（流式/同步收敛 + 重试 + 防御 + usage）
+    TurnRequestResult requestAssistantTurn(int iteration, int& consecutiveErrors,
+                                           bool& modelDeclaredEnd);
+    // ⑦ 工具执行段（addAssistantToolCalls + executor + 结果回填）
+    ToolExecutionOutcome executeToolCalls(const std::vector<CLFToolCall>& toolCalls,
+                                          const std::string& assistantContent,
+                                          TurnThinkingClock& thinking);
+    // ⑨ 触顶收尾（wrap-up 请求 + 提示文案 + worked + Warn）
+    std::string runWrapUp(std::string& finalContent,
+                          std::chrono::steady_clock::time_point turnStart);
+
+    // —— 二级函数（Section 内部拆分）——
+    // 请求体构造收敛（流式/同步用 m_config；wrapUp 传 stream=false 变体）
+    std::string buildRequestBody(const CLFAgentConfig& cfg) const;
+    // 流式请求：日志 + postJsonStream + 回调分发 + 错误/中断早退
+    TurnRequestResult streamRequest(const std::string& body, int iteration,
+                                    int& consecutiveErrors,
+                                    CLFAssistantResponse& parsed);
+    // 单个 SSE chunk 分类处理（error/usage/content+reasoning/finish_reason）
+    void handleStreamDelta(const std::string& line, CLFStreamAccumulator& acc,
+                           bool& firstContent,
+                           CLF::CLFNetwork::CLFThinkingIndicator& thinking,
+                           bool& interrupted, bool& hadError, std::string& errorMsg);
+    // 同步请求：postJson + 中断/wasAborted/错误处理
+    TurnRequestResult syncRequest(const std::string& body, int& consecutiveErrors,
+                                  CLFAssistantResponse& parsed);
+    // 流式/同步两路径后处理收敛：自发结束标记 + usage + finish_reason 检查
+    TurnRequestResult finalizeResponse(CLFAssistantResponse& parsed,
+                                       bool& modelDeclaredEnd);
+    // 流式中断早退点的 partial usage 提取 + 累计
+    void accumulatePartialUsage(const CLFStreamAccumulator& acc);
+    // 编排层中断早退单点：emitInterrupted + "[Interrupted]" 文案
+    std::string abortTurn();
+    // 请求层中断早退单点：emitInterrupted + ReturnInterrupted 结果
+    TurnRequestResult interruptedResult();
+    // HttpErrorAction 三态 → 对应早退（流式/同步错误分支收敛）
+    TurnRequestResult httpErrorResult(const std::string& error, int& consecutiveErrors);
+    // 触顶 wrap-up 请求（stream=false 变体）+ 失败降级；false = 请求期被中断
+    bool requestWrapUpBody(std::string& finalContent);
+    // 自发结束标记防御（原 runTurn 内 lambda 提为成员，签名/体原样）
+    void applySelfWorkedMark(CLFAssistantResponse& parsed, bool& modelDeclaredEnd) const;
+    // W-usage 累计（原 runTurn 内 lambda 提为成员，签名/体原样）
+    void accumulateUsage(const CLFAssistantResponse& usageSrc);
 
     CLFAgentConfig                    m_config;
     CLFTimerLabels                    m_labels;

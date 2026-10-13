@@ -76,7 +76,180 @@ void CLFAgentLoop::setOutput(CLF::CLFTypes::ICLFOutput* output) {
     });
 }
 
+// ============================================================================
+// 事件化重构步骤 0：回合 RAII 辅助（runTurn Section 拆分，2026-10-13）
+// ============================================================================
+
+// ② 回合计时 RAII（原 runTurn :158-188 搬移）：
+// Timer #2——StatusLine 持续计时 + 转圈动画驱动（50ms = 20Hz）。
+// 用 CLFPeriodicTimer（条件变量唤醒）而非 sleep 轮询：后者 join 时平均要
+// 空等 ~0.8s，每个 runTurn 白白多花近一秒。异常兜底已在定时器内部
+// （B1 教训：线程体逸出异常会 std::terminate，静默退出码 3）。
+// F13 升级（2026-09-09 D4 定案）：1Hz → 20Hz。CPR 查询关闭后
+// （TrackCursorPosition(false) 修 CLion 中文输入抖动），转圈动画失去
+// 事件源——静止期仅 1Hz 兜底致秒跳一帧卡顿。50ms 驱动让转圈
+// （100ms/帧）恢复流畅，仅 turn 生命周期内驱动（回合结束即停，
+// 不违背"流静止则动画静止"——静止的是对话流，转圈仍可见）。
+class CLFAgentLoop::TurnTimerGuard {
+public:
+    explicit TurnTimerGuard(CLFAgentLoop* loop)
+        : m_loop(loop)
+        , m_out(loop->m_output)  // 析构清理用构造时快照（原 TurnGuard 语义）
+        , m_timer(std::chrono::milliseconds(50), [this]() {
+              if (!m_loop->m_output) return;
+              auto s = std::chrono::duration_cast<std::chrono::seconds>(
+                  std::chrono::steady_clock::now() - m_turnStart).count();
+              // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）；50ms
+              // 周期下按秒去重——同一秒只 setStatusTextOnly 一次
+              if (s >= 15 && s != m_lastShownSec) {
+                  m_lastShownSec = s;
+                  m_loop->m_output->setStatusTextOnly(
+                      m_loop->m_labels.working + " for "
+                      + std::to_string(static_cast<int>(s)) + "s…");
+              }
+              m_loop->m_output->requestRefresh();
+          }) {}
+
+    ~TurnTimerGuard() {
+        m_timer.stop();               // 立即唤醒退出
+        if (m_out) m_out->setStatus("");
+    }
+
+    // finishTurn / appendWorked 的计时基准（原 turnStart 局部变量）
+    std::chrono::steady_clock::time_point turnStart() const { return m_turnStart; }
+
+private:
+    CLFAgentLoop* m_loop;
+    CLF::CLFTypes::ICLFOutput* m_out;
+    std::chrono::steady_clock::time_point m_turnStart{std::chrono::steady_clock::now()};
+    int m_lastShownSec = -1;  // 声明先于 m_timer（析构逆序：定时器先停）
+    CLF::CLFTypes::CLFPeriodicTimer m_timer;
+};
+
+// ③ 迭代思考计时 RAII（原 runTurn :200-203 搬移）：Timer #1——只计数
+// （不调用 output，安全），供 executor 渐进显示注入（sec()）。
+// 声明顺序要紧：m_sec 必须先于 m_timer，析构逆序才能保证定时器线程
+// 停止后计数器才被销毁（原注释语义）。定时器析构即 stop，无需额外 guard。
+class CLFAgentLoop::TurnThinkingClock {
+public:
+    TurnThinkingClock()
+        : m_timer(std::chrono::seconds(1), [this]() { m_sec.fetch_add(1); }) {}
+
+    std::atomic<int>& sec() { return m_sec; }
+
+private:
+    std::atomic<int> m_sec{0};
+    CLF::CLFTypes::CLFPeriodicTimer m_timer;
+};
+
+// ============================================================================
+// 回合编排（事件化重构步骤 0：runTurn 拆 5 Section + 二级函数化，
+// 纯搬移零行为变化——分册 1 §1.2）
+// ============================================================================
+
 std::string CLFAgentLoop::runTurn(const std::string& userInput) {
+    // ① 回合准备（日志/中断重置/摘要/记账/状态点；摘要期被中断 → 早退）
+    if (!prepareTurn(userInput)) return std::string("[Interrupted]");
+
+    // ② 回合计时 RAII：50ms 状态行计时 + 转圈动画驱动（析构停表复位状态行）
+    TurnTimerGuard timer(this);
+    std::string finalContent;
+    int consecutiveErrors = 0;
+    // A5-concludesTurn：任一工具结果声明回合结束 → 停止工具循环
+    // （但仍给模型一次收尾发言机会，见 hasToolCalls 分支的 concluded break）
+    bool concluded = false;
+    // 模型自发回合结束宣告（2026-09-23 用户拍板）：applySelfWorkedMark
+    // 命中即置位——尊重宣告：保留标记行、截断其后内容、丢弃已声明的
+    // tool_calls（宣告结束 → 不执行）；收尾不重复拼 worked（模型已宣告）
+    bool modelDeclaredEnd = false;
+
+    for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
+        // ③ 迭代思考计时 RAII（1s 计数，供 executor 渐进显示；析构即停）
+        TurnThinkingClock thinking;
+        // 每次循环迭代前检查中断
+        if (m_interrupted) return abortTurn();
+        try {
+            // ④ 单次模型请求（流式/同步收敛 + 重试 + 防御 + usage）
+            TurnRequestResult req =
+                requestAssistantTurn(iteration, consecutiveErrors, modelDeclaredEnd);
+            if (req.m_action == TurnRequestResult::Action::ReturnError)
+                return std::string("[Error] ") + req.m_errorText;
+            if (req.m_action == TurnRequestResult::Action::ReturnInterrupted)
+                return std::string("[Interrupted]");
+            if (req.m_action == TurnRequestResult::Action::Retry) continue;
+
+            // ⑤ 累积文本（思考模型可能在 reasoning_content 中耗尽 token，
+            // content 为空但 finish_reason 为 "length" 或 "stop"）
+            if (!req.m_response.m_content.empty()) {
+                if (!finalContent.empty()) finalContent += "\n";
+                finalContent += req.m_response.m_content;
+            }
+            if (finalContent.empty() && req.m_response.m_finishReason == "length") {
+                finalContent = "(响应被截断 — 思考时间过长，token 已达上限)";
+            }
+
+            // ⑥ tool_calls → 执行并继续循环
+            if (CLFProtocolAdapter::hasToolCalls(req.m_response)) {
+                // A5-concludesTurn：工具已声明回合结束，模型却仍发工具调用 →
+                // 丢弃（不执行、不回填、不 addAssistantToolCalls）。
+                // 协议安全：模型文本已在上方累积进 finalContent，无悬空
+                // tool_calls 需 result 配对；break 后经 finishTurn() 正常收尾，
+                // 不落触顶路径（设计 §3.1 改动 3）
+                if (concluded) break;
+                // 中断检查：流式被 abort 后可能累积了 tool call，执行前再检查
+                if (m_interrupted) return abortTurn();
+                // ⑦ 工具执行（addAssistantToolCalls + executor + 结果回填）
+                ToolExecutionOutcome oc = executeToolCalls(
+                    req.m_response.m_toolCalls, req.m_response.m_content, thinking);
+                if (oc.m_interrupted) return std::string("[Interrupted]");
+                if (oc.m_concluded) concluded = true;
+                continue;
+            }
+
+            // ⑧ 完成 → 收尾汇聚点（A5 §3.2.1）：自然停 / concluded-break 共用
+            // A5-C：max-tokens 收尾——finish_reason == "length" 时状态点
+            // Warn（现状 Done）；已生成内容保留不回滚（设计 §3.3）。
+            // 边界：length 且带 tool_calls 不落此分支（上方已 continue）
+            const auto finishKind = (req.m_response.m_finishReason == "length")
+                ? CLF::CLFTypes::ICLFOutput::StatusKind::Warn
+                : CLF::CLFTypes::ICLFOutput::StatusKind::Done;
+            return finishTurn(finalContent, timer.turnStart(), finishKind,
+                              modelDeclaredEnd);
+
+        } catch (const std::exception& e) {
+            if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
+                if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+                return std::string("[Error] Exception: ") + e.what();
+            }
+            if (m_output) m_output->emitContent(
+                "\n✗ Exception: " + std::string(e.what())
+                + " — retry " + std::to_string(consecutiveErrors)
+                + "/" + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
+            // 可中断等待
+            for (int w = 0; w < 20 && !m_interrupted; ++w)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+
+    // A5-concludesTurn：模型未按声明停止（发了工具调用被丢弃）→
+    // 已给最终发言机会，直接复用完成分支收尾（Done，设计 §3.1 改动 3）
+    if (concluded) {
+        return finishTurn(finalContent, timer.turnStart(),
+                          CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+    }
+
+    // ⑨ 触顶收尾（A5-B：优雅收尾，设计 §3.2）
+    return runWrapUp(finalContent, timer.turnStart());
+}
+
+// ============================================================================
+// Section 函数（runTurn 拆分）
+// ============================================================================
+
+// ① 回合准备（原 runTurn :80-156 搬移；applySelfWorkedMark / accumulateUsage
+// 两个 lambda 已成员化）：日志 → 中断重置 → 清推理 → 自动摘要 → 记账 →
+// Running 状态点。返回 false = 摘要期间被中断（emitInterrupted 已发射）
+bool CLFAgentLoop::prepareTurn(const std::string& userInput) {
     CLFLogger::instance().info("[Turn] start, input="
         + (userInput.size() > 80 ? userInput.substr(0, 80) + "..." : userInput));
     m_interrupted = false;  // 新 turn 开始时重置中断标志
@@ -100,7 +273,7 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         // 提前返回不产生会话残留
         if (m_interrupted) {
             emitInterrupted();
-            return std::string("[Interrupted]");
+            return false;
         }
         appendSummaryLineNow();
         rebuildSystemMessage();
@@ -116,362 +289,288 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
     // API 调用的 usage 之和；触顶 wrapUp 在 summary 显示之后累加、计入
     // 下一轮，与累计生命周期一致）
     m_turnStartTokens = m_totalTokensUsed;
-    // 模型自发回合结束宣告（2026-09-23 用户拍板）："✻ <worked> for" 是
-    // CLFCode 专属 UI 格式——模型回复中出现即视为宣告回合结束。尊重宣告：
-    // 保留标记行、截断其后内容（防"模拟用户追问"自问自答）、丢弃已声明
-    // 的 tool_calls（宣告结束 → 不执行）；收尾不重复拼 worked（模型已
-    // 宣告）。模型正常回复不可能含该字面——出现即思考异常，止损正确
-    bool modelDeclaredEnd = false;
-    auto applySelfWorkedMark = [this, &modelDeclaredEnd](CLFAssistantResponse& parsed) {
-        const std::string mark = "\n✻ " + m_labels.worked + " for";
-        size_t pos = parsed.m_content.find(mark);
-        if (pos == std::string::npos
-            && parsed.m_content.rfind("✻ " + m_labels.worked + " for", 0) == 0) {
-            pos = 0;   // 内容首行即标记
-        }
-        if (pos == std::string::npos) return;
-        modelDeclaredEnd = true;
-        const size_t lineEnd = parsed.m_content.find('\n', pos + 1);
-        parsed.m_content.erase(lineEnd == std::string::npos
-                                   ? parsed.m_content.size() : lineEnd);
-        parsed.m_toolCalls.clear();
-        CLFLogger::instance().warn(
-            "[Turn] model declared end (self worked mark) — truncated trailing content");
-    };
-    // W-usage（2026-09-23 中断时效性 §13.5 用户拍板）：中断路径也累计 usage——
-    // "发生了的请求就是发生了"。helper 供中断早退点与正常累计点共用；
-    // 中断发生在服务端发出 usage 之前 → 各字段为 0，gate 自然跳过
-    // （不估算——与既有"缺失保持 0"口径一致）
-    auto accumulateUsage = [this](const CLFAssistantResponse& usageSrc) {
-        if (usageSrc.m_usageTotal > 0) {
-            m_totalTokensUsed += usageSrc.m_usageTotal;
-            m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
-            m_lastToolStats.turnTokens = static_cast<int>(
-                m_totalTokensUsed - m_turnStartTokens);
-            if (usageSrc.m_hasCacheField)
-                m_sessionUsage.accumulate(usageSrc.m_usagePrompt, usageSrc.m_usageCacheHit);
-        }
-    };
     // P1-1: 状态点接线——Running 于 turn 开始
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
+    return true;
+}
 
-    // Timer #2：StatusLine 持续计时 + 转圈动画驱动（50ms = 20Hz）
-    // 用 CLFPeriodicTimer（条件变量唤醒）而非 sleep 轮询：后者 join 时平均要
-    // 空等 ~0.8s，每个 runTurn 白白多花近一秒。异常兜底已在定时器内部
-    // （B1 教训：线程体逸出异常会 std::terminate，静默退出码 3）。
-    // F13 升级（2026-09-09 D4 定案）：1Hz → 20Hz。CPR 查询关闭后
-    // （TrackCursorPosition(false) 修 CLion 中文输入抖动），转圈动画失去
-    // 事件源——静止期仅 1Hz 兜底致秒跳一帧卡顿。50ms 驱动让转圈
-    // （100ms/帧）恢复流畅，仅 turn 生命周期内驱动（回合结束即停，
-    // 不违背"流静止则动画静止"——静止的是对话流，转圈仍可见）。
-    auto turnStart = std::chrono::steady_clock::now();
-    int lastShownSec = -1;  // 声明先于 turnTimer（析构逆序：定时器先停）
-    CLF::CLFTypes::CLFPeriodicTimer turnTimer(std::chrono::milliseconds(50), [this, turnStart, &lastShownSec]() {
-        if (!m_output) return;
-        auto s = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - turnStart).count();
-        // P1-1: 计时文本 ≥15s 才显示（dsh 规则，降低短任务噪声）；50ms 周期下
-        // 按秒去重——同一秒只 setStatusTextOnly 一次
-        if (s >= 15 && s != lastShownSec) {
-            lastShownSec = s;
-            m_output->setStatusTextOnly(m_labels.working + " for " + std::to_string(static_cast<int>(s)) + "s…");
-        }
-        m_output->requestRefresh();
-    });
-    struct TurnGuard {
-        CLF::CLFTypes::CLFPeriodicTimer& timer;
-        CLF::CLFTypes::ICLFOutput* out;
-        ~TurnGuard() {
-            timer.stop();               // 立即唤醒退出
-            if (out) out->setStatus("");
-        }
-    } turnGuard{turnTimer, m_output};
-
-    std::string finalContent;
-    int consecutiveErrors = 0;
-    // A5-concludesTurn：任一工具结果声明回合结束 → 停止工具循环
-    // （但仍给模型一次收尾发言机会，见 hasToolCalls 分支的 concluded break）
-    bool concluded = false;
-
-    for (int iteration = 0; iteration < m_config.m_maxToolCallIterations; ++iteration) {
-        // Timer #1：只计数（不调用 output，安全）
-        // 声明顺序要紧：thinkingSec 必须先于 timer，析构逆序才能保证
-        // 定时器线程停止后计数器才被销毁
-        std::atomic<int> thinkingSec{0};
-        CLF::CLFTypes::CLFPeriodicTimer thinkingTimer(
-            std::chrono::seconds(1),
-            [&thinkingSec]() { thinkingSec.fetch_add(1); });
-        // 定时器析构即 stop，无需额外 guard
-        // ① 每次循环迭代前检查中断
-        if (m_interrupted) {
-            emitInterrupted();
-            return std::string("[Interrupted]");
-        }
-        try {
-            // C2b：发 API 前窗口截断（system 永不截断，尾部保留）
-            std::string body = m_protocolAdapter.buildChatRequest(
-                m_window.apply(m_context.getMessages()), m_tools, m_config);
-
-            CLFAssistantResponse parsed;
-
-            if (m_config.m_stream) {
-                // ====== 流式路径 ======
-                CLFLogger::instance().info("[API] streaming request, iter="
-                    + std::to_string(iteration) + ", ctx_msgs="
-                    + std::to_string(m_context.getMessages().size()));
-                CLFStreamAccumulator acc;
-                CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
-                bool firstContent = true;
-                bool interrupted = false;
-                bool hadError = false;
-                std::string errorMsg;
-
-                CLF::CLFNetwork::CLFHttpResponse response =
-                    m_httpClient->postJsonStream(
-                        "/v1/chat/completions", body,
-                        [&](const std::string& line) {
-                            if (hadError || interrupted) return;
-                            if (m_interrupted) {
-                                interrupted = true;
-                                acc.markDone();
-                                return;
-                            }
-                            if (line.rfind("data: ", 0) != 0) return;
-                            std::string payload = line.substr(6);
-                            if (payload == "[DONE]") { acc.markDone(); return; }
-                            try {
-                                auto delta = nlohmann::json::parse(payload);
-                                if (delta.contains("error")) { hadError = true; errorMsg = delta["error"].dump(); return; }
-                                // P2-4: usage chunk 的 choices 为空数组，须在 choices 过滤之前单独投喂
-                                if (delta.contains("usage"))
-                                    acc.feedUsage(delta["usage"]);
-                                if (delta.contains("choices") && !delta["choices"].empty()) {
-                                    const auto& choice = delta["choices"][0];
-                                    if (choice.contains("delta")) {
-                                        std::string chunk = acc.feedDelta(choice["delta"]);
-                                        if (!chunk.empty()) {
-                                            if (firstContent) { thinking.stop(); firstContent = false; }
-                                            if (m_output) m_output->emitContent(chunk);
-                                        }
-                                        // 推理过程 → 独立通道（UI 层 Ctrl+O 折叠/展开）
-                                        // 只追加上次检查后新增的推理内容（避免重复累积）
-                                        if (acc.hasReasoning() && m_output) {
-                                            auto& reasoning = acc.getReasoning();
-                                            if (reasoning.size() > m_lastReasoningSize) {
-                                                m_output->appendThinking(
-                                                    reasoning.substr(m_lastReasoningSize));
-                                                m_lastReasoningSize = reasoning.size();
-                                            }
-                                        }
-                                    }
-                                    if (choice.contains("finish_reason")) acc.feedDelta(choice);
-                                }
-                            } catch (const nlohmann::json::exception&) {}
-                        });
-
-                // 错误处理
-                if (hadError) {
-                    if (m_output) m_output->emitError("Stream error: " + errorMsg);
-                    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
-                    return std::string("[Error] ") + errorMsg;
-                }
-                if (interrupted || m_interrupted) {
-                    // W-usage：中断早退前累计已到达的 usage（中断早于服务端
-                    // usage 发出 → acc 各字段为 0，helper 内 gate 自然跳过）
-                    CLFAssistantResponse partial;
-                    partial.m_usagePrompt     = acc.getUsagePrompt();
-                    partial.m_usageCompletion = acc.getUsageCompletion();
-                    partial.m_usageTotal      = acc.getUsageTotal();
-                    partial.m_usageCacheHit   = acc.getUsageCacheHit();
-                    partial.m_hasCacheField   = acc.getHasCacheField();
-                    accumulateUsage(partial);
-                    emitInterrupted();
-                    return std::string("[Interrupted]");
-                }
-                if (response.m_wasAborted) {
-                    // httplib 层检测到中断（abort → stop → 阻塞读返回）→ 直接返回，不重试
-                    emitInterrupted();
-                    return std::string("[Interrupted]");
-                }
-                if (!response.m_error.empty()) {
-                    // A2：错误重试收敛至 handleHttpError（原内联 ~25 行）
-                    switch (handleHttpError(response.m_error, consecutiveErrors)) {
-                    case HttpErrorAction::ReturnError:
-                        return std::string("[Error] ") + response.m_error;
-                    case HttpErrorAction::ReturnTooMany:
-                        return std::string("[Error] Too many errors: ") + response.m_error;
-                    case HttpErrorAction::ReturnInterrupted:
-                        emitInterrupted();
-                        return std::string("[Interrupted]");
-                    case HttpErrorAction::Continue:
-                        break;
-                    }
-                    continue;
-                }
-
-                consecutiveErrors = 0;
-                acc.markDone();
-                CLFLogger::instance().info("[API] streaming done, content="
-                    + std::to_string(acc.getContent().size()) + "chars, reasoning="
-                    + std::to_string(acc.getReasoning().size()) + "chars, finish="
-                    + acc.getFinishReason());
-                parsed.m_content      = acc.getContent();
-                parsed.m_toolCalls    = acc.getToolCalls();
-                parsed.m_finishReason = acc.getFinishReason();
-                // P2-4: 流式 usage（缺失保持 0——不估猜）
-                parsed.m_usagePrompt     = acc.getUsagePrompt();
-                parsed.m_usageCompletion = acc.getUsageCompletion();
-                parsed.m_usageTotal      = acc.getUsageTotal();
-                parsed.m_usageCacheHit   = acc.getUsageCacheHit();
-                parsed.m_hasCacheField   = acc.getHasCacheField();
-                // 模型自发结束标记：截断其后内容 + 丢弃 tool_calls
-                applySelfWorkedMark(parsed);
-
-            } else {
-                // ====== 同步路径 ======
-                CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
-                CLF::CLFNetwork::CLFHttpResponse response =
-                    m_httpClient->postJson("/v1/chat/completions", body);
-                thinking.stop();
-
-                if (m_interrupted) {
-                    // W-usage：响应已完整返回——从 body 提取 usage 累计
-                    // （连接失败等 wasAborted 场景 body 空 → parse 默认 0，no-op）
-                    accumulateUsage(
-                        m_protocolAdapter.parseAssistantResponse(response.m_body));
-                    emitInterrupted();
-                    return std::string("[Interrupted]");
-                }
-                if (response.m_wasAborted) {
-                    accumulateUsage(
-                        m_protocolAdapter.parseAssistantResponse(response.m_body));
-                    emitInterrupted();
-                    return std::string("[Interrupted]");
-                }
-                if (!response.m_error.empty()) {
-                    // A2：错误重试收敛至 handleHttpError（与流式路径同款）
-                    switch (handleHttpError(response.m_error, consecutiveErrors)) {
-                    case HttpErrorAction::ReturnError:
-                        return std::string("[Error] ") + response.m_error;
-                    case HttpErrorAction::ReturnTooMany:
-                        return std::string("[Error] Too many errors: ") + response.m_error;
-                    case HttpErrorAction::ReturnInterrupted:
-                        emitInterrupted();
-                        return std::string("[Interrupted]");
-                    case HttpErrorAction::Continue:
-                        break;
-                    }
-                    continue;
-                }
-
-                consecutiveErrors = 0;
-                parsed = m_protocolAdapter.parseAssistantResponse(response.m_body);
-                // 模型自发结束标记：截断其后内容 + 丢弃 tool_calls（同步路径同款）
-                applySelfWorkedMark(parsed);
-            }
-
-            // P2-4/R3: 只累计已落定的 usage（正常解析路径；W-usage 2026-09-23：
-            // 中断早退点已共用同一 helper——"发生了的请求就是发生了"）。
-            // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
-            // 同生命周期不重置）。仅响应携带缓存字段才累计——第三方 provider
-            // 无此字段时不显示（"无法统计"），区别于 DeepSeek 真实零命中（显示 0%）
-            accumulateUsage(parsed);
-
-            // finish_reason 检查
-            if (!CLFProtocolAdapter::isValidFinish(parsed)) {
-                if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
-                return std::string("[Error] Unexpected finish_reason: '")
-                       + parsed.m_finishReason + "'";
-            }
-
-            // 累积文本（思考模型可能在 reasoning_content 中耗尽 token，
-            // content 为空但 finish_reason 为 "length" 或 "stop"）
-            if (!parsed.m_content.empty()) {
-                if (!finalContent.empty()) finalContent += "\n";
-                finalContent += parsed.m_content;
-            }
-            if (finalContent.empty() && parsed.m_finishReason == "length") {
-                finalContent = "(响应被截断 — 思考时间过长，token 已达上限)";
-            }
-
-            // tool_calls → 执行并继续循环
-            if (CLFProtocolAdapter::hasToolCalls(parsed)) {
-                // A5-concludesTurn：工具已声明回合结束，模型却仍发工具调用 →
-                // 丢弃（不执行、不回填、不 addAssistantToolCalls）。
-                // 协议安全：模型文本已在上方累积进 finalContent，无悬空
-                // tool_calls 需 result 配对；break 后经 finishTurn() 正常收尾，
-                // 不落触顶路径（设计 §3.1 改动 3）
-                if (concluded) break;
-                // 中断检查：流式被 abort 后可能累积了 tool call，执行前再检查
-                if (m_interrupted) {
-                    emitInterrupted();
-                    return std::string("[Interrupted]");
-                }
-                m_context.addAssistantToolCalls(parsed.m_toolCalls, parsed.m_content);
-                CLFToolExecutor executor(m_tools, m_securityPolicy,
-                                         m_confirmCallback, m_lastToolStats,
-                                         m_fileService, m_output, m_output,
-                                         &m_interrupted, &m_labels, &thinkingSec);
-                auto results = executor.execute(parsed.m_toolCalls);
-                for (const auto& result : results) {
-                    // C2b：tool result 内容截断在入库前（容器不再含内容策略）
-                    m_context.addToolResult(
-                        result.m_toolCallId, result.m_name,
-                        CLFTextUtil::truncateToolResult(result.m_content));
-                    if (result.m_concludesTurn) concluded = true;
-                }
-                if (m_interrupted) {
-                    emitInterrupted();
-                    return std::string("[Interrupted]");
-                }
-                continue;
-            }
-
-            // 完成 → 收尾汇聚点（A5 §3.2.1）：自然停 / concluded-break 共用
-            {
-                // A5-C：max-tokens 收尾——finish_reason == "length" 时状态点
-                // Warn（现状 Done）；已生成内容保留不回滚（设计 §3.3）。
-                // 边界：length 且带 tool_calls 不落此分支（上方已 continue）
-                const auto finishKind = (parsed.m_finishReason == "length")
-                    ? CLF::CLFTypes::ICLFOutput::StatusKind::Warn
-                    : CLF::CLFTypes::ICLFOutput::StatusKind::Done;
-                return finishTurn(finalContent, turnStart, finishKind,
-                                  modelDeclaredEnd);
-            }
-
-        } catch (const std::exception& e) {
-            if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
-                if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
-                return std::string("[Error] Exception: ") + e.what();
-            }
-            if (m_output) m_output->emitContent(
-                "\n✗ Exception: " + std::string(e.what())
-                + " — retry " + std::to_string(consecutiveErrors)
-                + "/" + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
-            // ④ 可中断等待
-            for (int w = 0; w < 20 && !m_interrupted; ++w)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+// ④ 单次模型请求：buildRequestBody → (streamRequest ∥ syncRequest) → finalizeResponse
+// 防御意义（总纲决策 24③）：拆分后常规回合的模型请求唯一入口 = 本函数
+// （流式/同步两路径收敛单点；触顶 wrapUp 复用 buildRequestBody 走
+// requestWrapUpBody——无重试语义）——"程序零自动提交"从事实变为可审计结构
+CLFAgentLoop::TurnRequestResult CLFAgentLoop::requestAssistantTurn(int iteration, int& consecutiveErrors,
+                                                                   bool& modelDeclaredEnd) {
+    const std::string body = buildRequestBody(m_config);
+    CLFAssistantResponse parsed;
+    if (m_config.m_stream) {
+        TurnRequestResult r = streamRequest(body, iteration, consecutiveErrors, parsed);
+        if (r.m_action != TurnRequestResult::Action::Continue) return r;
+    } else {
+        TurnRequestResult r = syncRequest(body, consecutiveErrors, parsed);
+        if (r.m_action != TurnRequestResult::Action::Continue) return r;
     }
+    // 两路径后处理收敛：自发结束标记 + usage + finish_reason 检查
+    return finalizeResponse(parsed, modelDeclaredEnd);
+}
 
-    // A5-concludesTurn：模型未按声明停止（发了工具调用被丢弃）→
-    // 已给最终发言机会，直接复用完成分支收尾（Done，设计 §3.1 改动 3）
-    if (concluded) {
-        return finishTurn(finalContent, turnStart,
-                          CLF::CLFTypes::ICLFOutput::StatusKind::Done);
+// ⑦ 工具执行段（原 runTurn :410-427 搬移）：addAssistantToolCalls →
+// executor.execute → 结果回填（入库前截断）→ concluded/中断判定
+CLFAgentLoop::ToolExecutionOutcome CLFAgentLoop::executeToolCalls(
+    const std::vector<CLFToolCall>& toolCalls, const std::string& assistantContent,
+    TurnThinkingClock& thinking) {
+    m_context.addAssistantToolCalls(toolCalls, assistantContent);
+    CLFToolExecutor executor(m_tools, m_securityPolicy,
+                             m_confirmCallback, m_lastToolStats,
+                             m_fileService, m_output, m_output,
+                             &m_interrupted, &m_labels, &thinking.sec());
+    ToolExecutionOutcome outcome;
+    auto results = executor.execute(toolCalls);
+    for (const auto& result : results) {
+        // C2b：tool result 内容截断在入库前（容器不再含内容策略）
+        m_context.addToolResult(
+            result.m_toolCallId, result.m_name,
+            CLFTextUtil::truncateToolResult(result.m_content));
+        if (result.m_concludesTurn) outcome.m_concluded = true;
     }
-
-    // ====== 触顶路径（A5-B：优雅收尾，设计 §3.2）======
-    // 触顶 = 阶段完成点，非报错。循环耗尽时 context 尾部是 tool result，
-    // 模型无总结机会 → 触顶收尾请求（同步 + 独立 try/catch：循环内 catch
-    // 管不到这里，任何失败不逸出、不重试，降级返回已累积内容 + 提示文案）
     if (m_interrupted) {
         emitInterrupted();
-        return std::string("[Interrupted]");
+        outcome.m_interrupted = true;
     }
+    return outcome;
+}
+
+// ⑨ 触顶收尾（原 runTurn :464-520 搬移，A5-B：优雅收尾，设计 §3.2）：
+// 触顶 = 阶段完成点，非报错。循环耗尽时 context 尾部是 tool result，
+// 模型无总结机会 → 触顶收尾请求（同步 + 独立 try/catch：循环内 catch
+// 管不到这里，任何失败不逸出、不重试，降级返回已累积内容 + 提示文案）
+std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
+                                    std::chrono::steady_clock::time_point turnStart) {
+    if (m_interrupted) return abortTurn();
     m_context.addMessage("user", kTurnCapWrapUpPrompt);
     CLFLogger::instance().info("[Turn] max tool iterations reached ("
         + std::to_string(m_config.m_maxToolCallIterations) + "), wrap-up request");
+    if (!requestWrapUpBody(finalContent)) return std::string("[Interrupted]");
+    // 顺序：总结文本 → 提示文案 → worked（§3.2.1）
+    if (m_output && m_config.m_stream) {
+        m_output->emitContent(kTurnCapNotice);
+    } else {
+        finalContent += kTurnCapNotice;
+    }
+    appendWorked(finalContent, turnStart);
+    // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
+    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    return m_config.m_stream ? std::string() : finalContent;
+}
+
+// ============================================================================
+// 二级函数（Section 内部拆分）
+// ============================================================================
+
+// C2b：发 API 前窗口截断（system 永不截断，尾部保留）。
+// 流式/同步/触顶 wrapUp 三处请求体构造收敛（wrapUp 传 stream=false 变体）
+std::string CLFAgentLoop::buildRequestBody(const CLFAgentConfig& cfg) const {
+    return m_protocolAdapter.buildChatRequest(
+        m_window.apply(m_context.getMessages()), m_tools, cfg);
+}
+
+// 流式请求：日志 → postJsonStream（回调分发见 handleStreamDelta）→
+// 错误/中断早退 → 成功回填 parsed
+CLFAgentLoop::TurnRequestResult CLFAgentLoop::streamRequest(const std::string& body, int iteration,
+                                                            int& consecutiveErrors,
+                                                            CLFAssistantResponse& parsed) {
+    CLFLogger::instance().info("[API] streaming request, iter="
+        + std::to_string(iteration) + ", ctx_msgs="
+        + std::to_string(m_context.getMessages().size()));
+    CLFStreamAccumulator acc;
+    CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
+    bool firstContent = true;
+    bool interrupted = false;
+    bool hadError = false;
+    std::string errorMsg;
+
+    CLF::CLFNetwork::CLFHttpResponse response =
+        m_httpClient->postJsonStream(
+            "/v1/chat/completions", body,
+            [&](const std::string& line) {
+                handleStreamDelta(line, acc, firstContent, thinking,
+                                  interrupted, hadError, errorMsg);
+            });
+
+    // 错误处理
+    if (hadError) {
+        if (m_output) m_output->emitError("Stream error: " + errorMsg);
+        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        return {TurnRequestResult::Action::ReturnError, errorMsg, {}};
+    }
+    if (interrupted || m_interrupted) {
+        // W-usage：中断早退前累计已到达的 usage（中断早于服务端
+        // usage 发出 → acc 各字段为 0，helper 内 gate 自然跳过）
+        accumulatePartialUsage(acc);
+        return interruptedResult();
+    }
+    if (response.m_wasAborted) {
+        // httplib 层检测到中断（abort → stop → 阻塞读返回）→ 直接返回，不重试
+        return interruptedResult();
+    }
+    if (!response.m_error.empty()) {
+        // A2：错误重试收敛至 handleHttpError（原内联 ~25 行）
+        return httpErrorResult(response.m_error, consecutiveErrors);
+    }
+
+    consecutiveErrors = 0;
+    acc.markDone();
+    CLFLogger::instance().info("[API] streaming done, content="
+        + std::to_string(acc.getContent().size()) + "chars, reasoning="
+        + std::to_string(acc.getReasoning().size()) + "chars, finish="
+        + acc.getFinishReason());
+    parsed.m_content      = acc.getContent();
+    parsed.m_toolCalls    = acc.getToolCalls();
+    parsed.m_finishReason = acc.getFinishReason();
+    // P2-4: 流式 usage（缺失保持 0——不估猜）
+    parsed.m_usagePrompt     = acc.getUsagePrompt();
+    parsed.m_usageCompletion = acc.getUsageCompletion();
+    parsed.m_usageTotal      = acc.getUsageTotal();
+    parsed.m_usageCacheHit   = acc.getUsageCacheHit();
+    parsed.m_hasCacheField   = acc.getHasCacheField();
+    return {TurnRequestResult::Action::Continue, {}, {}};
+}
+
+// 单个 SSE chunk 分类处理（原 runTurn 流式 lambda 内联 27 行提为函数）：
+// error / usage / content+reasoning / finish_reason 四路
+void CLFAgentLoop::handleStreamDelta(const std::string& line, CLFStreamAccumulator& acc,
+                                     bool& firstContent,
+                                     CLF::CLFNetwork::CLFThinkingIndicator& thinking,
+                                     bool& interrupted, bool& hadError,
+                                     std::string& errorMsg) {
+    if (hadError || interrupted) return;
+    if (m_interrupted) {
+        interrupted = true;
+        acc.markDone();
+        return;
+    }
+    if (line.rfind("data: ", 0) != 0) return;
+    std::string payload = line.substr(6);
+    if (payload == "[DONE]") { acc.markDone(); return; }
+    try {
+        auto delta = nlohmann::json::parse(payload);
+        if (delta.contains("error")) { hadError = true; errorMsg = delta["error"].dump(); return; }
+        // P2-4: usage chunk 的 choices 为空数组，须在 choices 过滤之前单独投喂
+        if (delta.contains("usage"))
+            acc.feedUsage(delta["usage"]);
+        if (delta.contains("choices") && !delta["choices"].empty()) {
+            const auto& choice = delta["choices"][0];
+            if (choice.contains("delta")) {
+                std::string chunk = acc.feedDelta(choice["delta"]);
+                if (!chunk.empty()) {
+                    if (firstContent) { thinking.stop(); firstContent = false; }
+                    if (m_output) m_output->emitContent(chunk);
+                }
+                // 推理过程 → 独立通道（UI 层 Ctrl+O 折叠/展开）
+                // 只追加上次检查后新增的推理内容（避免重复累积）
+                if (acc.hasReasoning() && m_output) {
+                    const auto& reasoning = acc.getReasoning();
+                    if (reasoning.size() > m_lastReasoningSize) {
+                        m_output->appendThinking(
+                            reasoning.substr(m_lastReasoningSize));
+                        m_lastReasoningSize = reasoning.size();
+                    }
+                }
+            }
+            if (choice.contains("finish_reason")) acc.feedDelta(choice);
+        }
+    } catch (const nlohmann::json::exception&) {}
+}
+
+// 同步请求：postJson → 中断/wasAborted/错误早退 → 成功解析回填
+CLFAgentLoop::TurnRequestResult CLFAgentLoop::syncRequest(const std::string& body, int& consecutiveErrors,
+                                                          CLFAssistantResponse& parsed) {
+    CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
+    CLF::CLFNetwork::CLFHttpResponse response =
+        m_httpClient->postJson("/v1/chat/completions", body);
+    thinking.stop();
+
+    if (m_interrupted || response.m_wasAborted) {
+        // W-usage：响应已完整返回——从 body 提取 usage 累计
+        // （连接失败等 wasAborted 场景 body 空 → parse 默认 0，no-op）
+        accumulateUsage(
+            m_protocolAdapter.parseAssistantResponse(response.m_body));
+        return interruptedResult();
+    }
+    if (!response.m_error.empty()) {
+        // A2：错误重试收敛至 handleHttpError（与流式路径同款）
+        return httpErrorResult(response.m_error, consecutiveErrors);
+    }
+
+    consecutiveErrors = 0;
+    parsed = m_protocolAdapter.parseAssistantResponse(response.m_body);
+    return {TurnRequestResult::Action::Continue, {}, {}};
+}
+
+// 流式/同步两路径后处理收敛（原两处同构跑两遍 → 单点）：
+// 自发结束标记 → usage 累计 → finish_reason 检查
+CLFAgentLoop::TurnRequestResult CLFAgentLoop::finalizeResponse(CLFAssistantResponse& parsed,
+                                                               bool& modelDeclaredEnd) {
+    // 模型自发结束标记：截断其后内容 + 丢弃 tool_calls
+    applySelfWorkedMark(parsed, modelDeclaredEnd);
+    // P2-4/R3: 只累计已落定的 usage（正常解析路径；W-usage 2026-09-23：
+    // 中断早退点已共用同一 helper——"发生了的请求就是发生了"）。
+    // 缓存命中率显示：会话累计（底部常亮参数行；与 m_totalTokensUsed
+    // 同生命周期不重置）。仅响应携带缓存字段才累计——第三方 provider
+    // 无此字段时不显示（"无法统计"），区别于 DeepSeek 真实零命中（显示 0%）
+    accumulateUsage(parsed);
+    // finish_reason 检查
+    if (!CLFProtocolAdapter::isValidFinish(parsed)) {
+        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        return {TurnRequestResult::Action::ReturnError,
+                "Unexpected finish_reason: '" + parsed.m_finishReason + "'", {}};
+    }
+    return {TurnRequestResult::Action::Continue, {}, parsed};
+}
+
+// W-usage：流式中断早退点——partial usage 提取 + 累计（原 runTurn :281-287 内联搬移）
+void CLFAgentLoop::accumulatePartialUsage(const CLFStreamAccumulator& acc) {
+    CLFAssistantResponse partial;
+    partial.m_usagePrompt     = acc.getUsagePrompt();
+    partial.m_usageCompletion = acc.getUsageCompletion();
+    partial.m_usageTotal      = acc.getUsageTotal();
+    partial.m_usageCacheHit   = acc.getUsageCacheHit();
+    partial.m_hasCacheField   = acc.getHasCacheField();
+    accumulateUsage(partial);
+}
+
+// 编排层中断早退单点（原散落 6+ 处的同构两行收敛）：
+// emitInterrupted（统一文案 + 清推理 + Warn 状态点）+ 中断文案
+std::string CLFAgentLoop::abortTurn() {
+    emitInterrupted();
+    return std::string("[Interrupted]");
+}
+
+// 请求层中断早退单点：emitInterrupted + ReturnInterrupted 结果
+CLFAgentLoop::TurnRequestResult CLFAgentLoop::interruptedResult() {
+    emitInterrupted();
+    return {TurnRequestResult::Action::ReturnInterrupted, {}, {}};
+}
+
+// HttpErrorAction 三态 → 对应早退结果（流式/同步两路径错误分支收敛；
+// 重试计数/可中断等待在 handleHttpError 内）
+CLFAgentLoop::TurnRequestResult CLFAgentLoop::httpErrorResult(const std::string& error,
+                                                              int& consecutiveErrors) {
+    switch (handleHttpError(error, consecutiveErrors)) {
+    case HttpErrorAction::ReturnError:
+        return {TurnRequestResult::Action::ReturnError, error, {}};
+    case HttpErrorAction::ReturnTooMany:
+        return {TurnRequestResult::Action::ReturnError, "Too many errors: " + error, {}};
+    case HttpErrorAction::ReturnInterrupted:
+        return interruptedResult();
+    case HttpErrorAction::Continue:
+        return {TurnRequestResult::Action::Retry, {}, {}};
+    }
+    return {TurnRequestResult::Action::Retry, {}, {}};  // 不可达（枚举全覆盖，防御 C4715）
+}
+
+// 触顶 wrap-up 请求（stream=false 变体）+ 失败降级。
+// 返回 false = 请求期间被中断（emitInterrupted 已发射，调用方直接返回文案）
+bool CLFAgentLoop::requestWrapUpBody(std::string& finalContent) {
     try {
         CLF::CLFNetwork::CLFThinkingIndicator thinking(m_httpClient.get(), m_output);
         // 收尾请求走同步传输 → 请求体必须非流式：m_stream=true 时 buildChatRequest
@@ -480,14 +579,13 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         // 同步传输与流式请求体的协议不匹配）
         CLFAgentConfig wrapUpConfig = m_config;
         wrapUpConfig.m_stream = false;
-        std::string body = m_protocolAdapter.buildChatRequest(
-            m_window.apply(m_context.getMessages()), m_tools, wrapUpConfig);
+        const std::string body = buildRequestBody(wrapUpConfig);
         CLF::CLFNetwork::CLFHttpResponse response =
             m_httpClient->postJson("/v1/chat/completions", body);
         thinking.stop();
         if (m_interrupted || response.m_wasAborted) {
             emitInterrupted();
-            return std::string("[Interrupted]");
+            return false;
         }
         if (response.m_error.empty()) {
             CLFAssistantResponse wrapUp =
@@ -507,17 +605,46 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
         CLFLogger::instance().warn("[Turn] wrap-up request failed: "
             + std::string(e.what()));
     }
+    return true;
+}
 
-    // 顺序：总结文本 → 提示文案 → worked（§3.2.1）
-    if (m_output && m_config.m_stream) {
-        m_output->emitContent(kTurnCapNotice);
-    } else {
-        finalContent += kTurnCapNotice;
+// 模型自发回合结束宣告防御（原 runTurn 内 lambda 提为成员，签名/体原样搬移）：
+// "✻ <worked> for" 是 CLFCode 专属 UI 格式——模型回复中出现即视为宣告
+// 回合结束。尊重宣告：保留标记行、截断其后内容（防"模拟用户追问"
+// 自问自答）、丢弃已声明的 tool_calls（宣告结束 → 不执行）；收尾不
+// 重复拼 worked（模型已宣告）。模型正常回复不可能含该字面——出现即
+// 思考异常，止损正确
+void CLFAgentLoop::applySelfWorkedMark(CLFAssistantResponse& parsed,
+                                       bool& modelDeclaredEnd) const {
+    const std::string mark = "\n✻ " + m_labels.worked + " for";
+    size_t pos = parsed.m_content.find(mark);
+    if (pos == std::string::npos
+        && parsed.m_content.rfind("✻ " + m_labels.worked + " for", 0) == 0) {
+        pos = 0;   // 内容首行即标记
     }
-    appendWorked(finalContent, turnStart);
-    // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
-    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
-    return m_config.m_stream ? std::string() : finalContent;
+    if (pos == std::string::npos) return;
+    modelDeclaredEnd = true;
+    const size_t lineEnd = parsed.m_content.find('\n', pos + 1);
+    parsed.m_content.erase(lineEnd == std::string::npos
+                               ? parsed.m_content.size() : lineEnd);
+    parsed.m_toolCalls.clear();
+    CLFLogger::instance().warn(
+        "[Turn] model declared end (self worked mark) — truncated trailing content");
+}
+
+// W-usage（2026-09-23 中断时效性 §13.5 用户拍板）：中断路径也累计 usage——
+// "发生了的请求就是发生了"。helper 供中断早退点与正常累计点共用；
+// 中断发生在服务端发出 usage 之前 → 各字段为 0，gate 自然跳过
+// （不估算——与既有"缺失保持 0"口径一致）
+void CLFAgentLoop::accumulateUsage(const CLFAssistantResponse& usageSrc) {
+    if (usageSrc.m_usageTotal > 0) {
+        m_totalTokensUsed += usageSrc.m_usageTotal;
+        m_lastToolStats.totalTokens = static_cast<int>(m_totalTokensUsed);
+        m_lastToolStats.turnTokens = static_cast<int>(
+            m_totalTokensUsed - m_turnStartTokens);
+        if (usageSrc.m_hasCacheField)
+            m_sessionUsage.accumulate(usageSrc.m_usagePrompt, usageSrc.m_usageCacheHit);
+    }
 }
 
 // ============================================================================
