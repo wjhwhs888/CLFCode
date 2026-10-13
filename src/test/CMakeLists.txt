@@ -29,6 +29,8 @@ endfunction()
 
 # —— 仅 clf_types ——
 clf_add_test(qa_CLFPeriodicTimer    clf_types)
+clf_add_test(qa_CLFEvents           clf_types)
+clf_add_test(qa_CLFEventBus         clf_types)
 clf_add_test(qa_CLFPlatform         clf_types)
 clf_add_test(qa_CLFProcessRunner    clf_types)
 clf_add_test(qa_CLFSessionUsage     clf_types)
@@ -70,6 +72,7 @@ clf_add_test(qa_CLFCapabilities     clf_core clf_capabilities)
 
 # —— clf_tui ——
 clf_add_test(qa_CLFAnsiParser       clf_tui)
+clf_add_test(qa_CLFTerminalEventAdapter clf_tui)
 
 # —— clf_tools ——
 clf_add_test(qa_CLFSearchContent    clf_tools)

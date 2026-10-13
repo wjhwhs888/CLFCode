@@ -26,6 +26,7 @@
 
 namespace CLF::CLFNetwork { class ICLFHttpClient; class CLFThinkingIndicator; }
 namespace CLF::CLFPluginApi { class ICLFFileService; }
+namespace CLF::CLFTypes { class CLFEventBus; }
 namespace CLF::CLFCore {
 
 class CLFStreamAccumulator;  // 事件化重构步骤 0：流式回调拆分引用（仅声明）
@@ -52,6 +53,11 @@ public:
     // 注入输出通道 + 注册中断回调.
     // 析构时自动清空回调.
     void setOutput(CLF::CLFTypes::ICLFOutput* output);
+
+    // 事件化重构步骤 2：注入事件总线——非空时各 Section 原 m_output 调用处
+    // 并行发事件（双轨：直调保留 + 事件发射；分册 2/3 再切轨）。
+    // nullptr = 不发射（既有测试/装配零改动）
+    void setEventBus(CLF::CLFTypes::CLFEventBus* bus) { m_eventBus = bus; }
 
     // 执行一轮对话（含 tool-calling 循环）
     std::string runTurn(const std::string& userInput);
@@ -325,6 +331,11 @@ private:
     CLF::CLFTypes::ICLFOutput*        m_output = nullptr;
     std::atomic<bool>                 m_interrupted{false};
     size_t                           m_lastReasoningSize = 0;  // appendThinking 增量追踪
+
+    // —— 事件化重构步骤 2（双轨发射；nullptr = 不发射）——
+    CLF::CLFTypes::CLFEventBus*      m_eventBus = nullptr;
+    std::string                      m_currentTurnId;  // 本回合稳定 id（TurnStarted 起共用）
+    uint64_t                         m_turnSeq = 0;    // 回合序号（单线程 runTurn 内递增）
 };
 
 } // namespace CLF::CLFCore

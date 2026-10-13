@@ -10,6 +10,8 @@
 #include "CLFCore/CLFStreamAccumulator.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"
+#include "CLFTypes/CLFEventBus.hpp"   // 事件化重构步骤 2：双轨发射
+#include "CLFTypes/CLFEvents.hpp"
 #include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
@@ -252,8 +254,23 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 bool CLFAgentLoop::prepareTurn(const std::string& userInput) {
     CLFLogger::instance().info("[Turn] start, input="
         + (userInput.size() > 80 ? userInput.substr(0, 80) + "..." : userInput));
+    // 事件化重构步骤 2：回合稳定 id + TurnStarted 双轨发射（归属表 §2.3）
+    m_currentTurnId = "turn-" + std::to_string(++m_turnSeq);
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::TurnStarted;
+        ev.m_turnId = m_currentTurnId;
+        ev.m_text = userInput;
+        m_eventBus->publish(ev);
+    }
     m_interrupted = false;  // 新 turn 开始时重置中断标志
     if (m_output) m_output->clearThinking();  // 清空上一轮推理内容
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::ThinkingCleared;
+        ev.m_turnId = m_currentTurnId;
+        m_eventBus->publish(ev);
+    }
     m_lastReasoningSize = 0;  // 重置推理增量追踪
     // S3-1: 自动摘要（先于 addMessage 与任何 API 调用；频控 + 阈值双条件，
     // 设计 §S3-1）——生成（同步 LLM，失败自动规则降级）→ 落盘 summary 行
@@ -291,6 +308,15 @@ bool CLFAgentLoop::prepareTurn(const std::string& userInput) {
     m_turnStartTokens = m_totalTokensUsed;
     // P1-1: 状态点接线——Running 于 turn 开始
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
+    // 事件化重构步骤 2：StatusChanged 双轨发射
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::StatusChanged;
+        ev.m_turnId = m_currentTurnId;
+        ev.m_statusKind =
+            static_cast<int>(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
+        m_eventBus->publish(ev);
+    }
     return true;
 }
 
@@ -322,7 +348,8 @@ CLFAgentLoop::ToolExecutionOutcome CLFAgentLoop::executeToolCalls(
     CLFToolExecutor executor(m_tools, m_securityPolicy,
                              m_confirmCallback, m_lastToolStats,
                              m_fileService, m_output, m_output,
-                             &m_interrupted, &m_labels, &thinking.sec());
+                             &m_interrupted, &m_labels, &thinking.sec(),
+                             m_eventBus);   // 步骤 2：ToolStarted/ToolFinished 双轨
     ToolExecutionOutcome outcome;
     auto results = executor.execute(toolCalls);
     for (const auto& result : results) {
@@ -359,6 +386,17 @@ std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
     appendWorked(finalContent, turnStart);
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
     if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    // 事件化重构步骤 2：TurnFinished 双轨发射（触顶路径——capReached 标志）
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::TurnFinished;
+        ev.m_turnId = m_currentTurnId;
+        ev.m_workedSec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - turnStart).count();
+        ev.m_todos = m_todoStore.getTodos();
+        ev.m_capReached = true;
+        m_eventBus->publish(ev);
+    }
     return m_config.m_stream ? std::string() : finalContent;
 }
 
@@ -464,6 +502,14 @@ void CLFAgentLoop::handleStreamDelta(const std::string& line, CLFStreamAccumulat
                 if (!chunk.empty()) {
                     if (firstContent) { thinking.stop(); firstContent = false; }
                     if (m_output) m_output->emitContent(chunk);
+                    // 事件化重构步骤 2：ContentDelta 双轨发射
+                    if (m_eventBus) {
+                        CLF::CLFTypes::CLFAgentEvent ev;
+                        ev.m_type = CLF::CLFTypes::CLFEventType::ContentDelta;
+                        ev.m_turnId = m_currentTurnId;
+                        ev.m_text = chunk;
+                        m_eventBus->publish(ev);
+                    }
                 }
                 // 推理过程 → 独立通道（UI 层 Ctrl+O 折叠/展开）
                 // 只追加上次检查后新增的推理内容（避免重复累积）
@@ -472,6 +518,14 @@ void CLFAgentLoop::handleStreamDelta(const std::string& line, CLFStreamAccumulat
                     if (reasoning.size() > m_lastReasoningSize) {
                         m_output->appendThinking(
                             reasoning.substr(m_lastReasoningSize));
+                        // 事件化重构步骤 2：ReasoningDelta 双轨发射
+                        if (m_eventBus) {
+                            CLF::CLFTypes::CLFAgentEvent ev;
+                            ev.m_type = CLF::CLFTypes::CLFEventType::ReasoningDelta;
+                            ev.m_turnId = m_currentTurnId;
+                            ev.m_text = reasoning.substr(m_lastReasoningSize);
+                            m_eventBus->publish(ev);
+                        }
                         m_lastReasoningSize = reasoning.size();
                     }
                 }
@@ -706,6 +760,17 @@ std::string CLFAgentLoop::finishTurn(
     // P1-1: 完成点显式接线（TurnGuard 不设 kind，F20）；kind 由调用方按
     // 结束原因传入：自然停/concluded = Done，max-tokens = Warn（A5 §3.2.1）
     if (m_output) m_output->setStatusKind(kind);
+    // 事件化重构步骤 2：TurnFinished 双轨发射（自然停/concluded 路径）
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::TurnFinished;
+        ev.m_turnId = m_currentTurnId;
+        ev.m_workedSec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - turnStart).count();
+        ev.m_todos = m_todoStore.getTodos();
+        ev.m_capReached = false;
+        m_eventBus->publish(ev);
+    }
     CLFLogger::instance().info("[Turn] done, content="
         + std::to_string(finalContent.size()) + "chars, tools="
         + std::to_string(m_lastToolStats.totalCalls));
@@ -793,6 +858,15 @@ std::string CLFAgentLoop::beginSessionFile(const std::string& firstInput) {
 }
 
 void CLFAgentLoop::appendTodoSnapshotNow() {
+    // 事件化重构步骤 2：TodoUpdated 双轨发射（清单变化点——快照落盘处；
+    // 归属表 §2.3：todo 快照写入点 → TodoUpdated{todos}）
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::TodoUpdated;
+        ev.m_turnId = m_currentTurnId;
+        ev.m_todos = getTodos();
+        m_eventBus->publish(ev);
+    }
     const std::string path = getActiveSessionFile();
     if (path.empty()) {
         CLFLogger::instance().debug("[TodoSnapshot] skipped: no active session file");
@@ -988,6 +1062,13 @@ void CLFAgentLoop::emitInterrupted() {
     // W2 修复（2026-09-23 中断时效性 批C-3）：中断路径零日志痕迹——
     // 补日志（本次破案曾靠 ToolExec 日志间接判别，中断自身不可判读）
     CLFLogger::instance().info("[Turn] interrupted");
+    // 事件化重构步骤 2：Interrupted 双轨发射（全部中断早退点单点共用）
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::Interrupted;
+        ev.m_turnId = m_currentTurnId;
+        m_eventBus->publish(ev);
+    }
     if (!m_output) return;
     m_output->emitContent("\n⏹ 已中断\n");
     m_output->clearThinking();

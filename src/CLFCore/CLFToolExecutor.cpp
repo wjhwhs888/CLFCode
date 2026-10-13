@@ -4,6 +4,8 @@
 #include "CLFCore/CLFToolExecutor.hpp"
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"
+#include "CLFTypes/CLFEventBus.hpp"   // 步骤 2：ToolStarted/ToolFinished 双轨发射
+#include "CLFTypes/CLFEvents.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -388,7 +390,8 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
                                  CLF::CLFTypes::ICLFProgressOutput* progressOutput,
                                  std::atomic<bool>* interruptFlag,
                                  const CLFTimerLabels* labels,
-                                 std::atomic<int>* thinkingSec)
+                                 std::atomic<int>* thinkingSec,
+                                 CLF::CLFTypes::CLFEventBus* eventBus)
     : m_tools(tools)
     , m_securityPolicy(policy)
     , m_confirmCallback(std::move(confirmCallback))
@@ -398,7 +401,8 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
     , m_interruptFlag(interruptFlag)
     , m_labels(labels)
     , m_thinkingSec(thinkingSec)
-    , m_fileService(fileService) {
+    , m_fileService(fileService)
+    , m_eventBus(eventBus) {
 }
 
 // ============================================================================
@@ -454,6 +458,29 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         if (!keyParam.empty()) {
             header += "(" + keyParam + ")";
         }
+        // 事件化重构步骤 2：ToolStarted 双轨发射（调度 dispatch 前）
+        if (m_eventBus) {
+            CLF::CLFTypes::CLFAgentEvent ev;
+            ev.m_type = CLF::CLFTypes::CLFEventType::ToolStarted;
+            ev.m_callId = call.m_id;
+            ev.m_name = call.m_name;
+            ev.m_argsPreview = keyParam;
+            m_eventBus->publish(ev);
+        }
+        // ToolFinished 双轨发射（与 ToolStarted 一一配对；各出口 ok/errorKind
+        // 不同——分册 3 切轨后由调度器提交游标统一，本步逐出口显式发射）
+        auto emitFinished = [&](const CLFToolResult& r, bool ok,
+                                const std::string& errorKind) {
+            if (!m_eventBus) return;
+            CLF::CLFTypes::CLFAgentEvent ev;
+            ev.m_type = CLF::CLFTypes::CLFEventType::ToolFinished;
+            ev.m_callId = r.m_toolCallId;
+            ev.m_name = r.m_name;
+            ev.m_ok = ok;
+            ev.m_summary = r.m_content;
+            ev.m_errorKind = errorKind;
+            m_eventBus->publish(ev);
+        };
         // B1：工具查找前置（能力标签判定需 it；语义微调——不存在的工具不再计入统计，
         // 原名字匹配在查找前会误计幻觉工具名，B1 定案记录）
         auto it = std::find_if(m_tools.begin(), m_tools.end(),
@@ -462,6 +489,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         if (it == m_tools.end()) {
             result.m_content = std::string("Tool not found: ") + call.m_name;
             if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ unknown\n");
+            emitFinished(result, false, "not_found");
             results.push_back(std::move(result));
             continue;
         }
@@ -483,6 +511,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                              + m_securityPolicy.getModeName()
                              + ")] 当前模式禁止执行该操作。";
             if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ blocked\n");
+            emitFinished(result, false, "permission");
             results.push_back(std::move(result));
             continue;
         }
@@ -540,6 +569,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 if (m_contentOutput) {
                     m_contentOutput->emitContent("  ⎿ ✗ " + preview.errorMsg + "\n");
                 }
+                emitFinished(result, false, "");
                 results.push_back(std::move(result));
                 continue;
             }
@@ -552,6 +582,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                     m_contentOutput->emitContent("  ⎿ ✗ File too large to preview diff. "
                                           "Use Auto mode.\n");
                 }
+                emitFinished(result, false, "");
                 results.push_back(std::move(result));
                 continue;
             }
@@ -570,6 +601,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 if (!m_confirmCallback(prompt)) {
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
                     if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
+                    emitFinished(result, false, "permission");
                     results.push_back(std::move(result));
                     if (m_interruptFlag && m_interruptFlag->load()) {
                         // 协议闭合：当前 call 已有 denied 结果，补剩余（§11.4）
@@ -592,6 +624,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                         m_contentOutput->emitContent(
                             "  ⎿ ✗ File modified after preview. Please review again.\n");
                     }
+                    emitFinished(result, false, "");
                     results.push_back(std::move(result));
                     continue;
                 }
@@ -604,6 +637,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
                 if (!m_confirmCallback(prompt)) {
                     result.m_content = "[Denied by user] 用户拒绝了该操作。";
                     if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
+                    emitFinished(result, false, "permission");
                     results.push_back(std::move(result));
                     if (m_interruptFlag && m_interruptFlag->load()) {
                         // 协议闭合：当前 call 已有 denied 结果，补剩余（§11.4）
@@ -710,6 +744,8 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
             detailLines.push_back(std::move(dl));
         }
 
+        // 正常出口（含 handler 异常路径——toolOk 已按结果置位）
+        emitFinished(result, toolOk, "");
         results.push_back(std::move(result));
     }
 

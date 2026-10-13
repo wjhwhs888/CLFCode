@@ -20,6 +20,7 @@ namespace CLF::CLFPluginApi { class ICLFFileService; }
 namespace CLF::CLFTypes {
 class ICLFContentOutput;
 class ICLFProgressOutput;
+class CLFEventBus;
 }
 namespace CLF::CLFCore {
 
@@ -37,7 +38,10 @@ public:
                     CLF::CLFTypes::ICLFProgressOutput* progressOutput = nullptr,
                     std::atomic<bool>* interruptFlag = nullptr,
                     const CLFTimerLabels* labels = nullptr,
-                    std::atomic<int>* thinkingSec = nullptr);
+                    std::atomic<int>* thinkingSec = nullptr,
+                    // 事件化重构步骤 2：非空时发射 ToolStarted/ToolFinished
+                    // （双轨——直调保留；nullptr = 不发射，既有调用点零改动）
+                    CLF::CLFTypes::CLFEventBus* eventBus = nullptr);
 
     // 执行一组工具调用
     // labels + thinkingSec 非空时启用渐进式显示（showProgress/finishProgress）
@@ -54,6 +58,7 @@ private:
     const CLFTimerLabels* m_labels = nullptr;
     std::atomic<int>* m_thinkingSec = nullptr;
     CLF::CLFPluginApi::ICLFFileService* m_fileService = nullptr;
+    CLF::CLFTypes::CLFEventBus* m_eventBus = nullptr;   // 步骤 2 双轨发射
 };
 
 } // namespace CLF::CLFCore

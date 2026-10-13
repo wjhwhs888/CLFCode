@@ -43,6 +43,7 @@ endfunction()
 # ============================================================================
 add_library(clf_types STATIC
     CLFTypes/CLFEncoding.cpp
+    CLFTypes/CLFEventBus.cpp
     CLFTypes/CLFPeriodicTimer.cpp
     CLFTypes/CLFPlatform.cpp
     CLFTypes/CLFProcessRunner.cpp
@@ -148,6 +149,7 @@ add_library(clf_tui STATIC
     CLFTUI/CLFSelectionModel.cpp
     CLFTUI/CLFScrollView.cpp
     CLFTUI/CLFTerminal.cpp
+    CLFTUI/CLFTerminalEventAdapter.cpp
     CLFTUI/CLFTipsBar.cpp
 )
 target_link_libraries(clf_tui PUBLIC clf_core ftxui::screen ftxui::dom ftxui::component)
