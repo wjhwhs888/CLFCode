@@ -328,6 +328,40 @@ bool CLFTerminal::confirm(const std::string& prompt) {
     return m_confirmResult;
 }
 
+bool CLFTerminal::confirmWithTimeout(const std::string& prompt,
+                                     std::chrono::milliseconds timeout) {
+    if (!m_screen) return false;
+    {
+        std::lock_guard lock(m_mutex);
+        m_confirmPrompt = prompt;
+        m_confirmOpts = {"确认", "返回"};
+        m_confirmSel   = 0;
+        m_confirmResult = false;
+        m_confirmActive = true;
+    }
+    requestRefresh();
+
+    // 同步等待主线程处理用户选择；超时 → 主动关闭确认条（默认拒绝语义）
+    std::unique_lock lock(m_confirmMutex);
+    const bool got = m_confirmCv.wait_for(
+        lock, timeout, [this] { return !m_confirmActive; });
+    if (!got) {
+        m_confirmResult = false;
+        {
+            std::lock_guard stateLock(m_mutex);
+            m_confirmActive = false;
+        }
+    }
+
+    // P2-2: 确认结束后清 prompt（防残影——与 confirm 同款）
+    {
+        std::lock_guard plock(m_mutex);
+        m_confirmPrompt.clear();
+    }
+    requestRefresh();   // 确认条隐藏刷新（超时路径必需——实机实抓）
+    return m_confirmResult;
+}
+
 void CLFTerminal::onInterrupt(std::function<void()> cb) {
     m_interruptCb = std::move(cb);
 }

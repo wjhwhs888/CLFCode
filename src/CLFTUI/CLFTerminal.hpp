@@ -51,6 +51,11 @@ public:
     void showProgress(const std::vector<std::string>& lines) override;
     void finishProgress(const std::string& summary) override;
     bool confirm(const std::string& prompt) override;
+    // 带超时确认（分册 2 confirm 切总线配套，2026-10-13）：超时主动关闭
+    // 确认条并返回 false（默认拒绝——与总线 60s 超时同语义；实机实抓：
+    // 无超时版确认条挂起不消失、模型已按拒绝继续）
+    bool confirmWithTimeout(const std::string& prompt,
+                            std::chrono::milliseconds timeout);
     void onInterrupt(std::function<void()> cb) override;
     void emitError(const std::string& m) override;
 

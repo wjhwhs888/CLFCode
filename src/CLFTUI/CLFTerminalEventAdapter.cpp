@@ -3,6 +3,7 @@
 
 #include "CLFTUI/CLFTerminalEventAdapter.hpp"
 
+#include "CLFTUI/CLFTerminal.hpp"     // confirmWithTimeout（确认条超时关闭）
 #include "CLFTypes/CLFEvents.hpp"
 #include "CLFTypes/CLFPeriodicTimer.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"   // splitLines（HistoryAssistant 多行拆分）
@@ -164,11 +165,18 @@ void CLFTerminalEventAdapter::onEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
     }
 
     case CLFEventType::ConfirmRequested:
-        // 分册 2 块 1（设计 5.2）：confirm 切总线路径——Terminal::confirm
-        // 内部 mutex+cv 等待 UI 线程处理确认条（跨线程安全）；应答经
-        // publish 路由回等待表（publishRequestAndWait 在 AgentLoop 线程唤醒）
+        // 分册 2 块 1（设计 5.2）：confirm 切总线路径——带超时确认（59s
+        // 略短于总线 60s：超时默认拒绝且确认条主动关闭——实机实抓 2026-10-13：
+        // 无超时版确认条挂起不消失、模型已按拒绝继续）；应答经 publish 路由
+        // 回等待表（publishRequestAndWait 在 AgentLoop 线程唤醒）
         if (m_output) {
-            const bool accepted = m_output->confirm(ev.m_prompt);
+            bool accepted = false;
+            if (auto* term = dynamic_cast<CLFTerminal*>(m_output)) {
+                accepted = term->confirmWithTimeout(
+                    ev.m_prompt, std::chrono::seconds(59));
+            } else {
+                accepted = m_output->confirm(ev.m_prompt);   // Mock 等窄实现
+            }
             CLFAgentEvent reply;
             reply.m_type = CLFEventType::ConfirmResponse;
             reply.m_requestId = ev.m_requestId;

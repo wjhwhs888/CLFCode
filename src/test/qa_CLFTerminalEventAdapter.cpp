@@ -302,6 +302,50 @@ const boost::ut::suite<"CLFTerminalEventAdapter"> tests = [] {
         expect(gotRequestId == "req-a9");
     };
 
+    "A9b 连续两次确认取消往返：串行不崩（实机崩溃复现钉，2026-10-13）"_test = [] {
+        CLFEventBus bus(false);
+        struct ConfirmOutput : RenderMockOutput {
+            bool confirm(const std::string&) override { return false; }  // 用户取消
+        };
+        ConfirmOutput out;
+        CLF::CLFCore::CLFTimerLabels labels;
+        CLFTerminalEventAdapter adapter(&bus, &out, &labels, /*render=*/true);
+
+        int responses = 0;
+        bus.subscribe([&](const CLFAgentEvent& ev) {
+            if (ev.m_type == CLFEventType::ConfirmResponse) ++responses;
+        }, ChannelPolicy::Lossless);
+
+        // 第一次确认：取消（false）→ 响应返回
+        CLFAgentEvent req1;
+        req1.m_type = CLFEventType::ConfirmRequested;
+        req1.m_requestId = "req-b1";
+        req1.m_prompt = "确认1";
+        bool ok1 = false;
+        std::thread c1([&] {
+            ok1 = bus.publishRequestAndWait(req1, std::chrono::milliseconds(1000));
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        bus.drainAll();
+        c1.join();
+        expect(!ok1);   // 取消 = 拒绝
+
+        // 第二次确认：再取消（实机崩溃场景）
+        CLFAgentEvent req2;
+        req2.m_type = CLFEventType::ConfirmRequested;
+        req2.m_requestId = "req-b2";
+        req2.m_prompt = "确认2";
+        bool ok2 = false;
+        std::thread c2([&] {
+            ok2 = bus.publishRequestAndWait(req2, std::chrono::milliseconds(1000));
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        bus.drainAll();
+        c2.join();
+        expect(!ok2);
+        expect(responses == 2);   // 两次响应都到达
+    };
+
     "A8 状态行自计时：TurnStarted 启动 / TurnFinished 停止"_test = [] {
         CLFEventBus bus(false);
         RenderMockOutput out;
