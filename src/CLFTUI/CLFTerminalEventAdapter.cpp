@@ -38,7 +38,7 @@ public:
                   m_lastShownSec = s;
                   m_out->setStatusTextOnly(
                       m_labels.working + " for "
-                      + std::to_string(static_cast<int>(s)) + "s…");
+                      + CLF::CLFCore::formatDurationSeconds(s) + "…");
               }
               m_out->requestRefresh();
           }) {}

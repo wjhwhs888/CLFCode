@@ -116,7 +116,8 @@ struct CLFAgentConfig {
     int         m_commandDefaultTimeoutSec = 120;
     int         m_commandMaxTimeoutSec     = 600;
     std::string m_interactionLanguage   = "zh-CN";
-    std::string m_securityMode          = "edit";
+    // 默认 auto（全放行）——2026-10-14 用户定调；运行时 /mode 或配置文件可改
+    std::string m_securityMode          = "auto";
     // S2-1: 允许 read_file 读取工作区之外的绝对路径（默认关闭，逃生口）
     bool        m_allowAbsoluteRead     = false;
     // S2-2: 危险命令检测的前缀白名单（命中则跳过检测），默认空

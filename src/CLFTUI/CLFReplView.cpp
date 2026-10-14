@@ -218,7 +218,7 @@ ftxui::Element CLFReplView::render() {
     if (snap.thinkingActive || !snap.thinkingLines.empty()) {
         // P1-3: 折叠行摘要——running 取实时尾行，完成取首行
         // （A2：UTF-8 边界截断 lambda → CLFTextUtil::utf8SafeHead）
-        std::string fold = "  Thought for " + std::to_string(snap.thinkingElapsed) + "s";
+        std::string fold = "  Thought for " + CLF::CLFCore::formatDurationSeconds(snap.thinkingElapsed);
         if (!snap.thinkingLines.empty()) {
             const std::string& src = snap.thinkingActive
                 ? snap.thinkingLines.back() : snap.thinkingLines.front();

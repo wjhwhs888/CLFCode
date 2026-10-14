@@ -124,7 +124,7 @@ const boost::ut::suite<"CLFConfigLoader"> tests = [] {
         expect(CLFConfigLoader::loadFromFile(path, cfg));
         expect(cfg.m_maxContextWindow == 1048576);    // 默认保持
         expect(!cfg.m_contextCompression);
-        expect(cfg.m_securityMode == std::string("edit"));
+        expect(cfg.m_securityMode == std::string("auto"));   // 默认保持（2026-10-14 默认改 auto）
         expect(cfg.m_commandAllowlist.empty());
         expect(!cfg.m_logConsole);
         fs::remove(fs::u8path(path));

@@ -754,7 +754,7 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         int elapsed = m_thinkingSec->load();
         std::string summary;
         summary += "● " + m_labels->thought + " for "
-                + std::to_string(elapsed) + "s";
+                + CLF::CLFCore::formatDurationSeconds(elapsed);
         int total = static_cast<int>(calls.size());
         if (total > 0) {
             summary += "，" + std::to_string(total) + " 工具";

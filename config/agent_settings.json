@@ -24,7 +24,7 @@
         "command_default_timeout_sec": 120,
         "command_max_timeout_sec": 600,
         "interaction_language": "zh-CN",
-        "security_mode": "edit"
+        "security_mode": "auto"
     },
     "logging": {
         "level": "info",
