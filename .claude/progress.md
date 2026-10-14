@@ -119,7 +119,8 @@
     - **失败静默实机触发 3 次**（日志 WARN first tool failure）：模型小批量（≤cap=10）时静默"无感"——同批全在途、无未启动可停，排空照常提交（语义正确）；用户观察"没触发" = 小批量场景无可见差异，正常
     - **实抓真缺陷已修根（CLFPluginTools.cpp）**：插件 handler 异常路径（onError 回传 "internal error" 裸文本）被 formatToolResult 非 JSON catch 分支**误判成功**入库回传模型——修复：ctx 加 error 标志，onError 触发 → 返回结构化失败 JSON（success=false + error）——模型可见错误语义自兜底；ctest 45/45 + 冒烟通过
     - **待用户**：失败静默"失败即停 vs 失败继续"实机感受（尚未遇到大批量+首失败场景——小批量时无感）
-  - **待办（下一步）**：① 分册 3 第三批：AgentLoop 接入（executeToolCalls 切轨 CLFToolScheduler，构造注入 maxParallelToolCalls）+ 首批工具声明并发安全（设计 §2.1 清单）+ m_firstFailure 的 AgentLoop 层处理语义 ② 第四批：实机并行观察 ③ resume 回显（块 3）实机验收 ④ 事件化重构全量实机回归（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3 后续（ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）④ qa_CLFEventBus flaky 排查（并行全量偶发失败两次）
+  - **▶▶ 分册 3 全闭环 ✅✅（2026-10-14，收尾）**：第一批（声明/配置）→ 第二批（调度器主体）→ 第三批（AgentLoop 接入+首批声明）→ 第四批（实机两轮：并行铁证 + ESC 中断全绿 + 插件异常修根）全部落地；设计 §8.5/§8.6 实施记录完整；用户定调：失败即停调整待触发后再说（一个参数）。**待用户本机实测确认 → 下一步**
+  - **待办（下一步）**：① **用户本机实测确认**（分册 3 全量：并行执行/ESC 中断/顺序回退 cap=1/确认串行——通过后进入下一步）② 总纲剩余：ContentDelta/ToolFinished 渲染切轨 + Exception 迁移（双轨收敛——流式渲染从 core 直调切总线）③ resume 回显（块 3）实机验收 ④ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）⑤ 失败静默"失败即停"调整（实机触发后再说，用户定调：一个参数的事）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 
 ### ▶ CLFUI → CLFTUI 模块重命名 ✅✅ 全闭环（2026-10-12，已提交推送 842dc41）
