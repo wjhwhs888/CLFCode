@@ -35,10 +35,15 @@ std::string providerUnavailableError(const std::string& toolName) {
 }
 
 // 宿主内部调用上下文（2026-09-23 中断时效性 A 批）：结果收集器 + 中断标志。
-// 经 ABI ctx 传给插件——插件侧义务不变（只原样回传，不得解引用）
+// 经 ABI ctx 传给插件——插件侧义务不变（只原样回传，不得解引用）。
+// error 标志（2026-10-14 实机实抓修复）：插件 catch 路径经 onError 回传
+// "internal error" 裸文本——此前直接作为结果入库被 formatToolResult
+// 误判成功（非 JSON catch 分支 → ok=true）。修复：onError 触发即失败，
+// 返回结构化失败 JSON（模型可见错误语义自兜底）
 struct CLFToolCallCtx {
     std::string*            out;
     const std::atomic<bool>* interrupt;
+    bool                    error = false;
 };
 
 // ABI isCancelled 回调：读宿主中断标志（可为空指针 = 宿主未提供取消 → false）
@@ -134,10 +139,21 @@ void registerPluginTools(CLF::CLFCore::CLFAgentLoop& agent,
                             };
                             // onError 两参签名（不可直接赋 onResult——2.2a 实抓）
                             cb.onError = [](void* ctx, const char* s) {
-                                static_cast<CLFToolCallCtx*>(ctx)->out->append(s);
+                                auto* c = static_cast<CLFToolCallCtx*>(ctx);
+                                c->error = true;
+                                c->out->append(s);
                             };
                             cb.isCancelled = cbIsCancelled;
                             provider->callTool(toolName.c_str(), args.c_str(), &ctx, &cb);
+                            // 插件异常路径（onError 触发）：结构化失败 JSON——
+                            // 模型可见错误语义自兜底（此前裸文本被误判成功，
+                            // 2026-10-14 实机实抓 "internal error" 入库修复）
+                            if (ctx.error) {
+                                return nlohmann::json{
+                                    {"success", false},
+                                    {"error", content},
+                                }.dump();
+                            }
                             return content;
                         }
                     }

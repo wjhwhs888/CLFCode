@@ -113,6 +113,12 @@
     - **完整性**：event_log 75 条 == turn 内 tool 消息 75 条 ✓（一行一工具、含 ok=false 数条、seq 保序）；turnId turn-1/turn-2 连续 ✓；无 [skipped]/[interrupted]/Denied 痕迹（失败静默未误触发——git 失败后模型跨批重试合法）✓
     - **模型行为**：主动叙述"先并行探查/并行读取"——用户测试目标达成
     - **待用户**：① ESC 中断场景实机测试 ② 失败静默（失败即停）与"失败继续"的实机感受取舍（当前未触发过静默，无从感受）
+  - **▶ ESC 中断实机测试取证 ✅（2026-10-14，用户测试 + 会话取证 + 1 真缺陷已修）**：
+    - **会话**：`doc/contextHistory/2026-10-14_10-43-32_....jsonl`（turn×3 + event_log×88）
+    - **中断链路全绿**：10:43:59 [Turn] interrupted（iter=6 并行 4 read 执行中按 ESC）→ 同秒 [Submit] exit → 在途排空照常提交（iter=6 结果完整入库）→ 10:44:51 新提问正常（继续对话 ✓）；**条数核对 88==88 零丢失**（turn-1: 17 / turn-2: 65 / turn-3: 6，per-turn 与 event_log 全吻合——W6 中断轮落库语义实证 ✓）
+    - **失败静默实机触发 3 次**（日志 WARN first tool failure）：模型小批量（≤cap=10）时静默"无感"——同批全在途、无未启动可停，排空照常提交（语义正确）；用户观察"没触发" = 小批量场景无可见差异，正常
+    - **实抓真缺陷已修根（CLFPluginTools.cpp）**：插件 handler 异常路径（onError 回传 "internal error" 裸文本）被 formatToolResult 非 JSON catch 分支**误判成功**入库回传模型——修复：ctx 加 error 标志，onError 触发 → 返回结构化失败 JSON（success=false + error）——模型可见错误语义自兜底；ctest 45/45 + 冒烟通过
+    - **待用户**：失败静默"失败即停 vs 失败继续"实机感受（尚未遇到大批量+首失败场景——小批量时无感）
   - **待办（下一步）**：① 分册 3 第三批：AgentLoop 接入（executeToolCalls 切轨 CLFToolScheduler，构造注入 maxParallelToolCalls）+ 首批工具声明并发安全（设计 §2.1 清单）+ m_firstFailure 的 AgentLoop 层处理语义 ② 第四批：实机并行观察 ③ resume 回显（块 3）实机验收 ④ 事件化重构全量实机回归（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3 后续（ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）④ qa_CLFEventBus flaky 排查（并行全量偶发失败两次）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 
