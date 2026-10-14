@@ -131,6 +131,13 @@
     - **实抓**：qa 全组 exit=3 + Debug 弹窗（front() empty）——makeAgent 漏 setEventBus 致零事件（断言重定向定位——用完删）；修复后 45/45 三轮全绿 + 冒烟
     - **偏差记录**：displayResult 全文 core 拼（替代适配器重算——TUI 文案原则例外）；warningText 移 ToolFinished（发射时危险判定未知）；中断行准死代码确认
     - **待用户实机**：流式显示/工具行/错误提示/中断/进度条观感逐字对比
+  - **▶ 渲染切轨实机验收通过 ✅（2026-10-14，用户长时间对话 + 会话取证）**：
+    - **用户观察**：长时间对话（12:11-13:21，约 1 小时 10 分）未发现异常
+    - **取证**（会话 `2026-10-14_12-11-58_....jsonl`）：turn×13（turnId 1→13 连续 ✓）+ event_log×43；**条数全吻合**（每回合 event_log == turn 内 tool 消息，零丢失）；无 [interrupted]/[skipped]/internal error/Denied 异常标记；日志 86 条 ToolExec + 28 Turn + 26 Submit 节奏正常
+    - **中断 3 次**（用户 ESC 测试）——中断回合落库保持、turnId 连续 ✓
+    - **失败静默实机触发 2 次**（list_directory/execute_command）——小批量下无感（同批全在途排空照常提交，会话无 [skipped]——语义正确）；用户仍未感知"失败即停"取舍场景
+    - **渲染切轨正式闭环**：core 内容渲染全事件化 + TUI 观感逐字一致（用户确认）——总纲步骤 3 全部完成
+    - **下一步候选**：① 占位册激活评估（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时）② resume 回显（块 3）实机验收 ③ 失败静默取舍（触发后再议）
   - **待办（下一步）**：① **用户本机实测确认**（分册 3 全量：并行执行/ESC 中断/顺序回退 cap=1/确认串行——通过后进入下一步）② 总纲剩余：ContentDelta/ToolFinished 渲染切轨 + Exception 迁移（双轨收敛——流式渲染从 core 直调切总线）③ resume 回显（块 3）实机验收 ④ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）⑤ 失败静默"失败即停"调整（实机触发后再说，用户定调：一个参数的事）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 
