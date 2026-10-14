@@ -70,6 +70,7 @@ CLFCode 自身的运行行为参数，**不传给 API**。
 |------|------|--------|------|
 | `max_context_window` | int | `1048576` | 上下文窗口大小（token 估算值）。1048576 = 1M。超出部分自动截断（保留最新消息） |
 | `max_tool_call_iterations` | int | `16` | 单轮对话中 tool-calling 最大循环次数。防止模型持续请求工具形成死循环 |
+| `max_parallel_tool_calls` | int | `10` | 工具并行执行上限。模型一次请求多个工具时，读取类工具最多同时执行该数量；`1` = 完全串行（退回旧行为，安全阀） |
 | `context_compression` | bool | `false` | 是否启用上下文压缩。`true`：当上下文接近窗口上限时，调用 `sub_model` 对历史消息进行摘要压缩（**功能待实现**） |
 | `max_response_delay_sec` | int | `300` | 单次 API 请求最大等待时间（秒）。300 = 5 分钟。超时后返回错误信息 |
 | `command_default_timeout_sec` | int | `120` | execute_command 默认超时（秒）。模型未传 `timeout` 参数时使用；对齐 Claude Code Bash 的 2 分钟默认 |
@@ -125,6 +126,7 @@ CLFCode 自身的运行行为参数，**不传给 API**。
     "agent": {
         "max_context_window": 1048576,
         "max_tool_call_iterations": 16,
+        "max_parallel_tool_calls": 10,
         "context_compression": false,
         "max_response_delay_sec": 300,
         "command_default_timeout_sec": 120,

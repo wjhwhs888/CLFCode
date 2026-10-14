@@ -19,6 +19,7 @@
     "agent": {
         "max_context_window": 1048576,
         "max_tool_call_iterations": 48,
+        "max_parallel_tool_calls": 10,
         "context_compression": false,
         "max_response_delay_sec": 300,
         "command_default_timeout_sec": 120,
