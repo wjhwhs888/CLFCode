@@ -957,6 +957,33 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 
     m_context.clear();
 
+    // resume 400 修根（2026-10-14 实机实抓）：中断轮老文件形态
+    // user → tool×N（无 assistant 声明）→ tool 结果孤悬被 API 拒绝。
+    // 修复：user 后直接跟 tool 段处插入合成 assistant（空 content +
+    // tool_calls 声明，arguments "{}" 占位——老文件参数已不可考）
+    {
+        std::vector<CLFMessage> fixed;
+        fixed.reserve(messages.size() + 8);
+        for (size_t i = 0; i < messages.size(); ++i) {
+            fixed.push_back(messages[i]);
+            if (messages[i].m_role != "user") continue;
+            size_t j = i + 1;
+            while (j < messages.size() && messages[j].m_role == "tool") ++j;
+            if (j == i + 1) continue;   // 无 tool 跟随——正常对话
+            CLFMessage synth;
+            synth.m_role = "assistant";
+            for (size_t k = i + 1; k < j; ++k) {
+                CLFToolCall tc;
+                tc.m_id = messages[k].m_toolCallId;
+                tc.m_name = messages[k].m_name;
+                tc.m_arguments = "{}";
+                synth.m_toolCalls.push_back(std::move(tc));
+            }
+            fixed.insert(fixed.begin() + i + 1, std::move(synth));
+        }
+        messages = std::move(fixed);
+    }
+
     // ② 恢复非 system 消息（全部跳过 system，由后续步骤重建）
     // （分册 2 块 3：① 结构化回显行收集删除——回显走事件重放）
     for (const auto& msg : messages) {

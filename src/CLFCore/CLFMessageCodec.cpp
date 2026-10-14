@@ -342,6 +342,26 @@ bool CLFMessageCodec::parseTurnLine(const nlohmann::json& obj,
         if (!obj.is_object() || obj.value("type", "") != JsonlType::kTurn) return false;
         if (!obj.contains("messages") || !obj["messages"].is_array()) return false;
         outMessages = messagesFromJson(obj["messages"]);
+        // resume 400 老文件兜底（2026-10-14 实机实抓）：writer 组装缺陷期
+        // 落库的 assistant 无 tool_calls 声明 → 恢复上下文 tool 结果孤悬
+        // → API 400。兜底：assistant 无声明且后跟 tool 消息 → 按 tool 消息
+        // 重建声明（arguments 用 "{}" 占位——老文件参数已不可考，模型只需
+        // 声明-结果配对成立）
+        for (size_t i = 0; i < outMessages.size(); ++i) {
+            auto& m = outMessages[i];
+            if (m.m_role != "assistant" || !m.m_toolCalls.empty()) continue;
+            bool hasFollowingTools = false;
+            for (size_t j = i + 1; j < outMessages.size(); ++j) {
+                if (outMessages[j].m_role != "tool") break;
+                CLFToolCall tc;
+                tc.m_id = outMessages[j].m_toolCallId;
+                tc.m_name = outMessages[j].m_name;
+                tc.m_arguments = "{}";
+                m.m_toolCalls.push_back(std::move(tc));
+                hasFollowingTools = true;
+            }
+            if (!hasFollowingTools) m.m_toolCalls.clear();   // 纯文本 assistant 不动
+        }
         if (outTodos) *outTodos = todosFromJson(obj.value("todos", nlohmann::json::array()));
         if (outTs)    *outTs    = obj.value("ts", "");
         return true;

@@ -164,7 +164,8 @@ private:
                           const std::string& errorKind,
                           const std::string& displayResult,
                           const std::string& displayError,
-                          const std::string& warningText);
+                          const std::string& warningText,
+                          const std::string& arguments);
     // 分册 4：ToolStarted 事件发射（prepare 内——header 条件 core 算好）
     void emitToolStarted(const CLFToolCall& call, const std::string& keyParam,
                          bool showHeader);

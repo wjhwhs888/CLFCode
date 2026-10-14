@@ -684,7 +684,8 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
     if (isFallback) {
         // 分册 4：✗ 行全文随事件（prepare 拼好——displayError）；渲染序
         // ⚠ → ✗ 由适配器按字段序直显
-        emitToolFinished(out.result, false, errorKind, "", displayError, warningText);
+        emitToolFinished(out.result, false, errorKind, "", displayError,
+                         warningText, call.m_arguments);
     } else {
         const CLFTool& tool = m_tools[pc.toolIndex];
         // ok/展示文本已在 run 内判定（settle 时信号——调度器 fail-fast）
@@ -757,7 +758,8 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
 
         // ToolFinished（errorKind 为空——handler 路径的失败/成功由 ok 表达；
         // 分册 4：✓/✗ 行全文 + ⚠ 行随事件）
-        emitToolFinished(out.result, toolOk, "", displayResult, "", warningText);
+        emitToolFinished(out.result, toolOk, "", displayResult, "", warningText,
+                         call.m_arguments);
     }
 
     // T3: 每次调用末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
@@ -785,7 +787,8 @@ void CLFToolExecutor::emitToolFinished(const CLFToolResult& r, bool ok,
                                        const std::string& errorKind,
                                        const std::string& displayResult,
                                        const std::string& displayError,
-                                       const std::string& warningText) {
+                                       const std::string& warningText,
+                                       const std::string& arguments) {
     if (!m_eventBus) return;
     CLF::CLFTypes::CLFAgentEvent ev;
     ev.m_type = CLF::CLFTypes::CLFEventType::ToolFinished;
@@ -794,6 +797,7 @@ void CLFToolExecutor::emitToolFinished(const CLFToolResult& r, bool ok,
     ev.m_ok = ok;
     ev.m_summary = r.m_content;
     ev.m_errorKind = errorKind;
+    ev.m_arguments = arguments;   // writer 重建 tool_calls 声明（resume 400 修根）
     ev.m_displayResult = displayResult;
     ev.m_displayError = displayError;
     ev.m_warningText = warningText;

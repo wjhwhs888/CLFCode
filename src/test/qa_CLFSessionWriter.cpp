@@ -285,11 +285,18 @@ expect(writer.pumpOnce() == 40_u);   // 全量处理不丢
         const auto& turn = lines[1];
         expect(turn["turnId"] == "turn-9");   // 中断轮不跳号（实机实抓回归钉）
         const auto& msgs = turn["messages"];
-        expect(msgs.size() == 2_u);           // user + tool（无 assistant）
+        // resume 400 修根（2026-10-14）：中断轮也带合成 assistant + tool_calls
+        // 声明——协议闭合（否则恢复上下文 tool 结果孤悬被 API 拒绝）
+        expect(msgs.size() == 3_u);           // user + 合成 assistant + tool
         expect(msgs[0]["role"] == "user");
         expect(msgs[0]["content"] == "帮我跑命令");
-        expect(msgs[1]["role"] == "tool");
-        expect(msgs[1]["content"] == "部分输出");
+        expect(msgs[1]["role"] == "assistant");
+        expect(msgs[1]["content"] == "");
+        expect(msgs[1]["tool_calls"].size() == 1_u);
+        expect(msgs[1]["tool_calls"][0]["id"] == "call_x");
+        expect(msgs[1]["tool_calls"][0]["name"] == "execute_command");
+        expect(msgs[2]["role"] == "tool");
+        expect(msgs[2]["content"] == "部分输出");
         expect(lines[2]["type"] == "event_log");
         expect(lines[2]["callId"] == "call_x");
 

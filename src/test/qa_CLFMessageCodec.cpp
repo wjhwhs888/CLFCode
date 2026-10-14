@@ -188,6 +188,41 @@ const boost::ut::suite<"CLFMessageCodec"> tests = [] {
         expect(outTodos[2].m_status == std::string("pending"));
     };
 
+    "L5 resume 400 老文件兜底：assistant 无声明 + 后跟 tool → 重建 tool_calls"_test = [] {
+        // 实机实抓回归钉（2026-10-14）：writer 组装缺陷期落库的 assistant
+        // 无 tool_calls——parseTurnLine 按 tool 消息重建声明（arguments "{}"）
+        nlohmann::json obj = nlohmann::json::parse(R"({
+            "type": "turn",
+            "messages": [
+                {"role": "user", "content": "跑一下"},
+                {"role": "assistant", "content": "好的"},
+                {"role": "tool", "tool_call_id": "call_a", "name": "echo", "content": "x"},
+                {"role": "tool", "tool_call_id": "call_b", "name": "echo", "content": "y"}
+            ]
+        })");
+        std::vector<CLFMessage> outMsgs;
+        expect(CLFMessageCodec::parseTurnLine(obj, outMsgs));
+        expect(outMsgs.size() == 4_ul);
+        expect(outMsgs[1].m_role == std::string("assistant"));
+        expect(outMsgs[1].m_toolCalls.size() == 2_ul);   // 声明重建
+        expect(outMsgs[1].m_toolCalls[0].m_id == std::string("call_a"));
+        expect(outMsgs[1].m_toolCalls[1].m_name == std::string("echo"));
+        expect(outMsgs[1].m_toolCalls[0].m_arguments == std::string("{}"));
+
+        // 纯文本 assistant（无 tool 跟随）不动
+        nlohmann::json obj2 = nlohmann::json::parse(R"({
+            "type": "turn",
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"}
+            ]
+        })");
+        std::vector<CLFMessage> out2;
+        expect(CLFMessageCodec::parseTurnLine(obj2, out2));
+        expect(out2.size() == 2_ul);
+        expect(out2[1].m_toolCalls.empty());   // 无 tool 跟随 → 不加声明
+    };
+
     "L4 todo_snapshot 行往返"_test = [] {
         const auto line = CLFMessageCodec::serializeTodoSnapshot(
             sampleTodos(), "2026-08-25_09-24-37");

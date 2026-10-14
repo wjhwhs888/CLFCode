@@ -116,6 +116,10 @@ struct CLFAgentEvent {
                                       //   confirm 前显示但 ToolStarted 发射时条件未知
                                       //   （危险判定在发射后）——随 ToolFinished，
                                       //   渲染序：⚠ → ✗ → ✓/✗）
+    std::string m_arguments;          // ToolFinished（工具原始参数 JSON——writer
+                                      //   重建 assistant tool_calls 声明用；resume 400
+                                      //   实抓修根：事件流此前无声明载体——
+                                      //   2026-10-14）
     std::string m_displayResult;      // ToolFinished（finalize 的 ✓/✗ 行**全文**——
                                       //   含前缀换行，core 拼好直显；空 = 不显示
                                       //   （渐进读工具成功仅进度条）。core 拼行文案

@@ -134,7 +134,10 @@ void CLFSessionWriter::writeTurnLine(const CLF::CLFTypes::CLFAgentEvent& ev,
     const std::string ts = CLFSessionManager::timestampNow();
 
     // 从事件流重建本轮消息：user（TurnStarted）+ assistant（TurnFinished.text）
-    // + tool 消息（ToolFinished 累积——summary 即工具结果全文）
+    // + tool 消息（ToolFinished 累积——summary 即工具结果全文）。
+    // resume 400 修根（2026-10-14 实机实抓）：assistant 必须携带 tool_calls
+    // 声明（协议闭合——声明数 == 结果数），否则恢复上下文被 API 拒绝。
+    // 声明从 ToolFinished 事件重建（callId/name/arguments——分册 4 补字段）
     std::vector<CLFMessage> messages;
     messages.reserve(2 + m_toolEvents.size());
     if (!m_userInput.empty()) {
@@ -143,10 +146,18 @@ void CLFSessionWriter::writeTurnLine(const CLF::CLFTypes::CLFAgentEvent& ev,
         user.m_content = m_userInput;
         messages.push_back(std::move(user));
     }
-    if (withAssistant && !ev.m_text.empty()) {
+    if ((withAssistant && !ev.m_text.empty()) || !m_toolEvents.empty()) {
         CLFMessage assistant;
         assistant.m_role = "assistant";
-        assistant.m_content = ev.m_text;
+        assistant.m_content = withAssistant ? ev.m_text : "";
+        // 声明重建：与下方 tool 消息一一配对（模型序）
+        for (const auto& tool : m_toolEvents) {
+            CLFToolCall tc;
+            tc.m_id = tool.m_callId;
+            tc.m_name = tool.m_name;
+            tc.m_arguments = tool.m_arguments;
+            assistant.m_toolCalls.push_back(std::move(tc));
+        }
         messages.push_back(std::move(assistant));
     }
     for (const auto& tool : m_toolEvents) {
