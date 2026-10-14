@@ -14,6 +14,7 @@
 #include "CLFTypes/CLFEvents.hpp"
 #include "CLFNetwork/CLFThinkingIndicator.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
+#include "CLFCore/CLFToolScheduler.hpp"   // 分册 3 第三批：工具执行切轨调度器
 #include "CLFNetwork/CLFHttpClient.hpp"
 #include "CLFCapabilities/FileOps/CLFFileServiceImpl.hpp"
 #include "CLFPluginApi/CLFFileService.hpp"
@@ -325,7 +326,10 @@ CLFAgentLoop::TurnRequestResult CLFAgentLoop::requestAssistantTurn(int iteration
 }
 
 // ⑦ 工具执行段（原 runTurn :410-427 搬移）：addAssistantToolCalls →
-// executor.execute → 结果回填（入库前截断）→ concluded/中断判定
+// 调度器 schedule → 结果回填（入库前截断）→ concluded/中断判定。
+// 分册 3 第三批（2026-10-14）：切轨 CLFToolScheduler（混合并发调度，
+// maxParallelToolCalls 配置注入）——未声明并发安全的工具 = 独占 =
+// 串行现行为，声明一个放开一个
 CLFAgentLoop::ToolExecutionOutcome CLFAgentLoop::executeToolCalls(
     const std::vector<CLFToolCall>& toolCalls, const std::string& assistantContent,
     TurnThinkingClock& thinking) {
@@ -336,13 +340,21 @@ CLFAgentLoop::ToolExecutionOutcome CLFAgentLoop::executeToolCalls(
                              &m_interrupted, &m_labels, &thinking.sec(),
                              m_eventBus);   // 步骤 2：ToolStarted/ToolFinished 双轨
     ToolExecutionOutcome outcome;
-    auto results = executor.execute(toolCalls);
-    for (const auto& result : results) {
+    CLFToolScheduler scheduler(executor, m_config.m_maxParallelToolCalls);
+    auto r = scheduler.schedule(toolCalls);
+    for (const auto& result : r.m_results) {
         // C2b：tool result 内容截断在入库前（容器不再含内容策略）
         m_context.addToolResult(
             result.m_toolCallId, result.m_name,
             CLFTextUtil::truncateToolResult(result.m_content));
         if (result.m_concludesTurn) outcome.m_concluded = true;
+    }
+    // 失败静默上报（§3.6"以首个失败上报"）：最小落地 = 日志记录——行为
+    // 保持（结果链已完整回填：失败结果 + [skipped] 合成，模型自行决定
+    // 后续）。回合提前终止等更强语义待用户实机感受后拍板（记录偏差）
+    if (r.m_firstFailure) {
+        CLFLogger::instance().warn(
+            "[Turn] first tool failure (quiesced): " + r.m_firstFailure->m_name);
     }
     if (m_interrupted) {
         emitInterrupted();

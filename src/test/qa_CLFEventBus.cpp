@@ -84,10 +84,15 @@ const boost::ut::suite<"CLFEventBus"> tests = [] {
         });
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         expect(!published.load());          // 队列满 → 生产者阻塞中
-        expect(bus.drainAll() == 1_u);      // 消费 1 条 → 唤醒生产者
+        // 消费 → 唤醒生产者。drainAll 语义 = 消费到空——唤醒后生产者
+        // 可能抢在 drainAll 复查空之前入队第 2 条 → 一次吞 2（负载下
+        // 时序偏转——三次并行全量实抓）。断言改为总消费数 = 2
+        // （对 drainAll 分批形态无关）
+        const size_t first = bus.drainAll();
+        expect(first >= 1);                 // 至少消费了唤醒前的那条
         producer.join();                    // join 返回即线程终止（纪律 ✓）
         expect(published.load());
-        expect(bus.drainAll() == 1_u);      // 阻塞恢复后的事件已入队
+        expect(first + bus.drainAll() == 2_u);   // 阻塞恢复后的事件已入队
     };
 
     "B4 Coalescing 满丢旧留新"_test = [] {

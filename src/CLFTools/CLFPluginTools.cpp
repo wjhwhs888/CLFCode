@@ -14,7 +14,10 @@
 #include <atomic>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFCore/CLFDangerousCommandDetector.hpp"   // 分册 3：execute_command 逐参数判定
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFCore/CLFPluginManager.hpp"
 #include "CLFPluginApi/CLFToolApi.hpp"
@@ -42,6 +45,30 @@ struct CLFToolCallCtx {
 bool cbIsCancelled(void* ctx) {
     const auto* c = static_cast<CLFToolCallCtx*>(ctx);
     return c->interrupt && c->interrupt->load();
+}
+
+// 并发安全声明（分册 3 第三批，设计 §2.1 首批清单）：宿主侧按名字打标——
+// 插件 ABI 元数据不携带并发语义（纯调度元数据不进 ABI/描述/schema——
+// dsh §2.3"不泄漏给模型"）。返回 nullptr = 独占（fail-closed）
+std::function<bool(const std::string&)> concurrencyDeclaration(const std::string& name) {
+    // 读类/搜索/网络（无副作用无共享状态）→ 恒并行
+    if (name == "list_directory" || name == "read_file"
+        || name == "search_content" || name == "web_fetch")
+        return [](const std::string&) { return true; };
+    // execute_command：逐参数判定——命令命中危险模式（写特征）→ 独占、
+    // 其余并行。复用 CLFDangerousCommandDetector 静态判定的反向
+    // （设计 §2.1）；参数解析失败 → 独占（fail-closed）
+    if (name == "execute_command")
+        return [](const std::string& argsJson) {
+            try {
+                auto args = nlohmann::json::parse(argsJson);
+                return !CLF::CLFCore::CLFDangerousCommandDetector::isDangerous(
+                    args.value("command", ""), {});
+            } catch (...) {
+                return false;
+            }
+        };
+    return nullptr;   // 写类（write_file/edit_file）等 → 独占
 }
 
 } // namespace
@@ -82,6 +109,8 @@ void registerPluginTools(CLF::CLFCore::CLFAgentLoop& agent,
             tool.m_isRead           = (meta->flags & CLF::CLFPluginApi::ToolFlagRead) != 0;
             tool.m_isSearch         = (meta->flags & CLF::CLFPluginApi::ToolFlagSearch) != 0;
             tool.m_concludesTurn    = meta->concludesTurn != 0;
+            // 分册 3 第三批：并发安全声明（设计 §2.1 首批——宿主侧打标）
+            tool.m_isConcurrencySafe = concurrencyDeclaration(toolName);
             // 调用时查询：**按工具名精确路由**——遍历提供者找"声明了该工具名"的
             // provider（不笼统取 getService("tool.provider") 的字典序首个——
             // 2026-09-21 实机实抓：多提供者场景 read_file 被路由到 teststub

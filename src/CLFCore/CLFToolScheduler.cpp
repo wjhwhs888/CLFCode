@@ -142,7 +142,10 @@ CLFToolScheduler::GroupOutcome CLFToolScheduler::runGroup(
         CLFToolResult fallback;                 // prepare Fallback 合成结果
         std::string errorKind;
         std::optional<CLFToolExecutor::RunOutcome> raw;   // dispatch 产物
-        bool finished = false;
+        std::atomic<bool> finished{false};
+        std::atomic<bool> ok{true};             // settle 时失败信号（dsh fail-fast：
+                                                // 写序 ok → finished，读方见 finished
+                                                // 即 ok 已定）
     };
     std::vector<Slot> slots(groupCap);
     size_t nextToStart = 0;
@@ -183,10 +186,20 @@ CLFToolScheduler::GroupOutcome CLFToolScheduler::runGroup(
         }
     };
 
+    // settle 失败扫描（调度线程）：任何已 settle 的 handler 失败 → 停止
+    // 新派发（dsh §8 fail-fast——失败信号不等待提交游标；队首慢时
+    // 后续已完成者的失败同样即时拦截）
+    auto anySettledFailure = [&] {
+        for (const auto& s : slots)
+            if (s.finished.load() && !s.ok.load()) return true;
+        return false;
+    };
+
     // 滚动池（调度线程）：并发上限内逐个启动；确认/守卫在 prepare 内
     // 串行执行（弹确认时后续调用不启动）
     auto fillPool = [&] {
         while (!outcome.m_aborted && !outcome.m_firstFailure
+               && !anySettledFailure()
                && nextToStart < slots.size()
                && inFlight.load() < m_maxParallel) {
             // §3.5 中断检查点：每个启动前
@@ -217,14 +230,17 @@ CLFToolScheduler::GroupOutcome CLFToolScheduler::runGroup(
                 // 环境无 dispatch 线程——规避动态初始化期 CRT 竞态死锁，
                 // 取证见文件头注释与调度器偏差记录）
                 slots[idx].raw = m_executor.run(calls[from + idx], slots[idx].pc);
+                slots[idx].ok = slots[idx].raw->ok;   // 写序 ok → finished
                 slots[idx].finished = true;
             } else {
                 ++inFlight;
                 workers.emplace_back([&, idx] {
                     auto raw = m_executor.run(calls[from + idx], slots[idx].pc);
+                    const bool ok = raw.ok;
                     {
                         std::lock_guard<std::mutex> lk(mtx);
                         slots[idx].raw = std::move(raw);
+                        slots[idx].ok = ok;            // 写序 ok → finished
                         slots[idx].finished = true;
                         --inFlight;
                     }

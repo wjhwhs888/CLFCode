@@ -683,9 +683,10 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
     return out;
 }
 
-// run — 唯一并发段（§3.3 dispatch）：handler 调用 + 异常捕获。
-// 零 UI 输出、零事件、零统计（日志经 CLFLogger 互斥安全；ok 判定留给
-// finalize 的 formatToolResult——提交游标内串行）
+// run — 唯一并发段（§3.3 dispatch）：handler 调用 + 异常捕获 + 失败
+// 判定。零 UI 输出、零事件、零统计（日志经 CLFLogger 互斥安全）。
+// ok 判定在 run 内完成（formatToolResult 纯函数）——settle 时失败信号
+// 即对调度器可见（fail-fast 停止派发，dsh §8）；finalize 复用不再重判
 CLFToolExecutor::RunOutcome CLFToolExecutor::run(
     const CLFToolCall& call, const PreparedCall& pc) {
     RunOutcome out;
@@ -709,6 +710,18 @@ CLFToolExecutor::RunOutcome CLFToolExecutor::run(
         CLFLogger::instance().error(
             "[ToolExec] " + call.m_name + " failed: " + e.what());
     }
+
+    // 失败判定（settle 时信号——调度器 fail-fast 依据；并发段内纯函数安全）
+    if (out.exceptionCaught) {
+        out.ok = false;
+        out.resultText = out.displayError;
+    } else {
+        auto rd = formatToolResult(out.result.m_content);
+        out.ok = rd.ok;
+        out.resultText = rd.text;
+        out.resultLines = rd.lines;
+        out.resultChars = rd.chars;
+    }
     return out;
 }
 
@@ -728,17 +741,12 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
         emitToolFinished(out.result, false, errorKind);
     } else {
         const CLFTool& tool = m_tools[pc.toolIndex];
-        bool toolOk = !raw.exceptionCaught;
-        std::string toolResultText = raw.displayError;   // 异常路径的截断文本
-        ToolResultDisplay rd{};   // 非异常路径由 formatToolResult 填充
-        if (!raw.exceptionCaught) {
-            rd = formatToolResult(out.result.m_content);
-            toolOk = rd.ok;
-            toolResultText = rd.text;
-            CLFLogger::instance().info(
-                "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
-                + ", result=" + std::to_string(out.result.m_content.size()) + " chars");
-        }
+        // ok/展示文本已在 run 内判定（settle 时信号——调度器 fail-fast）
+        const bool toolOk = raw.ok;
+        const std::string& toolResultText = raw.resultText;
+        CLFLogger::instance().info(
+            "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
+            + ", result=" + std::to_string(out.result.m_content.size()) + " chars");
         out.ok = toolOk;
 
         // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
@@ -768,8 +776,8 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
             } else if (toolOk) {
                 m_contentOutput->emitContent("  ✓ " + call.m_name
                     + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")")
-                    + " — " + std::to_string(rd.lines) + " lines, "
-                    + std::to_string(rd.chars) + " chars\n");
+                    + " — " + std::to_string(raw.resultLines) + " lines, "
+                    + std::to_string(raw.resultChars) + " chars\n");
             } else {
                 auto reason = toolResultText.size() > 100
                     ? toolResultText.substr(0, 100) + "…" : toolResultText;

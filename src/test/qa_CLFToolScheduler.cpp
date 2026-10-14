@@ -544,11 +544,18 @@ void testA2() {
     std::vector<CLFTool> tools;
     std::atomic<int> arrived{0};
     std::atomic<bool> interruptFlag{false};
+    std::atomic<bool> release{false};
     CLFTool t = makeParallelTool("a2_t");
     auto handler = [&](const std::string&) {
-        // 到达计数 == 2 时（两个都在途）由后到者置中断——确定性时序：
-        // 此时 fillPool 已启动两个（cap 满），第三个尚未启动
-        if (++arrived >= 2) interruptFlag = true;
+        // 确定性时序（门闩版）：第二个到达者置中断 + 放行；第一个等
+        // release——**两个都在途时中断必已置位**。关键修正：worker 在
+        // release 前不返回 → 补位（fillPool 第三轮）发生在两个都到达
+        // 之后 → 中断检查必拦下第三个（初版"后到者置位"在 worker2 慢
+        // 启动时补位早于置位——并行负载实抓）
+        if (++arrived == 2) { interruptFlag = true; release = true; }
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        while (!release.load() && std::chrono::steady_clock::now() < deadline)
+            sleepMs(1);
         return std::string(kOkJson);
     };
     t.m_handler = handler;
@@ -609,7 +616,10 @@ void testF1() {
     CLFTool t3 = makeParallelTool("f1_c");
     std::atomic<bool> h3Called{false};
     t1.m_handler = [](const std::string&) { return std::string(kFailJson); };
-    t2.m_handler = [](const std::string&) { return std::string(kOkJson); };
+    // t2 慢：保证 t1 先 settle（失败信号先于任何补位——调度器 fail-fast
+    // 扫描在 fillPool 头拦截；若 t2 先 settle 成功则补位 t3 属合法滚动池
+    // 行为——dsh 语义"失败前已派发的不撤销"）
+    t2.m_handler = [](const std::string&) { sleepMs(40); return std::string(kOkJson); };
     t3.m_handler = [&](const std::string&) { h3Called = true; return std::string(kOkJson); };
     tools.push_back(t1);
     tools.push_back(t2);
@@ -621,8 +631,9 @@ void testF1() {
     std::atomic<bool> interruptFlag{false};
     auto executor = makeSchedExecutor(tools, out, policy, stats, interruptFlag, nullptr);
     CLFToolScheduler sched(executor, 2);
-    // 时序链：t1/t2 并发在途 → t1 失败提交 → firstFailure 置位 →
-    // 停止派发（t3 未启动）→ t2 排空提交 → 主循环补 skipped(t3)
+    // 时序链：t1/t2 并发在途 → t1 先 settle 失败（t2 仍在途）→
+    // 失败信号（settle 扫描）→ 停止派发（t3 未启动）→ t2 排空提交 →
+    // 主循环补 skipped(t3)
     CLF::CLFCore::CLFToolCall c1; c1.m_name = "f1_a";
     CLF::CLFCore::CLFToolCall c2; c2.m_name = "f1_b";
     CLF::CLFCore::CLFToolCall c3; c3.m_name = "f1_c";

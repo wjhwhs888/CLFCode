@@ -99,6 +99,14 @@
     - **实抓缺陷取证闭环**：qa 全组偶发挂死 = 动态初始化期（boost::ut 静态期惯例）主线程与 dispatch 线程 CRT 设施初始化竞态（复现矩阵 + 逐层打点定位；与 async/thread 无关、main 期 30 轮零复现）→ 定案：qa_CLFToolScheduler 改 main 期执行（轻量断言）+ cap=1 同步执行（qa_CLFToolExecutor 静态期免线程）+ 生产路径不受影响；std::async→std::thread 偏差（语义等价无 future 析构阻塞怪癖）；G1/R1 门闩改重叠窗口（串行 bug 可辨）；G4 改注册表元素引用；BatchProgressGuard 补构造（C++17 聚合括号限制）
     - **实施记录回填**：分册 3 §八（改动清单/偏差定案/取证/验证/第三批衔接）；**失败静默语义确认**（§3.6 全局含串行——失败即停，行为变化按设计定案）
     - **观察项**：qa_CLFEventBus 并行全量跑两次偶发失败（单独重跑均过）——B3 时序用例负载敏感，与本批无关，待单独排查
+  - **▶ 分册 3 第三批（AgentLoop 接入 + 首批声明）完成 ✅（2026-10-14，未提交）**：
+    - **AgentLoop 切轨**：executeToolCalls 改用 CLFToolScheduler（注入 maxParallelToolCalls）——未声明工具 = 独占 = 串行现行为（qa_CLFAgentLoop 全绿 = 串行等价实证）
+    - **首批声明**（设计 §2.1 清单）：宿主侧打标（ABI 元数据不带并发语义）——read_file/list_directory/search_content/web_fetch 恒并行 + get_current_time/echo 恒并行（BuiltinTools）+ execute_command 逐参数（危险命令 → 独占、普通 → 并行、坏 JSON → fail-closed 独占）；写类保持独占
+    - **m_firstFailure 最小落地**：AgentLoop warn 日志（结果链完整回填，模型自行决定；回合终止等更强语义待用户实机拍板——偏差记录）
+    - **实抓缺陷修根（fail-fast）**：F1/F2 并行负载失败——失败信号只在提交游标、队首慢时已 settle 失败不能及时停止补位（违反 dsh §8）→ ok 判定前移 run（RunOutcome 带 ok/resultText/lines/chars，finalize 复用）+ Slot.ok 原子 + fillPool 扫 anySettledFailure；B3 断言竞态修根（drainAll 消费到空语义 → 断言总消费数=2）；A2 门闩修正（worker 慢启动时序洞）；F1 t2 变慢固化（dsh 语义"失败前已派发不撤销"）
+    - **qa 增量**：qa_CLFPluginFileOps G1 装配声明断言 + qa_CLFPluginDomains D9 三态判定（CMake 补链 clf_tools）
+    - **验证**：ctest 45/45 **六连绿** + --version 冒烟；CHANGELOG 未发布段加"工具并行执行"条目；设计 §8.5/§8.6 回填
+    - **下一步（第四批）**：实机并行观察（用户验收：多工具回合并行/日志交错/结果序/确认串行）+ 观察失败静默串行行为变化（失败即停）实机感受
   - **待办（下一步）**：① 分册 3 第三批：AgentLoop 接入（executeToolCalls 切轨 CLFToolScheduler，构造注入 maxParallelToolCalls）+ 首批工具声明并发安全（设计 §2.1 清单）+ m_firstFailure 的 AgentLoop 层处理语义 ② 第四批：实机并行观察 ③ resume 回显（块 3）实机验收 ④ 事件化重构全量实机回归（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3 后续（ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）④ qa_CLFEventBus flaky 排查（并行全量偶发失败两次）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 

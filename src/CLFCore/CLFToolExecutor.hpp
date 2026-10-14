@@ -93,12 +93,17 @@ public:
         std::string errorKind;    // Fallback 时 ToolFinished 的 errorKind
     };
 
-    // run 产物：handler 原始结果 + 异常标志（ok 判定在 finalize 的
-    // formatToolResult——run 并发段零 UI/事件/统计）。
+    // run 产物：handler 原始结果 + 失败判定（formatToolResult 纯函数在
+    // run 内判定——settle 时失败信号即可见，调度器 fail-fast 停止派发
+    // （dsh §8 语义）；finalize 复用不再重判。run 并发段零 UI/事件/统计）
     struct RunOutcome {
         CLFToolResult result;
         bool exceptionCaught = false;
         std::string displayError;   // 异常时的截断展示文本（100 字符内）
+        bool ok = true;             // formatToolResult 判定（false = handler 失败/异常）
+        std::string resultText;     // 展示文本（formatToolResult 或 displayError）
+        int resultLines = 0;        // ✓ 行显示用（成功大结果 "N lines, M chars"）
+        int resultChars = 0;
     };
 
     // finalize 产物：提交结果 + ok（false = handler 失败/异常——调度器

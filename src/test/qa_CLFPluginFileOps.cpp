@@ -376,6 +376,16 @@ const boost::ut::suite<"CLFPluginFileOps"> tests = [] {
                     expect(!t.m_isRead);
                 }
             }
+            // 并发安全声明（分册 3 第三批，设计 §2.1 首批）：读类并行、
+            // 写类独占（fail-closed 默认 nullptr）
+            for (const auto& t : tools) {
+                if (t.m_name == "read_file" || t.m_name == "list_directory") {
+                    expect(t.m_isConcurrencySafe != nullptr);
+                    expect(t.m_isConcurrencySafe("{}"));
+                } else {   // write_file / edit_file
+                    expect(t.m_isConcurrencySafe == nullptr);   // 独占
+                }
+            }
         }
     };
 

@@ -12,6 +12,8 @@
 #include <string>
 
 #include "CLFCore/CLFPluginManager.hpp"
+#include "CLFCore/CLFAgentLoop.hpp"       // D9：装配并发声明
+#include "CLFTools/CLFBuiltinTools.hpp"   // D9：registerPluginTools
 #include "CLFPluginApi/CLFToolApi.hpp"
 #include <nlohmann/json.hpp>
 
@@ -234,6 +236,44 @@ const boost::ut::suite<"CLFPluginDomains"> tests = [] {
                 auto r = nlohmann::json::parse(
                     callToolText(p, "execute_command", args.dump()));
                 expect(r.value("errorKind", "") == "not_found");
+            }
+        }
+    };
+
+    "D9 装配并发声明：execute_command 逐参数 / search·web 恒并行"_test = [] {
+        auto dir = makePluginDir();
+        {
+            CLFPluginManager mgr(dir);
+            expect(mgr.loadAll() == 3_i);
+
+            CLF::CLFCore::CLFAgentConfig config;
+            config.m_apiKey = "test-key";
+            CLF::CLFCore::CLFAgentLoop agent(config);
+            CLF::CLFTools::registerPluginTools(agent, mgr);
+
+            const auto& tools = agent.getTools();
+            auto findTool = [&](const std::string& n) -> const CLF::CLFCore::CLFTool* {
+                for (const auto& t : tools)
+                    if (t.m_name == n) return &t;
+                return nullptr;
+            };
+
+            // search_content / web_fetch：恒并行（设计 §2.1 首批清单）
+            const auto* s = findTool("search_content");
+            const auto* w = findTool("web_fetch");
+            expect(s != nullptr && w != nullptr);
+            if (s) { expect(s->m_isConcurrencySafe != nullptr); expect(s->m_isConcurrencySafe("{}")); }
+            if (w) { expect(w->m_isConcurrencySafe != nullptr); expect(w->m_isConcurrencySafe("{}")); }
+
+            // execute_command 逐参数判定：危险命令（写特征）→ 独占、
+            // 普通命令 → 并行、坏 JSON → 独占（fail-closed）
+            const auto* c = findTool("execute_command");
+            expect(c != nullptr);
+            if (c) {
+                expect(c->m_isConcurrencySafe != nullptr);
+                expect(!c->m_isConcurrencySafe(R"({"command":"rm -rf build"})"));
+                expect(c->m_isConcurrencySafe(R"({"command":"echo hello"})"));
+                expect(!c->m_isConcurrencySafe("not-json"));
             }
         }
     };

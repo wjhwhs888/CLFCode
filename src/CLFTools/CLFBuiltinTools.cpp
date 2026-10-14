@@ -304,6 +304,8 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         "required": []
     })";
     timeTool.m_handler = getCurrentTimeHandler;
+    // 分册 3 第三批：并发安全声明（设计 §2.1 首批）——无状态只读恒并行
+    timeTool.m_isConcurrencySafe = [](const std::string&) { return true; };
     agent.registerTool(timeTool);
 
     // —— 测试工具 ——
@@ -321,6 +323,8 @@ void registerBuiltinTools(CLF::CLFCore::CLFAgentLoop& agent) {
         "required": ["message"]
     })";
     echoTool.m_handler = echoHandler;
+    // 分册 3 第三批：并发安全声明（设计 §2.1 首批）——纯回显恒并行
+    echoTool.m_isConcurrencySafe = [](const std::string&) { return true; };
     agent.registerTool(echoTool);
 
     // —— search_content（2.3：已随 Search 域迁插件——经 registerPluginTools

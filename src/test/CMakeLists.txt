@@ -149,7 +149,7 @@ target_compile_definitions(qa_CLFPluginFileOps PRIVATE
 add_dependencies(qa_CLFPluginFileOps clf_plugin_fileops)
 
 # —— 2.3 三域插件全链路（command/search/web）——
-clf_add_test(qa_CLFPluginDomains clf_core ${CLF_OPENSSL_LIBS})
+clf_add_test(qa_CLFPluginDomains clf_core clf_tools ${CLF_OPENSSL_LIBS})
 target_compile_definitions(qa_CLFPluginDomains PRIVATE
     CLF_PROD_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/bin/$<CONFIG>/plugins")
 add_dependencies(qa_CLFPluginDomains
