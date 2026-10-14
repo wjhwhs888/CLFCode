@@ -2,6 +2,7 @@
 // 包含 Write 工具的 diff 预览、TOCTOU 校验、确认流程
 
 #include "CLFCore/CLFToolExecutor.hpp"
+#include "CLFCore/CLFToolScheduler.hpp"   // 分册 3：execute 兼容壳 = 串行调度
 #include "CLFCore/CLFLogger.hpp"
 #include "CLFTypes/CLFTextUtil.hpp"
 #include "CLFTypes/CLFEventBus.hpp"   // 步骤 2：ToolStarted/ToolFinished 双轨发射
@@ -354,28 +355,8 @@ void renderDiff(CLF::CLFTypes::ICLFContentOutput* output, const WritePreview& pr
 
 } // anonymous namespace
 
-// ============================================================================
-// 协议闭合（设计-中断时效性 §十一，2026-09-23）
-// ============================================================================
-
-// 中断 break 后为剩余未执行调用补合成结果——不变量 I1：任何时刻上下文中
-// tool_calls 声明数 == tool 结果数（OpenAI 兼容协议要求每条声明必须有配对
-// tool 消息，否则下一次请求被 API 拒绝——dsh repair.ts "providers reject
-// dangling assistant calls"）。文案前缀 [interrupted] 为 qa 断言锚点
-// （不得改用 [Denied by user]——那是"用户否决操作"的另一语义，§11.9）
-void appendNotExecutedResults(const std::vector<CLFToolCall>& calls,
-                              size_t fromIndex,
-                              std::vector<CLFToolResult>& results) {
-    for (size_t i = fromIndex; i < calls.size(); ++i) {
-        CLFToolResult skipped;
-        skipped.m_toolCallId = calls[i].m_id;
-        skipped.m_name       = calls[i].m_name;
-        skipped.m_content =
-            "[interrupted] 该工具调用因用户中断而未执行，未产生任何副作用。"
-            "如仍需要，请重新调用。";
-        results.push_back(std::move(skipped));
-    }
-}
+// 协议闭合 appendNotExecutedResults 已随调度循环迁至 CLFToolScheduler.cpp
+// （execute 兼容壳经 CLFToolScheduler 调度，中断补位在调度器内完成）
 
 // ============================================================================
 // CLFToolExecutor 构造
@@ -406,368 +387,45 @@ CLFToolExecutor::CLFToolExecutor(std::vector<CLFTool>& tools,
 }
 
 // ============================================================================
-// execute — 主执行循环（含 Write 工具的 diff 预览 + 确认流程）
+// 单工具三段（调度器驱动，分册 3 §3.1）+ 批次接口 + 串行兼容壳
 // ============================================================================
 
-std::vector<CLFToolResult> CLFToolExecutor::execute(
-    const std::vector<CLFToolCall>& calls) {
-    std::vector<CLFToolResult> results;
-    results.reserve(calls.size());
+CLFToolExecutor::~CLFToolExecutor() = default;
 
-    struct ProgressGuard {
-        CLF::CLFTypes::ICLFProgressOutput* out;
-        bool committed = false;
-        ~ProgressGuard() { if (!committed && out) out->finishProgress(""); }
-        void commit(const std::string& s) { committed = true; if (out) out->finishProgress(s); }
-    } guard{m_progressOutput};
+const CLFTool* CLFToolExecutor::findTool(const std::string& name) const {
+    auto it = std::find_if(m_tools.begin(), m_tools.end(),
+        [&](const CLFTool& t) { return t.m_name == name; });
+    return it == m_tools.end() ? nullptr : &(*it);
+}
 
-    int searchCount   = m_stats.searchCount;
-    int readCount     = m_stats.readCount;
-    int progressReads = 0;  // 读类工具计数（用于 summary）
-    int progressEdits = 0;  // 写类工具计数
-    // 2026-09-20：summary 详情行收集（每工具一行，直显本轮读了/执行了什么——
-    // 替代失效的 "(ctrl+t to expand)" 提示；渐进模式才收集，非渐进已有 ✓ 行）
-    std::vector<std::string> detailLines;
-    detailLines.reserve(calls.size());
+void CLFToolExecutor::beginBatch() {
+    m_batchGuard = std::make_unique<BatchProgressGuard>(m_progressOutput);
+    m_batchSearchCount = m_stats.searchCount;   // 会话累计为基底
+    m_batchReadCount   = m_stats.readCount;
+    m_batchProgressReads = 0;
+    m_batchProgressEdits = 0;
+    m_batchDetailLines.clear();
+}
 
-    for (size_t callIdx = 0; callIdx < calls.size(); ++callIdx) {
-        const auto& call = calls[callIdx];
-        // T3: 每次迭代末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
-        // 工具返回即重绘（原仅靠 turnTimer 1Hz 兜底，最长延迟 1 秒）。
-        // RAII 保证 :376/:387 等 continue 提前退出分支也被覆盖
-        struct RefreshGuard {
-            CLF::CLFTypes::ICLFProgressOutput* out;
-            ~RefreshGuard() { if (out) out->requestRefresh(); }
-        } refreshGuard{m_progressOutput};
-
-        // 中断检查
-        if (m_interruptFlag && m_interruptFlag->load()) {
-            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⏹ 已中断\n");
-            // 协议闭合：当前及剩余调用全部补"未执行"结果（§11.4）——
-            // AgentLoop 落库后声明数 == 结果数恒成立，零差集逻辑
-            appendNotExecutedResults(calls, callIdx, results);
-            break;
-        }
-
-        CLFToolResult result;
-        result.m_toolCallId = call.m_id;
-        result.m_name       = call.m_name;
-
-        std::string keyParam = extractKeyParam(call.m_arguments);
-        std::string header = "● " + call.m_name;
-        if (!keyParam.empty()) {
-            header += "(" + keyParam + ")";
-        }
-        // 事件化重构步骤 2：ToolStarted 双轨发射（调度 dispatch 前）
-        if (m_eventBus) {
-            CLF::CLFTypes::CLFAgentEvent ev;
-            ev.m_type = CLF::CLFTypes::CLFEventType::ToolStarted;
-            ev.m_callId = call.m_id;
-            ev.m_name = call.m_name;
-            ev.m_argsPreview = keyParam;
-            m_eventBus->publish(ev);
-        }
-        // ToolFinished 双轨发射（与 ToolStarted 一一配对；各出口 ok/errorKind
-        // 不同——分册 3 切轨后由调度器提交游标统一，本步逐出口显式发射）
-        auto emitFinished = [&](const CLFToolResult& r, bool ok,
-                                const std::string& errorKind) {
-            if (!m_eventBus) return;
-            CLF::CLFTypes::CLFAgentEvent ev;
-            ev.m_type = CLF::CLFTypes::CLFEventType::ToolFinished;
-            ev.m_callId = r.m_toolCallId;
-            ev.m_name = r.m_name;
-            ev.m_ok = ok;
-            ev.m_summary = r.m_content;
-            ev.m_errorKind = errorKind;
-            m_eventBus->publish(ev);
-        };
-        // B1：工具查找前置（能力标签判定需 it；语义微调——不存在的工具不再计入统计，
-        // 原名字匹配在查找前会误计幻觉工具名，B1 定案记录）
-        auto it = std::find_if(m_tools.begin(), m_tools.end(),
-            [&](const CLFTool& t) { return t.m_name == call.m_name; });
-
-        if (it == m_tools.end()) {
-            result.m_content = std::string("Tool not found: ") + call.m_name;
-            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ unknown\n");
-            emitFinished(result, false, "not_found");
-            results.push_back(std::move(result));
-            continue;
-        }
-
-        bool useProgressive = (m_labels && m_thinkingSec);
-        // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
-        // B1：名字匹配 → m_risk == Write（风险级即能力声明）
-        if (m_contentOutput && (!useProgressive || it->m_risk == CLFToolRisk::Write))
-            m_contentOutput->emitContent("\n" + header + "\n");
-
-        // 统计（B1：名字匹配 → 能力标签；口径 B1-4：read 桶含 list_directory）
-        if (it->m_isSearch) ++searchCount;
-        if (it->m_isRead)   ++readCount;
-
-        // 安全策略检查
-        bool needConfirm = false;
-        if (!m_securityPolicy.isAllowed(it->m_risk, needConfirm)) {
-            result.m_content = std::string("[Blocked by security policy (mode: ")
-                             + m_securityPolicy.getModeName()
-                             + ")] 当前模式禁止执行该操作。";
-            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ blocked\n");
-            emitFinished(result, false, "permission");
-            results.push_back(std::move(result));
-            continue;
-        }
-
-        // S2-2: 危险命令强制确认——**不受安全模式影响**，Auto 模式同样拦截。
-        // 定位为提示层（模型可绕过），仅降低误操作概率，不替代上面的模式管控。
-        // B1：名字匹配 → m_risk == Command（确认触发仍由 policy 按内容判定，B1-1 定案）
-        if (it->m_risk == CLFToolRisk::Command) {
-            std::string cmdText;
-            try {
-                auto argJson = nlohmann::json::parse(call.m_arguments);
-                cmdText = argJson.value("command", "");
-            } catch (...) {
-                cmdText = call.m_arguments;  // 解析失败则按原文匹配，宁可多确认
-            }
-            if (m_securityPolicy.isDangerousCommand(cmdText)) {
-                needConfirm = true;
-                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ 命中危险命令模式，需确认\n");
-            }
-        }
-
-        // S2-5: web_fetch 工具本身按 Read 级注册（GET/HEAD 本质是读取），
-        // 但 POST 有远端副作用——此处动态升级为强制确认，即使 Auto 模式。
-        // B1-2 定案：入口识别保留名字匹配（识别"这个特定工具"的运行时参数
-        // 升级逻辑，非分类语义；升级判定本身是参数驱动，不静态打标）
-        if (it->m_name == "web_fetch") {
-            try {
-                auto argJson = nlohmann::json::parse(call.m_arguments);
-                std::string method = argJson.value("method", "GET");
-                std::transform(method.begin(), method.end(), method.begin(),
-                               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-                if (method == "POST") {
-                    needConfirm = true;
-                    if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ POST 请求有远端副作用，需确认\n");
-                }
-            } catch (...) {
-                // 参数解析失败：按默认 GET 处理，不额外升级
-            }
-        }
-
-        // ================================================================
-        // Write 工具的 diff 预览 + 确认流程（设计 §2.1 Step 1–7）
-        // ================================================================
-        // B1：名字匹配 → m_risk == Write（diff 预览触发）
-        bool isWriteTool = (it->m_risk == CLFToolRisk::Write);
-        WritePreview preview;
-
-        if (isWriteTool) {
-            // --- Step 1: prepareWritePreview ---
-            preview = prepareWritePreview(m_fileService, call);
-
-            // --- Step 1.5: valid 检查 ---
-            if (!preview.valid) {
-                result.m_content = preview.errorMsg;
-                if (m_contentOutput) {
-                    m_contentOutput->emitContent("  ⎿ ✗ " + preview.errorMsg + "\n");
-                }
-                emitFinished(result, false, "");
-                results.push_back(std::move(result));
-                continue;
-            }
-
-            // --- Step 2: 超限阻断（仅需确认模式）---
-            if (preview.diffStats.truncated && needConfirm) {
-                result.m_content = "File too large to preview diff. "
-                                   "Use Auto mode.";
-                if (m_contentOutput) {
-                    m_contentOutput->emitContent("  ⎿ ✗ File too large to preview diff. "
-                                          "Use Auto mode.\n");
-                }
-                emitFinished(result, false, "");
-                results.push_back(std::move(result));
-                continue;
-            }
-
-            // --- Step 3: 渲染 diff 预览 ---
-            if (m_contentOutput) {
-                renderDiff(m_contentOutput, preview);
-                // 保证刷新
-                m_contentOutput->emitContent("");
-            }
-
-            // --- Step 4: 模式分流 ---
-            if (needConfirm && m_confirmCallback) {
-                std::string prompt = "工具 [" + call.m_name + "] 将修改文件: "
-                                   + preview.filePath;
-                if (!m_confirmCallback(prompt)) {
-                    result.m_content = "[Denied by user] 用户拒绝了该操作。";
-                    if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
-                    emitFinished(result, false, "permission");
-                    results.push_back(std::move(result));
-                    if (m_interruptFlag && m_interruptFlag->load()) {
-                        // 协议闭合：当前 call 已有 denied 结果，补剩余（§11.4）
-                        appendNotExecutedResults(calls, callIdx + 1, results);
-                        break;
-                    }
-                    continue;
-                }
-            }
-
-            // --- Step 5: TOCTOU 校验（C1：经 ICLFFileService::getFileInfo）---
-            {
-                auto current = m_fileService->getFileInfo(preview.filePath.c_str());
-                if ((preview.oldSnapshot.mtime != 0 && current.mtime != 0 &&
-                     current.mtime != preview.oldSnapshot.mtime) ||
-                    (preview.oldSnapshot.size != 0 && current.size != 0 &&
-                     current.size != preview.oldSnapshot.size)) {
-                    result.m_content = "File modified after preview. Please review again.";
-                    if (m_contentOutput) {
-                        m_contentOutput->emitContent(
-                            "  ⎿ ✗ File modified after preview. Please review again.\n");
-                    }
-                    emitFinished(result, false, "");
-                    results.push_back(std::move(result));
-                    continue;
-                }
-            }
-        } else {
-            // 非 Write 类工具（execute_command 等 Command risk）的确认检查
-            if (needConfirm && m_confirmCallback) {
-                std::string prompt = "工具 [" + call.m_name + "] 需要执行高风险操作。\n"
-                                   + "参数: " + call.m_arguments;
-                if (!m_confirmCallback(prompt)) {
-                    result.m_content = "[Denied by user] 用户拒绝了该操作。";
-                    if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
-                    emitFinished(result, false, "permission");
-                    results.push_back(std::move(result));
-                    if (m_interruptFlag && m_interruptFlag->load()) {
-                        // 协议闭合：当前 call 已有 denied 结果，补剩余（§11.4）
-                        appendNotExecutedResults(calls, callIdx + 1, results);
-                        break;
-                    }
-                    continue;
-                }
-            }
-        }
-
-        // P0-4: 执行中单行进度（动画帧由 Renderer 附加）——读类工具执行期可见
-        if (m_progressOutput && (m_labels && m_thinkingSec) && !isWriteTool) {
-            std::string toolLine = "  ⎿ " + call.m_name
-                                 + (keyParam.empty() ? "" : "(" + keyParam + ")");
-            m_progressOutput->showProgress({toolLine});
-        }
-
-        // --- Step 6 & 7: 执行 handler + 显示结果 ---
-        bool toolOk = false;
-        std::string toolResultText;
-        try {
-            CLFLogger::instance().info(
-                "[ToolExec] executing: " + call.m_name
-                + (keyParam.empty() ? "" : "(" + keyParam + ")"));
-            result.m_content = it->m_handler(call.m_arguments);
-            // A5-concludesTurn：仅 handler 成功路径复制静态声明（失败分支
-            // 保持 false——工具失败不应提前结束回合，设计 §四 T2）
-            result.m_concludesTurn = it->m_concludesTurn;
-            auto rd = formatToolResult(result.m_content);
-            toolOk = rd.ok;
-            toolResultText = rd.text;
-            CLFLogger::instance().info(
-                "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
-                + ", result=" + std::to_string(result.m_content.size()) + " chars");
-
-            // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
-            // （useProgressive 沿用上方 :345 声明，同作用域不重复声明）
-            if (m_contentOutput && (!useProgressive || isWriteTool || !toolOk)) {
-                // 渐进模式下仅写类工具/失败走永久内容；读类工具成功仅 showProgress
-                if (isWriteTool && !preview.diffLines.empty()) {
-                    const auto& ds = preview.diffStats;
-                    if (ds.added + ds.removed > 0 && !ds.truncated) {
-                        m_contentOutput->emitContent(
-                            "  ✓ " + call.m_name + "(" + preview.filePath
-                            + ") — +" + std::to_string(ds.added)
-                            + " -" + std::to_string(ds.removed) + " lines"
-                            + ", " + std::to_string(ds.hunks) + " hunk"
-                            + (ds.hunks > 1 ? "s" : "") + "\n");
-                    } else if (ds.truncated) {
-                        m_contentOutput->emitContent(
-                            "  ✓ " + call.m_name + "(" + preview.filePath
-                            + ") — written (diff truncated)\n");
-                    } else {
-                        m_contentOutput->emitContent(
-                            "  ✓ " + call.m_name + "(" + preview.filePath
-                            + ") — written\n");
-                    }
-                } else if (rd.ok && rd.text.size() <= 200) {
-                    m_contentOutput->emitContent("  ✓ " + call.m_name
-                        + (keyParam.empty() ? "" : "(" + keyParam + ")") + "\n");
-                } else if (rd.ok) {
-                    m_contentOutput->emitContent("  ✓ " + call.m_name
-                        + (keyParam.empty() ? "" : "(" + keyParam + ")")
-                        + " — " + std::to_string(rd.lines) + " lines, "
-                        + std::to_string(rd.chars) + " chars\n");
-                } else {
-                    auto reason = rd.text.size() > 100 ? rd.text.substr(0, 100) + "…" : rd.text;
-                    m_contentOutput->emitContent("  ✗ " + call.m_name
-                        + (keyParam.empty() ? "" : "(" + keyParam + ")")
-                        + " — " + reason + " (scroll for full detail)\n");
-                }
-            }
-        } catch (const std::exception& e) {
-            result.m_content = std::string("Tool execution error: ") + e.what();
-            toolOk = false;
-            toolResultText = e.what();
-            if (toolResultText.size() > 100) toolResultText = toolResultText.substr(0, 100) + "…";
-            CLFLogger::instance().error(
-                "[ToolExec] " + call.m_name + " failed: " + e.what());
-            if (m_contentOutput) m_contentOutput->emitContent("  ✗ " + call.m_name
-                + (keyParam.empty() ? "" : "(" + keyParam + ")")
-                + " — " + toolResultText + " (scroll for full detail)\n");
-        }
-
-        // ---- 渐进式统计（summary 数据源；执行中单行进度已在执行前发射） ----
-        // P1-2: search 独立成桶（searchCount 在 :351 计数），不再重复计入 read
-        if (m_labels && m_thinkingSec) {
-            if (isWriteTool) {
-                ++progressEdits;
-            } else if (it->m_isRead) {   // B1：名字匹配 → 能力标签
-                ++progressReads;
-            }
-            // 2026-09-20：详情行收集（与 summary 同条件——渐进模式才有
-            // summary 行；↳ 弱化前缀，成功行仅文件名、失败行带 ✗ 原因；
-            // rd 声明在 try 块内不可见，此处用 toolOk/toolResultText）
-            std::string dl = "  ↳ " + call.m_name
-                + (keyParam.empty() ? "" : "(" + keyParam + ")");
-            if (!toolOk) {
-                dl += " — ✗ "
-                    + (toolResultText.size() > 60
-                        ? toolResultText.substr(0, 60) + "…" : toolResultText);
-            }
-            detailLines.push_back(std::move(dl));
-        }
-
-        // 正常出口（含 handler 异常路径——toolOk 已按结果置位）
-        emitFinished(result, toolOk, "");
-        results.push_back(std::move(result));
-    }
-
-    // ---- 提交进度总结（P1-2: 增强——总工具数 + search 计数，数据为局部计数器） ----
+void CLFToolExecutor::finishBatch(int totalCalls) {
+    // ---- 提交进度总结（P1-2: 增强——总工具数 + search 计数，数据为批次累计） ----
     if (m_progressOutput && m_labels && m_thinkingSec) {
         int elapsed = m_thinkingSec->load();
         std::string summary;
         summary += "● " + m_labels->thought + " for "
                 + CLF::CLFCore::formatDurationSeconds(elapsed);
-        int total = static_cast<int>(calls.size());
-        if (total > 0) {
-            summary += "，" + std::to_string(total) + " 工具";
+        if (totalCalls > 0) {
+            summary += "，" + std::to_string(totalCalls) + " 工具";
             std::string detail;
-            if (progressReads > 0)
-                detail += "read " + std::to_string(progressReads);
-            if (searchCount > 0) {
+            if (m_batchProgressReads > 0)
+                detail += "read " + std::to_string(m_batchProgressReads);
+            if (m_batchSearchCount > 0) {
                 if (!detail.empty()) detail += " · ";
-                detail += "search " + std::to_string(searchCount);
+                detail += "search " + std::to_string(m_batchSearchCount);
             }
-            if (progressEdits > 0) {
+            if (m_batchProgressEdits > 0) {
                 if (!detail.empty()) detail += " · ";
-                detail += "edited " + std::to_string(progressEdits);
+                detail += "edited " + std::to_string(m_batchProgressEdits);
             }
             if (!detail.empty())
                 summary += " (" + detail + ")";
@@ -782,21 +440,397 @@ std::vector<CLFToolResult> CLFToolExecutor::execute(
         // 2026-09-20：详情行直显（替代失效的 "(ctrl+t to expand)" 提示——
         // Ctrl+T 已改作切换思考过程）；单批上限 3 行防长回合刷屏
         static constexpr int kMaxDetailLines = 3;
-        for (size_t i = 0; i < detailLines.size()
+        for (size_t i = 0; i < m_batchDetailLines.size()
                         && i < static_cast<size_t>(kMaxDetailLines); ++i)
-            summary += "\n" + detailLines[i];
-        if (detailLines.size() > static_cast<size_t>(kMaxDetailLines))
+            summary += "\n" + m_batchDetailLines[i];
+        if (m_batchDetailLines.size() > static_cast<size_t>(kMaxDetailLines))
             summary += "\n  ↳ … 还有 "
-                    + std::to_string(detailLines.size() - kMaxDetailLines)
+                    + std::to_string(m_batchDetailLines.size() - kMaxDetailLines)
                     + " 个工具";
-        guard.commit("\n " + summary + "\n");
+        m_batchGuard->commit("\n " + summary + "\n");
+    }
+    m_batchGuard.reset();
+
+    m_stats.searchCount = m_batchSearchCount;
+    m_stats.readCount   = m_batchReadCount;
+    m_stats.totalCalls  = totalCalls;
+}
+
+// prepare — 串行闸门（调度线程逐个串行执行；确认/预览/守卫全在此——
+// 弹确认时后续调用不启动，用户定调安全优先）
+CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
+    const CLFToolCall& call, PreparedCall& pc) {
+    PrepareOutcome out;
+
+    // 中断检查（§3.5 检查点：fillPool 启动前 + prepare 内）
+    if (isInterrupted()) {
+        if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⏹ 已中断\n");
+        out.kind = PrepareOutcome::Kind::Aborted;
+        return out;
     }
 
-    m_stats.searchCount = searchCount;
-    m_stats.readCount   = readCount;
-    m_stats.totalCalls  = static_cast<int>(calls.size());
+    pc.keyParam = extractKeyParam(call.m_arguments);
+    std::string header = "● " + call.m_name;
+    if (!pc.keyParam.empty()) {
+        header += "(" + pc.keyParam + ")";
+    }
+    // 事件化重构步骤 2：ToolStarted 双轨发射（查找前——not_found 也发，
+    // 与现状一致）
+    if (m_eventBus) {
+        CLF::CLFTypes::CLFAgentEvent ev;
+        ev.m_type = CLF::CLFTypes::CLFEventType::ToolStarted;
+        ev.m_callId = call.m_id;
+        ev.m_name = call.m_name;
+        ev.m_argsPreview = pc.keyParam;
+        m_eventBus->publish(ev);
+    }
 
-    return results;
+    // B1：工具查找前置（能力标签判定需 it；语义微调——不存在的工具不再计入统计，
+    // 原名字匹配在查找前会误计幻觉工具名，B1 定案记录）
+    auto it = std::find_if(m_tools.begin(), m_tools.end(),
+        [&](const CLFTool& t) { return t.m_name == call.m_name; });
+
+    if (it == m_tools.end()) {
+        out.kind = PrepareOutcome::Kind::Fallback;
+        out.fallback.m_toolCallId = call.m_id;
+        out.fallback.m_name = call.m_name;
+        out.fallback.m_content = std::string("Tool not found: ") + call.m_name;
+        out.errorKind = "not_found";
+        if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ unknown\n");
+        return out;
+    }
+
+    pc.toolIndex = static_cast<size_t>(it - m_tools.begin());
+    const CLFTool& tool = *it;
+    pc.useProgressive = (m_labels && m_thinkingSec);
+    // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
+    // B1：名字匹配 → m_risk == Write（风险级即能力声明）
+    if (m_contentOutput && (!pc.useProgressive || tool.m_risk == CLFToolRisk::Write))
+        m_contentOutput->emitContent("\n" + header + "\n");
+
+    // 统计（B1：名字匹配 → 能力标签；口径 B1-4：read 桶含 list_directory。
+    // prepare 串行闸门内执行——§3.4 天然串行安全；与现状"查找成功后计数"
+    // 一致：not_found 不计、blocked/denied 计入）
+    if (tool.m_isSearch) ++m_batchSearchCount;
+    if (tool.m_isRead)   ++m_batchReadCount;
+
+    // 安全策略检查
+    bool needConfirm = false;
+    if (!m_securityPolicy.isAllowed(tool.m_risk, needConfirm)) {
+        out.kind = PrepareOutcome::Kind::Fallback;
+        out.fallback.m_toolCallId = call.m_id;
+        out.fallback.m_name = call.m_name;
+        out.fallback.m_content = std::string("[Blocked by security policy (mode: ")
+                         + m_securityPolicy.getModeName()
+                         + ")] 当前模式禁止执行该操作。";
+        out.errorKind = "permission";
+        if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ blocked\n");
+        return out;
+    }
+
+    // S2-2: 危险命令强制确认——**不受安全模式影响**，Auto 模式同样拦截。
+    // 定位为提示层（模型可绕过），仅降低误操作概率，不替代上面的模式管控。
+    // B1：名字匹配 → m_risk == Command（确认触发仍由 policy 按内容判定，B1-1 定案）
+    if (tool.m_risk == CLFToolRisk::Command) {
+        std::string cmdText;
+        try {
+            auto argJson = nlohmann::json::parse(call.m_arguments);
+            cmdText = argJson.value("command", "");
+        } catch (...) {
+            cmdText = call.m_arguments;  // 解析失败则按原文匹配，宁可多确认
+        }
+        if (m_securityPolicy.isDangerousCommand(cmdText)) {
+            needConfirm = true;
+            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ 命中危险命令模式，需确认\n");
+        }
+    }
+
+    // S2-5: web_fetch 工具本身按 Read 级注册（GET/HEAD 本质是读取），
+    // 但 POST 有远端副作用——此处动态升级为强制确认，即使 Auto 模式。
+    // B1-2 定案：入口识别保留名字匹配（识别"这个特定工具"的运行时参数
+    // 升级逻辑，非分类语义；升级判定本身是参数驱动，不静态打标）
+    if (tool.m_name == "web_fetch") {
+        try {
+            auto argJson = nlohmann::json::parse(call.m_arguments);
+            std::string method = argJson.value("method", "GET");
+            std::transform(method.begin(), method.end(), method.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+            if (method == "POST") {
+                needConfirm = true;
+                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ POST 请求有远端副作用，需确认\n");
+            }
+        } catch (...) {
+            // 参数解析失败：按默认 GET 处理，不额外升级
+        }
+    }
+
+    // ================================================================
+    // Write 工具的 diff 预览 + 确认流程（设计 §2.1 Step 1–7）
+    // ================================================================
+    // B1：名字匹配 → m_risk == Write（diff 预览触发）
+    pc.isWriteTool = (tool.m_risk == CLFToolRisk::Write);
+
+    if (pc.isWriteTool) {
+        // --- Step 1: prepareWritePreview ---
+        WritePreview preview = prepareWritePreview(m_fileService, call);
+
+        // --- Step 1.5: valid 检查 ---
+        if (!preview.valid) {
+            out.kind = PrepareOutcome::Kind::Fallback;
+            out.fallback.m_toolCallId = call.m_id;
+            out.fallback.m_name = call.m_name;
+            out.fallback.m_content = preview.errorMsg;
+            out.errorKind = "";
+            if (m_contentOutput) {
+                m_contentOutput->emitContent("  ⎿ ✗ " + preview.errorMsg + "\n");
+            }
+            return out;
+        }
+
+        // --- Step 2: 超限阻断（仅需确认模式）---
+        if (preview.diffStats.truncated && needConfirm) {
+            out.kind = PrepareOutcome::Kind::Fallback;
+            out.fallback.m_toolCallId = call.m_id;
+            out.fallback.m_name = call.m_name;
+            out.fallback.m_content = "File too large to preview diff. "
+                               "Use Auto mode.";
+            out.errorKind = "";
+            if (m_contentOutput) {
+                m_contentOutput->emitContent("  ⎿ ✗ File too large to preview diff. "
+                                      "Use Auto mode.\n");
+            }
+            return out;
+        }
+
+        // --- Step 3: 渲染 diff 预览 ---
+        if (m_contentOutput) {
+            renderDiff(m_contentOutput, preview);
+            // 保证刷新
+            m_contentOutput->emitContent("");
+        }
+
+        // --- Step 4: 模式分流 ---
+        if (needConfirm && m_confirmCallback) {
+            std::string prompt = "工具 [" + call.m_name + "] 将修改文件: "
+                               + preview.filePath;
+            if (!m_confirmCallback(prompt)) {
+                out.kind = PrepareOutcome::Kind::Fallback;
+                out.fallback.m_toolCallId = call.m_id;
+                out.fallback.m_name = call.m_name;
+                out.fallback.m_content = "[Denied by user] 用户拒绝了该操作。";
+                out.errorKind = "permission";
+                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
+                // 中断检查留给调度器下一轮 fillPool（denied 结果照常提交，
+                // 剩余由调度器补"未执行"——与现状 denied+中断路径等价）
+                return out;
+            }
+        }
+
+        // --- Step 5: TOCTOU 校验（C1：经 ICLFFileService::getFileInfo）---
+        {
+            auto current = m_fileService->getFileInfo(preview.filePath.c_str());
+            if ((preview.oldSnapshot.mtime != 0 && current.mtime != 0 &&
+                 current.mtime != preview.oldSnapshot.mtime) ||
+                (preview.oldSnapshot.size != 0 && current.size != 0 &&
+                 current.size != preview.oldSnapshot.size)) {
+                out.kind = PrepareOutcome::Kind::Fallback;
+                out.fallback.m_toolCallId = call.m_id;
+                out.fallback.m_name = call.m_name;
+                out.fallback.m_content = "File modified after preview. Please review again.";
+                out.errorKind = "";
+                if (m_contentOutput) {
+                    m_contentOutput->emitContent(
+                        "  ⎿ ✗ File modified after preview. Please review again.\n");
+                }
+                return out;
+            }
+        }
+
+        // 预览摘要抄入 pc（finalize 的 diff 行显示用——TOCTOU/渲染已完成）
+        pc.previewFilePath = preview.filePath;
+        pc.previewHasDiffLines = !preview.diffLines.empty();
+        pc.previewDiffTruncated = preview.diffStats.truncated;
+        pc.previewAdded = preview.diffStats.added;
+        pc.previewRemoved = preview.diffStats.removed;
+        pc.previewHunks = preview.diffStats.hunks;
+    } else {
+        // 非 Write 类工具（execute_command 等 Command risk）的确认检查
+        if (needConfirm && m_confirmCallback) {
+            std::string prompt = "工具 [" + call.m_name + "] 需要执行高风险操作。\n"
+                               + "参数: " + call.m_arguments;
+            if (!m_confirmCallback(prompt)) {
+                out.kind = PrepareOutcome::Kind::Fallback;
+                out.fallback.m_toolCallId = call.m_id;
+                out.fallback.m_name = call.m_name;
+                out.fallback.m_content = "[Denied by user] 用户拒绝了该操作。";
+                out.errorKind = "permission";
+                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
+                return out;
+            }
+        }
+    }
+
+    // P0-4: 执行中单行进度（动画帧由 Renderer 附加）——读类工具执行期可见。
+    // 并行时多工具先后 showProgress → 单行覆盖先行（用户拍板：最后启动者
+    // 显示——设计 §六 验收 4）
+    if (m_progressOutput && (m_labels && m_thinkingSec) && !pc.isWriteTool) {
+        std::string toolLine = "  ⎿ " + call.m_name
+                             + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")");
+        m_progressOutput->showProgress({toolLine});
+    }
+
+    out.kind = PrepareOutcome::Kind::Ready;
+    return out;
+}
+
+// run — 唯一并发段（§3.3 dispatch）：handler 调用 + 异常捕获。
+// 零 UI 输出、零事件、零统计（日志经 CLFLogger 互斥安全；ok 判定留给
+// finalize 的 formatToolResult——提交游标内串行）
+CLFToolExecutor::RunOutcome CLFToolExecutor::run(
+    const CLFToolCall& call, const PreparedCall& pc) {
+    RunOutcome out;
+    out.result.m_toolCallId = call.m_id;
+    out.result.m_name       = call.m_name;
+    const CLFTool& tool = m_tools[pc.toolIndex];
+    try {
+        CLFLogger::instance().info(
+            "[ToolExec] executing: " + call.m_name
+            + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")"));
+        out.result.m_content = tool.m_handler(call.m_arguments);
+        // A5-concludesTurn：仅 handler 成功路径复制静态声明（失败分支
+        // 保持 false——工具失败不应提前结束回合，设计 §四 T2）
+        out.result.m_concludesTurn = tool.m_concludesTurn;
+    } catch (const std::exception& e) {
+        out.exceptionCaught = true;
+        out.result.m_content = std::string("Tool execution error: ") + e.what();
+        out.displayError = e.what();
+        if (out.displayError.size() > 100)
+            out.displayError = out.displayError.substr(0, 100) + "…";
+        CLFLogger::instance().error(
+            "[ToolExec] " + call.m_name + " failed: " + e.what());
+    }
+    return out;
+}
+
+// finalize — 提交游标内（模型序串行）：结果格式化 + ✓/✗ 行 + 统计/
+// 详情行 + ToolFinished 事件。Fallback 结果不经 run（prepare 合成），
+// ok 恒 true——不触发失败静默（denied/blocked 非 handler 失败，后续
+// 照常——现状语义）。
+CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
+    const CLFToolCall& call, const PreparedCall& pc, RunOutcome&& raw,
+    bool isFallback, const std::string& errorKind) {
+    FinalizeOutcome out;
+    out.result = std::move(raw.result);
+
+    if (isFallback) {
+        // 合成失败：UI 行已在 prepare 输出（✗ unknown/blocked/denied），
+        // 此处只发 ToolFinished + 提交
+        emitToolFinished(out.result, false, errorKind);
+    } else {
+        const CLFTool& tool = m_tools[pc.toolIndex];
+        bool toolOk = !raw.exceptionCaught;
+        std::string toolResultText = raw.displayError;   // 异常路径的截断文本
+        ToolResultDisplay rd{};   // 非异常路径由 formatToolResult 填充
+        if (!raw.exceptionCaught) {
+            rd = formatToolResult(out.result.m_content);
+            toolOk = rd.ok;
+            toolResultText = rd.text;
+            CLFLogger::instance().info(
+                "[ToolExec] " + call.m_name + " done, ok=" + (toolOk ? "true" : "false")
+                + ", result=" + std::to_string(out.result.m_content.size()) + " chars");
+        }
+        out.ok = toolOk;
+
+        // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
+        // （useProgressive 沿用 prepare 判定）
+        if (m_contentOutput && (!pc.useProgressive || pc.isWriteTool || !toolOk)) {
+            // 渐进模式下仅写类工具/失败走永久内容；读类工具成功仅 showProgress
+            if (pc.isWriteTool && pc.previewHasDiffLines) {
+                if (pc.previewAdded + pc.previewRemoved > 0 && !pc.previewDiffTruncated) {
+                    m_contentOutput->emitContent(
+                        "  ✓ " + call.m_name + "(" + pc.previewFilePath
+                        + ") — +" + std::to_string(pc.previewAdded)
+                        + " -" + std::to_string(pc.previewRemoved) + " lines"
+                        + ", " + std::to_string(pc.previewHunks) + " hunk"
+                        + (pc.previewHunks > 1 ? "s" : "") + "\n");
+                } else if (pc.previewDiffTruncated) {
+                    m_contentOutput->emitContent(
+                        "  ✓ " + call.m_name + "(" + pc.previewFilePath
+                        + ") — written (diff truncated)\n");
+                } else {
+                    m_contentOutput->emitContent(
+                        "  ✓ " + call.m_name + "(" + pc.previewFilePath
+                        + ") — written\n");
+                }
+            } else if (toolOk && toolResultText.size() <= 200) {
+                m_contentOutput->emitContent("  ✓ " + call.m_name
+                    + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")") + "\n");
+            } else if (toolOk) {
+                m_contentOutput->emitContent("  ✓ " + call.m_name
+                    + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")")
+                    + " — " + std::to_string(rd.lines) + " lines, "
+                    + std::to_string(rd.chars) + " chars\n");
+            } else {
+                auto reason = toolResultText.size() > 100
+                    ? toolResultText.substr(0, 100) + "…" : toolResultText;
+                m_contentOutput->emitContent("  ✗ " + call.m_name
+                    + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")")
+                    + " — " + reason + " (scroll for full detail)\n");
+            }
+        }
+
+        // ---- 渐进式统计（summary 数据源；执行中单行进度已在 prepare 发射） ----
+        // P1-2: search 独立成桶（m_batchSearchCount 在 prepare 计数），不再重复计入 read
+        if (m_labels && m_thinkingSec) {
+            if (pc.isWriteTool) {
+                ++m_batchProgressEdits;
+            } else if (tool.m_isRead) {   // B1：名字匹配 → 能力标签
+                ++m_batchProgressReads;
+            }
+            // 2026-09-20：详情行收集（与 summary 同条件——渐进模式才有
+            // summary 行；↳ 弱化前缀，成功行仅文件名、失败行带 ✗ 原因）
+            std::string dl = "  ↳ " + call.m_name
+                + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")");
+            if (!toolOk) {
+                dl += " — ✗ "
+                    + (toolResultText.size() > 60
+                        ? toolResultText.substr(0, 60) + "…" : toolResultText);
+            }
+            m_batchDetailLines.push_back(std::move(dl));
+        }
+
+        // ToolFinished（errorKind 为空——handler 路径的失败/成功由 ok 表达；
+        // 与现状 emitFinished(result, toolOk, "") 一致）
+        emitToolFinished(out.result, toolOk, "");
+    }
+
+    // T3: 每次调用末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
+    // 工具返回即重绘（原仅靠 turnTimer 1Hz 兜底，最长延迟 1 秒）。
+    // finalize 在提交游标内串行——每调用一次（含 fallback，T12 语义）
+    if (m_progressOutput) m_progressOutput->requestRefresh();
+    return out;
+}
+
+void CLFToolExecutor::emitToolFinished(const CLFToolResult& r, bool ok,
+                                       const std::string& errorKind) {
+    if (!m_eventBus) return;
+    CLF::CLFTypes::CLFAgentEvent ev;
+    ev.m_type = CLF::CLFTypes::CLFEventType::ToolFinished;
+    ev.m_callId = r.m_toolCallId;
+    ev.m_name = r.m_name;
+    ev.m_ok = ok;
+    ev.m_summary = r.m_content;
+    ev.m_errorKind = errorKind;
+    m_eventBus->publish(ev);
+}
+
+// 兼容壳：串行调度（maxParallel=1）——第三批 AgentLoop 切轨前既有调用点
+// 零行为变化；qa_CLFToolExecutor 串行等价回归同经此壳
+std::vector<CLFToolResult> CLFToolExecutor::execute(
+    const std::vector<CLFToolCall>& calls) {
+    CLFToolScheduler scheduler(*this, 1);
+    auto r = scheduler.schedule(calls);
+    return std::move(r.m_results);
 }
 
 } // namespace CLF::CLFCore
