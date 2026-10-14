@@ -139,6 +139,7 @@
     - **渲染切轨正式闭环**：core 内容渲染全事件化 + TUI 观感逐字一致（用户确认）——总纲步骤 3 全部完成
     - **下一步候选**：① 占位册激活评估（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时）② resume 回显（块 3）实机验收 ③ 失败静默取舍（触发后再议）
   - **▶ resume 400 实机缺陷修根 ✅（2026-10-14，用户实抓）**：resume 回显正常但**继续对话 HTTP 400**——取证链：恢复文件 66 msgs 里 assistant 消息只有 content/role（**tool_calls 声明从未落库**——writer 组装缺陷：事件流无声明载体）→ 43 个 tool 结果孤悬 → 协议闭合破坏 → API 400。修根三层：① 协议 ToolFinished 补 m_arguments（声明载体）② writer 重建 assistant tool_calls（正常轮 + 中断轮合成空 assistant 声明——协议闭合）③ parseTurnLine 老文件兜底（assistant 无声明+后跟 tool → 按 tool 消息重建、arguments "{}"）+ restoreSession 注入前中断轮合成（user 后直接 tool 段插合成 assistant）。qa：W6 断言更新（中断轮 3 消息含声明）+ L5 兜底钉；ctest 45/45 + 冒烟。**待用户复测 resume 继续对话**
+  - **▶ resume 400 复测通过 ✅（2026-10-14，用户验证 + 落库形态取证）**：用户 resume 同会话继续对话正常；落库取证（续文件 13-38-29）：**新回合 3 个声明-结果全配对**（8/24/7，含完整 arguments 真实参数——修复生效 ✓）；旧 13 回合的原始数据保持（无声明——注入时 parseTurnLine 兜底重建，复测通过实证）；日志 ctx_msgs=144 多轮无 400。**resume 缺陷全闭环**
   - **待办（下一步）**：① **用户本机实测确认**（分册 3 全量：并行执行/ESC 中断/顺序回退 cap=1/确认串行——通过后进入下一步）② 总纲剩余：ContentDelta/ToolFinished 渲染切轨 + Exception 迁移（双轨收敛——流式渲染从 core 直调切总线）③ resume 回显（块 3）实机验收 ④ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）⑤ 失败静默"失败即停"调整（实机触发后再说，用户定调：一个参数的事）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 
