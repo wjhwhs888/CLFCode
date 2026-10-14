@@ -107,6 +107,12 @@
     - **qa 增量**：qa_CLFPluginFileOps G1 装配声明断言 + qa_CLFPluginDomains D9 三态判定（CMake 补链 clf_tools）
     - **验证**：ctest 45/45 **六连绿** + --version 冒烟；CHANGELOG 未发布段加"工具并行执行"条目；设计 §8.5/§8.6 回填
     - **下一步（第四批）**：实机并行观察（用户验收：多工具回合并行/日志交错/结果序/确认串行）+ 观察失败静默串行行为变化（失败即停）实机感受
+  - **▶ 第四批实机并行观察（第一次）✅（2026-10-14，用户测试 + 会话取证）**：
+    - **用户场景**：多工具长时间调用（分析 CLFServer 项目：读审查报告/模块划分/修复问题）——会话 `doc/contextHistory/2026-10-14_10-35-15_....jsonl`（87 行：turn×2 + event_log×75 + todo_snapshot×8）
+    - **并行铁证（日志时间戳交错）**：10:35:30 六个 read_file 同秒 executing → done 交错；10:35:17/25/26/41/43/47/10:36:10 各批 3-6 工具同秒启动；混合并行（read + execute_command + search_content 同批并发）✓；**done 日志顺序 = 模型序**（提交游标）✓
+    - **完整性**：event_log 75 条 == turn 内 tool 消息 75 条 ✓（一行一工具、含 ok=false 数条、seq 保序）；turnId turn-1/turn-2 连续 ✓；无 [skipped]/[interrupted]/Denied 痕迹（失败静默未误触发——git 失败后模型跨批重试合法）✓
+    - **模型行为**：主动叙述"先并行探查/并行读取"——用户测试目标达成
+    - **待用户**：① ESC 中断场景实机测试 ② 失败静默（失败即停）与"失败继续"的实机感受取舍（当前未触发过静默，无从感受）
   - **待办（下一步）**：① 分册 3 第三批：AgentLoop 接入（executeToolCalls 切轨 CLFToolScheduler，构造注入 maxParallelToolCalls）+ 首批工具声明并发安全（设计 §2.1 清单）+ m_firstFailure 的 AgentLoop 层处理语义 ② 第四批：实机并行观察 ③ resume 回显（块 3）实机验收 ④ 事件化重构全量实机回归（resume 回显：工具痕迹 + 摘要可见；老会话正常回显）② 分册 3 后续（ContentDelta/ToolFinished 渲染切轨 + Exception 迁移——设计 `设计-事件化重构-3-并发工具调度器.md`）③ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）④ qa_CLFEventBus flaky 排查（并行全量偶发失败两次）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 
