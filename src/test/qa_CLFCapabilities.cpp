@@ -17,6 +17,7 @@
 #include "CLFCapabilities/FileOps/CLFDiff.hpp"
 #include "CLFCapabilities/FileOps/CLFFileServiceImpl.hpp"
 #include "CLFCore/CLFToolExecutor.hpp"
+#include "CLFTUI/CLFTerminalEventAdapter.hpp"   // 分册 4：渲染切轨装配
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFTypes/ICLFOutput.hpp"
 #include <nlohmann/json.hpp>
@@ -118,17 +119,44 @@ public:
     }
 };
 
-// Edit 模式（L3：Write 工具走确认流）+ 非渐进（thinkingSec=nullptr）
-CLFToolExecutor makeWriteExecutor(std::vector<CLF::CLFCore::CLFTool>& tools,
-                                  MockOutput& out,
-                                  CLF::CLFCore::ToolStats& stats,
-                                  std::function<bool(const std::string&)> confirm) {
+// Edit 模式（L3：Write 工具走确认流）+ 非渐进（thinkingSec=nullptr）。
+// 分册 4 渲染切轨装配：bus(false) + render 适配器；execute 点调用内置
+// drainAll——diff 渲染断言（anyStyledContains）经适配器 DiffPreview 重建
+struct WriteExecutorHarness {
+    CLF::CLFTypes::CLFEventBus bus{false};
+    CLF::CLFTUI::CLFTerminalEventAdapter adapter;
+    CLFToolExecutor executor;
+
+    WriteExecutorHarness(std::vector<CLF::CLFCore::CLFTool>& tools,
+                         MockOutput& out,
+                         CLF::CLFCore::ToolStats& stats,
+                         std::function<bool(const std::string&)> confirm,
+                         CLFSecurityPolicy& policy,
+                         std::atomic<bool>& interruptFlag,
+                         const CLF::CLFCore::CLFTimerLabels& labels,
+                         CLF::CLFCapabilities::CLFFileServiceImpl& fileService)
+        : adapter(&bus, &out, &labels, /*renderToOutput=*/true)
+        , executor(tools, policy, std::move(confirm), stats, &fileService,
+                   &out, &out, &interruptFlag, &labels, nullptr, &bus) {
+    }
+    std::vector<CLF::CLFCore::CLFToolResult> execute(
+        const std::vector<CLF::CLFCore::CLFToolCall>& calls) {
+        auto r = executor.execute(calls);
+        bus.drainAll();
+        return r;
+    }
+};
+
+WriteExecutorHarness makeWriteExecutor(std::vector<CLF::CLFCore::CLFTool>& tools,
+                                       MockOutput& out,
+                                       CLF::CLFCore::ToolStats& stats,
+                                       std::function<bool(const std::string&)> confirm) {
     static CLF::CLFCore::CLFTimerLabels labels;
     static CLFSecurityPolicy policy(CLFSecurityMode::Edit);  // L3：写/命令需确认
     static std::atomic<bool> interruptFlag{false};
     static CLF::CLFCapabilities::CLFFileServiceImpl fileService;  // 无状态转调层
-    return CLFToolExecutor(tools, policy, std::move(confirm), stats, &fileService,
-                           &out, &out, &interruptFlag, &labels, nullptr);
+    return WriteExecutorHarness(tools, out, stats, std::move(confirm), policy,
+                                interruptFlag, labels, fileService);
 }
 
 CLF::CLFCore::CLFTool makeWriteTool(const std::string& name, int& handlerCalls) {

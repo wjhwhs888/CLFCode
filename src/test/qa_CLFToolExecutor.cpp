@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "CLFCore/CLFToolExecutor.hpp"
+#include "CLFTUI/CLFTerminalEventAdapter.hpp"   // 分册 4：渲染切轨装配
 #include "CLFCore/CLFSecurityPolicy.hpp"
 #include "CLFCapabilities/FileOps/CLFFileServiceImpl.hpp"
 
@@ -50,8 +51,34 @@ public:
     }
 };
 
+// 分册 4 渲染切轨装配：bus(false) 手动（qa 静态期纪律）+ render 适配器；
+// execute 点调用内置 drainAll——断言 MockOutput 即渲染结果
+struct ExecutorHarness {
+    CLF::CLFTypes::CLFEventBus bus{false};
+    CLF::CLFTUI::CLFTerminalEventAdapter adapter;
+    CLFToolExecutor executor;
+
+    ExecutorHarness(std::vector<CLFTool>& tools, MockOutput& out,
+                    std::atomic<int>& thinkingSec,
+                    CLF::CLFCore::ToolStats& stats,
+                    CLFSecurityPolicy& policy,
+                    std::atomic<bool>& interruptFlag,
+                    const CLF::CLFCore::CLFTimerLabels& labels,
+                    CLF::CLFCapabilities::CLFFileServiceImpl& fileService)
+        : adapter(&bus, &out, &labels, /*renderToOutput=*/true)
+        , executor(tools, policy, nullptr, stats, &fileService,
+                   &out, &out, &interruptFlag, &labels, &thinkingSec, &bus) {
+    }
+    std::vector<CLF::CLFCore::CLFToolResult> execute(
+        const std::vector<CLF::CLFCore::CLFToolCall>& calls) {
+        auto r = executor.execute(calls);
+        bus.drainAll();
+        return r;
+    }
+};
+
 // 构造 executor：auto 模式（全放行）、渐进模式开启
-CLFToolExecutor makeExecutor(std::vector<CLFTool>& tools, MockOutput& out,
+ExecutorHarness makeExecutor(std::vector<CLFTool>& tools, MockOutput& out,
                              std::atomic<int>& thinkingSec,
                              CLF::CLFCore::ToolStats& stats) {
     static CLF::CLFCore::CLFTimerLabels labels;  // 默认 "thought"/"thinking" 标签
@@ -59,12 +86,12 @@ CLFToolExecutor makeExecutor(std::vector<CLFTool>& tools, MockOutput& out,
     static std::atomic<bool> interruptFlag{false};
     // C1：无状态转调层（平凡构造，测试进程生命周期；与上 static 同模式）
     static CLF::CLFCapabilities::CLFFileServiceImpl fileService;
-    return CLFToolExecutor(tools, policy, nullptr, stats, &fileService,
-                           &out, &out, &interruptFlag, &labels, &thinkingSec);
+    return ExecutorHarness(tools, out, thinkingSec, stats, policy,
+                           interruptFlag, labels, fileService);
 }
 
 // 构造带可注入中断标志的 executor（协议闭合用例 I1a/I1b 需可控 flag）
-CLFToolExecutor makeInterruptibleExecutor(std::vector<CLFTool>& tools,
+ExecutorHarness makeInterruptibleExecutor(std::vector<CLFTool>& tools,
                                           MockOutput& out,
                                           std::atomic<int>& thinkingSec,
                                           CLF::CLFCore::ToolStats& stats,
@@ -72,8 +99,8 @@ CLFToolExecutor makeInterruptibleExecutor(std::vector<CLFTool>& tools,
     static CLF::CLFCore::CLFTimerLabels labels;
     static CLFSecurityPolicy policy(CLFSecurityMode::Auto);
     static CLF::CLFCapabilities::CLFFileServiceImpl fileService;
-    return CLFToolExecutor(tools, policy, nullptr, stats, &fileService,
-                           &out, &out, &interruptFlag, &labels, &thinkingSec);
+    return ExecutorHarness(tools, out, thinkingSec, stats, policy,
+                           interruptFlag, labels, fileService);
 }
 
 } // anonymous namespace

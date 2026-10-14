@@ -185,6 +185,63 @@ void CLFTerminalEventAdapter::onEvent(const CLF::CLFTypes::CLFAgentEvent& ev) {
         }
         break;
 
+    // —— 分册 4 渲染切轨：内容/状态/工具显示行（core 直调移除后的唯一渲染路径）——
+    case CLFEventType::ContentDelta:
+        if (m_output) m_output->emitContent(ev.m_text);
+        break;
+
+    case CLFEventType::ReasoningDelta:
+        if (m_output) m_output->appendThinking(ev.m_text);
+        break;
+
+    case CLFEventType::ThinkingCleared:
+        if (m_output) m_output->clearThinking();
+        break;
+
+    case CLFEventType::StatusChanged:
+        if (m_output) m_output->setStatusKind(
+            static_cast<CLF::CLFTypes::ICLFOutput::StatusKind>(ev.m_statusKind));
+        break;
+
+    case CLFEventType::TurnError:
+        // 错误/重试文案（文案全文 core 拼好——✗ Exception retry/⚠ retry
+        // 自带前缀换行；isError = emitError 错误样式通道）
+        if (!m_output) break;
+        if (ev.m_isError) {
+            m_output->emitError(ev.m_text);
+        } else {
+            m_output->emitContent(ev.m_text);
+        }
+        break;
+
+    case CLFEventType::ToolStarted:
+        // header 行（showHeader core 算好——非渐进 || Write）
+        if (m_output && ev.m_showHeader) {
+            std::string header = "● " + ev.m_name;
+            if (!ev.m_argsPreview.empty()) header += "(" + ev.m_argsPreview + ")";
+            m_output->emitContent("\n" + header + "\n");
+        }
+        break;
+
+    case CLFEventType::ToolFinished:
+        // 渲染序：⚠ → ✗ → ✓/✗（prepare 中段与 finalize 行的原始顺序）
+        if (!m_output) break;
+        if (!ev.m_warningText.empty()) m_output->emitContent(ev.m_warningText);
+        if (!ev.m_displayError.empty()) m_output->emitContent(ev.m_displayError);
+        if (!ev.m_displayResult.empty()) m_output->emitContent(ev.m_displayResult);
+        break;
+
+    case CLFEventType::DiffPreview:
+        // diff 预览行列表（buildDiffLines 的截断后最终条目——style 数值映射）
+        if (m_output) {
+            for (const auto& l : ev.m_lines) {
+                m_output->emitStyledLine(l.first,
+                    static_cast<CLF::CLFTypes::ICLFOutput::LineStyle>(l.second));
+            }
+            m_output->emitContent("");   // 保证刷新（原 renderDiff 调用点语义）
+        }
+        break;
+
     default:
         break;
     }
@@ -205,6 +262,11 @@ void CLFTerminalEventAdapter::renderTurnFinished(const CLF::CLFTypes::CLFAgentEv
                 summary += "\n  ✓ " + t.m_content;
             m_output->emitContent(summary + "\n");
         }
+    }
+    // 分册 4：wrapUp 内容渲染（m_emitText——capReached && stream 时 core 置位；
+    // 原 647 直调顺序：总结文本 → 提示文案 → worked）
+    if (ev.m_emitText) {
+        m_output->emitContent(ev.m_text + "\n");
     }
     // 触顶提示文案（分册 2 块 1 迁入——原 runWrapUp 顺序：总结文本 →
     // 提示文案 → worked）

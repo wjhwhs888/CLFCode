@@ -40,7 +40,7 @@ clf_add_test(qa_CLFTextUtil         clf_types)
 clf_add_test(qa_CLFFileOps          clf_capabilities)
 
 # —— clf_core ——
-clf_add_test(qa_CLFToolExecutor     clf_core)
+clf_add_test(qa_CLFToolExecutor     clf_core clf_tui)
 clf_add_test(qa_CLFToolScheduler    clf_core)
 clf_add_test(qa_CLFRetryPolicy      clf_core)
 clf_add_test(qa_CLFMessageCodec     clf_core)
@@ -77,7 +77,7 @@ clf_add_test(qa_CLFInputRender      clf_core clf_tui)
 clf_add_test(qa_CLFTipsBar          clf_core clf_tui)
 
 # —— clf_core + clf_capabilities ——
-clf_add_test(qa_CLFCapabilities     clf_core clf_capabilities)
+clf_add_test(qa_CLFCapabilities     clf_core clf_capabilities clf_tui)
 
 # —— clf_tui ——
 clf_add_test(qa_CLFAnsiParser       clf_tui)

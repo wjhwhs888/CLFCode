@@ -64,6 +64,13 @@ enum class CLFEventType : uint8_t {
     HistoryToolTrace, // `↳ 工具名 摘要`（payload: callId / name / ok / summary）
     HistorySummary,   // 📦 摘要折叠行（payload: text）
     ResumeDone,       // 回显结束（无 payload）
+
+    // ⑤ 渲染切轨补充（分册 4，2026-10-14——枚举追加，语义帧主通道）
+    TurnError,        // 回合内错误/重试文案（payload: text 文案全文，core 拼好——
+                      //   ✗ Exception retry / Stream error / 致命 HTTP / ⚠ retry；
+                      //   m_isError = emitError 通道（错误样式）否则 emitContent）
+    DiffPreview,      // Write 工具的 diff 预览渲染（payload: text=filePath +
+                      //   m_lines 行列表 + diff 统计——新 UI 的写文件确认依赖）
 };
 
 // 增量帧判定（旁路通道：渲染加速，可合并丢弃）——总线据此路由：
@@ -101,13 +108,32 @@ struct CLFAgentEvent {
     bool        m_ok{true};   // ToolFinished / HistoryToolTrace
     std::string m_summary;    // ToolFinished / HistoryToolTrace（summary 行文本，UI 自行呈现）
     std::string m_errorKind;  // ToolFinished（interrupted / timeout / ...）
+    // 分册 4 渲染切轨补字段（core 算好显示条件/文案，UI 照做——协议零推断）：
+    bool        m_showHeader{false};  // ToolStarted（prepare 的 header 行条件：
+                                      //   非渐进 || Write——core 计算）
+    std::string m_warningText;        // ToolFinished（prepare 中段的 ⚠ 提示行文案——
+                                      //   危险命令/POST 升级；空 = 无警告。⚠ 行需在
+                                      //   confirm 前显示但 ToolStarted 发射时条件未知
+                                      //   （危险判定在发射后）——随 ToolFinished，
+                                      //   渲染序：⚠ → ✗ → ✓/✗）
+    std::string m_displayResult;      // ToolFinished（finalize 的 ✓/✗ 行**全文**——
+                                      //   含前缀换行，core 拼好直显；空 = 不显示
+                                      //   （渐进读工具成功仅进度条）。core 拼行文案
+                                      //   为工具行的唯一权威——适配器零重算）
+    std::string m_displayError;       // ToolFinished（prepare 阶段的 ✗ 行**全文**
+                                      //   （含 "  ⎿ ✗ " 前缀与换行——unknown/blocked/
+                                      //   denied/预览失败/File too large/File modified）——
+                                      //   errorKind 不足以区分行文案，core 拼好直显）
 
     // —— 状态 / 回合 ——
+    bool        m_isError{false};  // TurnError（true = emitError 错误样式通道）
     int         m_statusKind{0};   // StatusChanged（数值 = ICLFOutput::StatusKind 枚举序）
     long long   m_workedSec{0};    // TurnFinished
     bool        m_capReached{false}; // TurnFinished（触顶标志）
     bool        m_modelDeclaredEnd{false}; // TurnFinished（模型自发宣告结束 →
                                            // 适配器不拼 ✻ worked 行——分册 2 块 1）
+    bool        m_emitText{false}; // TurnFinished（wrapUp 内容渲染条件——
+                                   //   capReached && stream；无条件渲染会与流式双份）
     // CLFTodoItem 位于 CLF::CLFCore（CLFTypes.hpp 历史命名布局）——限定名引用
     std::vector<CLF::CLFCore::CLFTodoItem> m_todos; // TodoUpdated / TurnFinished（全量快照）
 
@@ -123,6 +149,15 @@ struct CLFAgentEvent {
     std::string m_model;      // HistoryHeader
     std::string m_startedAt;  // HistoryHeader
     std::vector<std::string> m_skills; // HistoryHeader
+
+    // —— DiffPreview（分册 4：diff 渲染行列表 + 统计）——
+    // 行列表 = renderDiff 的 head/tail 截断后最终渲染条目（≤34 行）；
+    // style 数值 = ICLFOutput::LineStyle 枚举序（协议用数值，双方各自映射）
+    std::vector<std::pair<std::string, int>> m_lines;
+    int         m_diffAdded{0};
+    int         m_diffRemoved{0};
+    int         m_diffHunks{0};
+    bool        m_diffTruncated{false};
 };
 
 } // namespace CLF::CLFTypes

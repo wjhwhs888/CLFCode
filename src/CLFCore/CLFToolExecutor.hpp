@@ -79,6 +79,9 @@ public:
         int  previewAdded = 0;
         int  previewRemoved = 0;
         int  previewHunks = 0;
+        // 分册 4：diff 渲染行列表（buildDiffLines 的截断后最终条目；
+        // second = ICLFOutput::LineStyle 枚举序）——DiffPreview 事件 payload
+        std::vector<std::pair<std::string, int>> previewDiffLines;
     };
 
     // prepare 结果三态：
@@ -91,6 +94,13 @@ public:
         Kind kind = Kind::Ready;
         CLFToolResult fallback;   // Fallback 时的合成结果
         std::string errorKind;    // Fallback 时 ToolFinished 的 errorKind
+        // 分册 4：✗ 行全文（含 "  ⎿ ✗ " 前缀与换行——unknown/blocked/denied/
+        // 预览失败 errorMsg/File too large/File modified）——errorKind 不足以
+        // 区分行文案，core 拼好经 ToolFinished.m_displayError 传适配器直显
+        std::string displayError;
+        // 分册 4：⚠ 提示行全文（危险命令/POST 升级——prepare 中段显示，
+        // 成功/denied 路径都要显示；空 = 无警告）
+        std::string warningText;
     };
 
     // run 产物：handler 原始结果 + 失败判定（formatToolResult 纯函数在
@@ -115,9 +125,12 @@ public:
 
     PrepareOutcome prepare(const CLFToolCall& call, PreparedCall& pc);
     RunOutcome run(const CLFToolCall& call, const PreparedCall& pc);
+    // 分册 4：displayError/warningText 自 prepare 产物（调度器 slot 转存）
     FinalizeOutcome finalize(const CLFToolCall& call, const PreparedCall& pc,
                              RunOutcome&& raw, bool isFallback,
-                             const std::string& errorKind);
+                             const std::string& errorKind,
+                             const std::string& displayError,
+                             const std::string& warningText);
 
     // ==================== 批次接口（schedule 驱动） ====================
     // beginBatch：进度 guard 激活 + 统计快照（m_stats 会话累计为基底）
@@ -148,7 +161,15 @@ private:
     };
 
     void emitToolFinished(const CLFToolResult& r, bool ok,
-                          const std::string& errorKind);
+                          const std::string& errorKind,
+                          const std::string& displayResult,
+                          const std::string& displayError,
+                          const std::string& warningText);
+    // 分册 4：ToolStarted 事件发射（prepare 内——header 条件 core 算好）
+    void emitToolStarted(const CLFToolCall& call, const std::string& keyParam,
+                         bool showHeader);
+    // 分册 4：DiffPreview 事件发射（prepare Write 路径——renderDiff 直调移除后）
+    void emitDiffPreview(const PreparedCall& pc);
 
     std::vector<CLFTool>& m_tools;
     CLFSecurityPolicy& m_securityPolicy;

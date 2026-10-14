@@ -11,9 +11,10 @@ using namespace boost::ut;
 using CLF::CLFTypes::CLFAgentEvent;
 using CLF::CLFTypes::CLFEventType;
 
-// 枚举序即协议合同（发布后不可重排）——ResumeDone 为全集末位，序 + 1 = 21
-static_assert(static_cast<int>(CLFEventType::ResumeDone) + 1 == 21,
-              "协议 v1 事件全集 = 21 个（分册 1 §2.2b 唯一权威总表）");
+// 枚举序即协议合同（发布后不可重排）——ResumeDone 为分册 2 末位（21 个），
+// 分册 4 渲染切轨追加 TurnError/DiffPreview → 全集 23 个
+static_assert(static_cast<int>(CLFEventType::DiffPreview) + 1 == 23,
+              "协议 v1 事件全集 = 23 个（21 + 分册 4 追加 TurnError/DiffPreview）");
 
 const boost::ut::suite<"CLFEvents"> tests = [] {
     "E1 字段默认值：POD 契约基线"_test = [] {

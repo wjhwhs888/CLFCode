@@ -4,6 +4,8 @@
 
 #include "CLFTypes/CLFTextUtil.hpp"
 
+#include <nlohmann/json.hpp>   // formatToolResult（分册 4 上提）
+
 #include <chrono>
 #include <cstdint>
 #include <ctime>
@@ -363,6 +365,48 @@ int CLFTextUtil::estimateTokensForMessage(const CLFMessage& msg) {
         ascii += static_cast<int>(tc.m_name.size());
     }
     return (ascii / 4) + (nonAscii * 3 / 2);
+}
+
+
+
+// ============ 工具结果格式化（分册 4 自 CLFToolExecutor.cpp 上提）============
+// 解析工具结果 JSON → ok/展示文本/行数/字符数。exitCode 优先（命令类）；
+// success=false → error 文本；content/stdout → 行数+字符数；非 JSON → 字符数。
+CLFToolResultDisplay formatToolResult(const std::string& resultJson) {
+    try {
+        auto r = nlohmann::json::parse(resultJson);
+        if (r.contains("exitCode")) {
+            int code = r["exitCode"].get<int>();
+            if (code == 0) return {true, "ok", 0, 0};
+            std::string detail;
+            if (r.contains("stderr") && !r["stderr"].get<std::string>().empty())
+                detail = r["stderr"].get<std::string>();
+            else if (r.contains("stdout") && !r["stdout"].get<std::string>().empty())
+                detail = r["stdout"].get<std::string>();
+            if (detail.size() > 80) detail = CLFTextUtil::utf8SafeHead(detail, 77, "...");  // A2
+            return {false, detail.empty() ? ("exit " + std::to_string(code)) : detail, 0, 0};
+        }
+        bool success = r.value("success", true);
+        if (!success) {
+            std::string err = r.value("error", std::string("failed"));
+            return {false, err, 0, 0};
+        }
+        if (r.contains("content") && r["content"].is_string()) {
+            const auto& c = r["content"].get<std::string>();
+            int lines = 1;
+            for (char ch : c) if (ch == '\n') ++lines;
+            return {true, std::to_string(lines) + " lines, " + std::to_string(c.size()) + " chars", lines, static_cast<int>(c.size())};
+        }
+        if (r.contains("stdout") && r["stdout"].is_string()) {
+            const auto& out = r["stdout"].get<std::string>();
+            int lines = 1;
+            for (char ch : out) if (ch == '\n') ++lines;
+            return {true, std::to_string(lines) + " lines", lines, static_cast<int>(out.size())};
+        }
+        return {true, std::to_string(resultJson.size()) + " chars", 0, static_cast<int>(resultJson.size())};
+    } catch (...) {
+        return {true, std::to_string(resultJson.size()) + " chars", 0, static_cast<int>(resultJson.size())};
+    }
 }
 
 } // namespace CLF::CLFCore

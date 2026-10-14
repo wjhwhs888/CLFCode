@@ -141,6 +141,8 @@ CLFToolScheduler::GroupOutcome CLFToolScheduler::runGroup(
             CLFToolExecutor::PrepareOutcome::Kind::Ready;
         CLFToolResult fallback;                 // prepare Fallback 合成结果
         std::string errorKind;
+        std::string displayError;               // 分册 4：✗ 行全文（prepare 拼好）
+        std::string warningText;                // 分册 4：⚠ 行全文（prepare 拼好）
         std::optional<CLFToolExecutor::RunOutcome> raw;   // dispatch 产物
         std::atomic<bool> finished{false};
         std::atomic<bool> ok{true};             // settle 时失败信号（dsh fail-fast：
@@ -175,8 +177,10 @@ CLFToolScheduler::GroupOutcome CLFToolScheduler::runGroup(
                 (s.prepareKind == CLFToolExecutor::PrepareOutcome::Kind::Fallback)
                     ? m_executor.finalize(call, s.pc,
                                           CLFToolExecutor::RunOutcome{std::move(s.fallback), false, ""},
-                                          true, s.errorKind)
-                    : m_executor.finalize(call, s.pc, std::move(*s.raw), false, "");
+                                          true, s.errorKind,
+                                          s.displayError, s.warningText)
+                    : m_executor.finalize(call, s.pc, std::move(*s.raw), false, "",
+                                          "", "");
             outcome.m_results.push_back(std::move(fin.result));
             outcome.m_concluded |= outcome.m_results.back().m_concludesTurn;
             // 失败静默只记首个（§3.6：后续失败不覆盖）
@@ -224,6 +228,8 @@ CLFToolScheduler::GroupOutcome CLFToolScheduler::runGroup(
             if (po.kind == CLFToolExecutor::PrepareOutcome::Kind::Fallback) {
                 s.fallback = std::move(po.fallback);
                 s.errorKind = std::move(po.errorKind);
+                s.displayError = std::move(po.displayError);   // 分册 4
+                s.warningText = std::move(po.warningText);
                 s.finished = true;   // 同步完成，走提交游标
             } else if (m_maxParallel == 1) {
                 // cap=1：同步执行（串行语义等价 + 免线程开销；qa 静态期

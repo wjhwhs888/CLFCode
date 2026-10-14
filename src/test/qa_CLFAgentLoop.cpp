@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "CLFCore/CLFAgentLoop.hpp"
+#include "CLFTUI/CLFTerminalEventAdapter.hpp"   // 分册 4：渲染切轨装配
 #include "CLFCore/CLFMessageCodec.hpp"
 #include "CLFCore/CLFSessionManager.hpp"
 #include "CLFNetwork/CLFHttpClient.hpp"
@@ -122,11 +123,45 @@ private:
     std::atomic<bool> m_inFlight{false};  // W1 修根：abort 仅在在途请求时置位
 };
 
-// 构造带 Mock 的 Agent + 注册 echo 工具
-std::unique_ptr<CLFAgentLoop> makeAgent(std::shared_ptr<MockHttpClient> mock,
-                                        const std::string& mode = "edit",
-                                        int maxIters = 8,
-                                        bool stream = false) {
+// 构造带 Mock 的 Agent + 注册 echo 工具。
+// 分册 4 渲染切轨装配：bus(false) 手动模式（qa 静态期纪律——无线程）+
+// render 适配器；runTurn 点调用（agent.runTurn——内置 drainAll 后断言
+// MockOutput 即渲染结果）；operator-> 转发其余成员
+struct AgentHarness {
+    std::unique_ptr<CLFAgentLoop> agent;
+    // bus 不可拷贝/移动——unique_ptr 持有（AgentHarness 默认可移动）
+    std::unique_ptr<CLF::CLFTypes::CLFEventBus> bus =
+        std::make_unique<CLF::CLFTypes::CLFEventBus>(false);
+    std::unique_ptr<CLF::CLFTUI::CLFTerminalEventAdapter> adapter;
+
+    // 点调用：setOutput 重建 render 适配器（输出目标 = MockOutput）
+    void setOutput(CLF::CLFTypes::ICLFOutput* out) {
+        agent->setOutput(out);
+        adapter = std::make_unique<CLF::CLFTUI::CLFTerminalEventAdapter>(
+            bus.get(), out, nullptr, /*renderToOutput=*/true);
+    }
+    // 点调用：runTurn + drainAll（渲染落到 MockOutput 后返回）
+    std::string runTurn(const std::string& input) {
+        auto r = agent->runTurn(input);
+        bus->drainAll();
+        return r;
+    }
+    CLFAgentLoop* operator->() { return agent.get(); }
+    CLFAgentLoop& operator*() { return *agent; }   // registerConcludeTool 等引用参数
+};
+
+// 分册 4：直接构造场景（自定义 config）的装配——接管所有权
+AgentHarness harnessFrom(std::unique_ptr<CLFAgentLoop> a) {
+    AgentHarness h;
+    h.agent = std::move(a);
+    h.agent->setEventBus(h.bus.get());   // 事件接线（渲染切轨——漏接则零事件）
+    return h;
+}
+
+AgentHarness makeAgent(std::shared_ptr<MockHttpClient> mock,
+                       const std::string& mode = "edit",
+                       int maxIters = 8,
+                       bool stream = false) {
     CLFAgentConfig config;
     config.m_apiKey    = "test-key";
     config.m_modelName = "test-model";
@@ -134,7 +169,8 @@ std::unique_ptr<CLFAgentLoop> makeAgent(std::shared_ptr<MockHttpClient> mock,
     config.m_securityMode = mode;
     config.m_maxToolCallIterations = maxIters;
 
-    auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+    AgentHarness h;
+    h.agent = std::make_unique<CLFAgentLoop>(config, mock);
 
     CLFTool echoTool;
     echoTool.m_name = "echo";
@@ -142,9 +178,10 @@ std::unique_ptr<CLFAgentLoop> makeAgent(std::shared_ptr<MockHttpClient> mock,
     echoTool.m_parametersSchema = R"({"type":"object","properties":{"msg":{"type":"string"}},"required":["msg"]})";
     echoTool.m_risk = CLF::CLFCore::CLFToolRisk::Read;
     echoTool.m_handler = [](const std::string& args) { return "Echo:" + args; };
-    agent->registerTool(echoTool);
+    h.agent->registerTool(echoTool);
+    h.agent->setEventBus(h.bus.get());   // 事件接线（渲染切轨——漏接则零事件）
 
-    return agent;
+    return h;
 }
 
 // T6: 记录输出调用的 Mock（中断消息计数 + StatusKind 序列）
@@ -190,7 +227,7 @@ private:
 struct VSetup {
     CLFTest::CLFTestTempDir dir{"clf_agent_v_"};   // RAII 统一设施：析构自动清理（含重试 + 哨兵登记）
     std::shared_ptr<MockHttpClient> mock;
-    std::unique_ptr<CLFAgentLoop> agent;
+    AgentHarness agent;   // 分册 4：wrapper（runTurn 内置 drainAll）
 
     VSetup() {
         mock = std::make_shared<MockHttpClient>();
@@ -270,7 +307,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         })");
 
         auto agent = makeAgent(mock);
-        std::string result = agent->runTurn("echo hi");
+        std::string result = agent.runTurn("echo hi");
         expect(mock->syncCallCount() == 2);
         expect(result.find("查询完成") != std::string::npos);
     };
@@ -302,7 +339,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         CLFAgentConfig config;
         config.m_apiKey = "k";
         config.m_securityMode = "analyze";
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
 
         // 注册写工具（handler 不应被调用）
         bool handlerCalled = false;
@@ -312,7 +349,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         writeTool.m_handler = [&](const std::string&) { handlerCalled = true; return "wrote"; };
         agent->registerTool(writeTool);
 
-        std::string result = agent->runTurn("写文件");
+        std::string result = agent.runTurn("写文件");
         expect(!handlerCalled); // 阻断，handler 未执行
         expect(result.find("安全策略") != std::string::npos ||
                result.find("Blocked") != std::string::npos);
@@ -324,7 +361,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = true;
         config.m_maxToolCallIterations = 4;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
 
         CLFTool timeTool;
         timeTool.m_name = "get_time";
@@ -348,7 +385,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        std::string result = agent->runTurn("几点了");
+        std::string result = agent.runTurn("几点了");
         expect(mock->streamCallCount() == 2);
         expect(result.empty()); // 流式返回空串（已实时输出）
     };
@@ -361,8 +398,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = true;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
         // 分册 2 块 1：⏹/Warn 迁适配器——render 版适配器断言（事件驱动渲染）
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
@@ -377,7 +414,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        std::string result = agent->runTurn("hi");
+        std::string result = agent.runTurn("hi");
         bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
         expect(result == "[Interrupted]");
         expect(out.interruptEmissions() == 1);
@@ -391,8 +428,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_stream = false;
         config.m_maxToolCallIterations = 4;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
         // 分册 2 块 1：⏹/Warn 迁适配器——render 版适配器断言
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
@@ -402,7 +439,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         mock->pushResponse("", "timeout");  // 非致命 → 进入可中断重试等待
 
         std::string result;
-        std::thread runner([&] { result = agent->runTurn("hi"); });
+        std::thread runner([&] { result = agent.runTurn("hi"); });
         std::this_thread::sleep_for(std::chrono::milliseconds(150));  // 已进入等待循环
         out.fireInterrupt();
         runner.join();
@@ -421,8 +458,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = true;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         // 无在途请求时 abort（= 工具执行期间按 ESC 的 HTTP 层动作）——
         // W1 修根（2026-09-23 实机实抓）：不得残留为"待决中断"误伤新回合
@@ -434,7 +471,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        std::string result = agent->runTurn("hi");
+        std::string result = agent.runTurn("hi");
         expect(result != "[Interrupted]");
         expect(mock->streamCallCount() == 1);   // 请求正常发出
         expect(out.interruptEmissions() == 0);  // 零中断收尾
@@ -446,8 +483,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = true;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
         // 分册 2 块 1：⏹ 迁适配器——render 版适配器断言
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
@@ -462,7 +499,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        std::string result = agent->runTurn("hi");
+        std::string result = agent.runTurn("hi");
         bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
         expect(result == "[Interrupted]");
         expect(mock->streamCallCount() == 1);
@@ -477,8 +514,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = true;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         // 实机现象复刻：正文 → 自发 ✻ Worked → "用户"标签的模拟追问 →
         // 声明工具调用（模型"自己发指令自己执行"）
@@ -490,7 +527,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        std::string result = agent->runTurn("列 json");
+        std::string result = agent.runTurn("列 json");
         expect(result != "[Interrupted]");
         expect(mock->streamCallCount() == 1);   // 工具零执行——无第二轮请求
 
@@ -514,8 +551,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = false;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         mock->pushResponse(R"({
             "choices": [{
@@ -527,7 +564,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             }]
         })");
 
-        std::string result = agent->runTurn("hi");
+        std::string result = agent.runTurn("hi");
         expect(mock->syncCallCount() == 1);   // 工具零执行
 
         std::string lastAssistant;
@@ -545,8 +582,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = false;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         mock->pushResponse(R"({
             "choices": [{
@@ -555,7 +592,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             }]
         })");
 
-        std::string result = agent->runTurn("hello");
+        std::string result = agent.runTurn("hello");
         expect(!result.empty());
         expect(out.kinds.size() >= 2);
         expect(out.kinds.front() == CLF::CLFTypes::ICLFOutput::StatusKind::Running);
@@ -569,12 +606,12 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = false;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         mock->pushResponse("", "HTTP 401 unauthorized");
 
-        std::string result = agent->runTurn("hi");
+        std::string result = agent.runTurn("hi");
         expect(result.find("[Error]") != std::string::npos);
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Error);
     };
@@ -584,7 +621,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         CLFAgentConfig config;
         config.m_apiKey = "k";
         config.m_stream = false;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
 
         mock->pushResponse(R"({
             "choices": [{
@@ -594,7 +631,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "usage": {"prompt_tokens": 90, "completion_tokens": 60, "total_tokens": 150}
         })");
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         expect(agent->getTotalTokensUsed() == 150);
     };
 
@@ -603,7 +640,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         CLFAgentConfig config;
         config.m_apiKey = "k";
         config.m_stream = true;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
 
         mock->pushStream({
             "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
@@ -613,7 +650,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         expect(agent->getTotalTokensUsed() == 100);
     };
 
@@ -621,7 +658,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 8, /*stream=*/true);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         mock->pushStream({
             "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
@@ -631,7 +668,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         expect(agent->getSessionUsage().percentText() == "100");
     };
 
@@ -639,7 +676,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         mock->pushResponse(R"({
             "choices": [{
@@ -650,7 +687,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
                       "prompt_cache_hit_tokens": 89}
         })");
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         expect(agent->getSessionUsage().percentText() == "98");  // 89*100/90=98.88 → floor 98
     };
 
@@ -658,7 +695,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         mock->pushResponse(R"({
             "choices": [{
@@ -669,7 +706,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
                       "prompt_cache_hit_tokens": 0}
         })");
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         expect(agent->getSessionUsage().percentText() == "0");
     };
 
@@ -677,7 +714,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 8, /*stream=*/true);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         mock->pushStream({
             "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
@@ -685,7 +722,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         expect(agent->getSessionUsage().percentText().empty());
     };
 
@@ -693,7 +730,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         // 模拟 OpenAI 兼容第三方：usage 三字段齐全，但无任何缓存命中字段
         mock->pushResponse(R"({
@@ -704,7 +741,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "usage": {"prompt_tokens": 90, "completion_tokens": 10, "total_tokens": 100}
         })");
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         // 无法统计 ≠ 零命中：不显示（不误导为 0%）
         expect(agent->getSessionUsage().percentText().empty());
     };
@@ -713,7 +750,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         mock->pushResponse(R"({
             "choices": [{
@@ -734,7 +771,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
                       "prompt_cache_hit_tokens": 100}
         })");
 
-        agent->runTurn("hello");
+        agent.runTurn("hello");
         // Σ: prompt 200 / hit 150 → floor 75%
         expect(agent->getSessionUsage().percentText() == "75");
         // 2026-09-20：本轮 = 回合内两次 API usage 之和（110+110）
@@ -746,7 +783,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         mock->pushResponse(R"({
             "choices": [{
@@ -763,12 +800,12 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             }]
         })");
 
-        std::string first = agent->runTurn("one");
+        std::string first = agent.runTurn("one");
         expect(agent->getSessionUsage().percentText() == "100");
         // 缓存文案不进对话流（底部常亮参数行架构保证）
         expect(first.find("缓存命中") == std::string::npos);
 
-        std::string second = agent->runTurn("two");
+        std::string second = agent.runTurn("two");
         expect(second.find("second") != std::string::npos);
         // 第二轮无 usage → 会话累计保持第一轮值（不清零）
         expect(agent->getSessionUsage().percentText() == "100");
@@ -784,7 +821,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         auto mock = std::make_shared<MockHttpClient>();
         MockOutput out;
         auto agent = makeAgent(mock, "edit", /*maxIters=*/2);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
 
         // iter1/iter2 均返回 tool_calls → 循环耗尽触顶（wrapUp 不计入累计）
         mock->pushResponse(R"({
@@ -817,7 +854,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
                       "prompt_cache_hit_tokens": 500}
         })");
 
-        std::string result = agent->runTurn("hello");
+        std::string result = agent.runTurn("hello");
         expect(result.find("wrapped") != std::string::npos);
         // 会话累计 = 主循环两轮 Σ：prompt 200 / hit 150 → 75%（wrapUp 未计入）
         expect(agent->getSessionUsage().percentText() == "75");
@@ -829,8 +866,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = true;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         mock->hookAfterLine = 0;  // 第 1 行后中断，usage chunk 不会到达
         mock->onLineHook = [&] { out.fireInterrupt(); };
@@ -839,7 +876,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
             "data: [DONE]"
         });
 
-        std::string result = agent->runTurn("hi");
+        std::string result = agent.runTurn("hi");
         expect(result == "[Interrupted]");
         expect(agent->getTotalTokensUsed() == 0);  // 落定规则：中断不累计
         // T10d: 中断不累计缓存命中（R3 同规则）
@@ -858,8 +895,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         CLFAgentConfig config;
         config.m_apiKey = "k";
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
 
         // 分册 2 块 3：回显走事件重放（restoreSession 只做数据层重建——签名无 outEcho）
         bool ok = agent->restoreSession(path);
@@ -882,8 +919,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_apiKey = "k";
         config.m_stream = false;
         MockOutput out;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
-        agent->setOutput(&out);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
+        agent.setOutput(&out);
         // 分册 2 块 1：⏹/Warn 迁适配器——render 版适配器断言
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
@@ -915,7 +952,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         })");
 
         std::string result;
-        std::thread runner([&] { result = agent->runTurn("go"); });
+        std::thread runner([&] { result = agent.runTurn("go"); });
         std::this_thread::sleep_for(std::chrono::milliseconds(150));  // handler 执行中
         out.fireInterrupt();
         runner.join();
@@ -967,7 +1004,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         // 第一轮：无 todo 操作 → turn 行无 todos 字段
         s.pushStop("第一答");
-        s.agent->runTurn("第一问");
+        s.agent.runTurn("第一问");
         expect(s.agent->appendTurnLine() == path);
 
         auto lines = VSetup::readLines(path);
@@ -984,7 +1021,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         s.agent->setTodos({{"1", "任务1", "completed"}, {"2", "任务2", "pending"}});
         s.agent->markTodosDirty();
         s.pushStop("第二答");
-        s.agent->runTurn("第二问");
+        s.agent.runTurn("第二问");
         s.agent->appendTurnLine();
 
         lines = VSetup::readLines(path);
@@ -995,7 +1032,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         // m_todoDirty 已清除 → 第三轮（不碰 todo）无 todos 字段
         s.pushStop("第三答");
-        s.agent->runTurn("第三问");
+        s.agent.runTurn("第三问");
         s.agent->appendTurnLine();
         lines = VSetup::readLines(path);
         expect(!lines[3].contains("todos"));
@@ -1004,7 +1041,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
     "V2 T6 全完成收尾：complete 行 + emit 收尾行 + 面板置位"_test = [] {
         MockOutput out;   // 先于 VSetup 声明：逆序析构时 agent（s 成员）先死、out 后死
         VSetup s;
-        s.agent->setOutput(&out);
+        s.agent.setOutput(&out);
         // 分册 2 块 1：📋 收尾行迁适配器——render 版适配器断言
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
@@ -1014,7 +1051,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "completed"}});
 
         s.pushStop("总结");
-        s.agent->runTurn("完成吧");
+        s.agent.runTurn("完成吧");
         s.agent->appendTurnLine();
         bus.drainAll();   // 事件 → 适配器渲染 → MockOutput
 
@@ -1041,12 +1078,12 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
     "V2b 非全完成不触发收尾 + 中断残留补收尾"_test = [] {
         MockOutput out;   // 先于 VSetup 声明（析构顺序：agent 先、out 后）
         VSetup s;
-        s.agent->setOutput(&out);
+        s.agent.setOutput(&out);
         s.agent->beginSessionFile("任务会话");
         s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "pending"}});
 
         s.pushStop("未完成");
-        s.agent->runTurn("继续");
+        s.agent.runTurn("继续");
         s.agent->appendTurnLine();
 
         expect(!s.agent->isTodoPanelDone());   // 面板保留
@@ -1058,7 +1095,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         // 中断残留场景（§八 补丁 5）：清单变全✓但上一轮未收尾 → 本轮完成分支补收尾
         s.agent->setTodos({{"1", "任务A", "completed"}, {"2", "任务B", "completed"}});
         s.pushStop("再来");
-        s.agent->runTurn("再聊一轮");
+        s.agent.runTurn("再聊一轮");
         s.agent->appendTurnLine();
         expect(s.agent->isTodoPanelDone());
     };
@@ -1148,7 +1185,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         // 源文件冻结不变（续写后的轮次只写续文件）
         s.pushStop("续答");
-        s.agent->runTurn("续问");
+        s.agent.runTurn("续问");
         s.agent->appendTurnLine();
         expect(VSetup::readLines(srcPath).size() == 2_ul);       // 源文件仍 2 行
         expect(VSetup::readLines(contPath).size() == 3_ul);      // 续文件 +1 行
@@ -1165,7 +1202,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config.m_contextCompression = true;
         config.m_maxContextWindow   = 100;
         config.m_autoSummaryThreshold = 4000;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
         expect(agent->shouldSummarize());
 
         // 开关关 → 恒 false（阈值不生效）
@@ -1173,7 +1210,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config2.m_apiKey = "k";
         config2.m_contextCompression = false;
         config2.m_maxContextWindow   = 100;
-        auto agent2 = std::make_unique<CLFAgentLoop>(config2, mock);
+        auto agent2 = harnessFrom(std::make_unique<CLFAgentLoop>(config2, mock));
         expect(!agent2->shouldSummarize());
 
         // 开关开 + 超大窗口 → false
@@ -1181,7 +1218,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         config3.m_apiKey = "k";
         config3.m_contextCompression = true;
         config3.m_maxContextWindow   = 1048576;
-        auto agent3 = std::make_unique<CLFAgentLoop>(config3, mock);
+        auto agent3 = harnessFrom(std::make_unique<CLFAgentLoop>(config3, mock));
         expect(!agent3->shouldSummarize());
     };
 
@@ -1190,7 +1227,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         CLFAgentConfig config;
         config.m_apiKey = "k";
         config.m_modelMaxTokens = {{"deepseek-v4-pro", 65536}, {"other-model", 4096}};
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
 
         agent->setModelName("deepseek-v4-pro");
         expect(agent->getConfig().m_modelName == std::string("deepseek-v4-pro"));
@@ -1209,7 +1246,7 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         CLFAgentConfig config;
         config.m_apiKey = "k";
         config.m_contextCompression = false;
-        auto agent = std::make_unique<CLFAgentLoop>(config, mock);
+        auto agent = harnessFrom(std::make_unique<CLFAgentLoop>(config, mock));
 
         const std::string r = agent->compressContextNow();
         expect(r.find("已关闭") != std::string::npos);
@@ -1226,8 +1263,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock);
         registerConcludeTool(*agent);
-        agent->setOutput(&out);
-        std::string result = agent->runTurn("go");
+        agent.setOutput(&out);
+        std::string result = agent.runTurn("go");
 
         expect(mock->syncCallCount() == 2);   // 工具轮 + 最终响应轮
         expect(result.find("已收到") != std::string::npos);
@@ -1242,8 +1279,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock);
         registerConcludeTool(*agent);
-        agent->setOutput(&out);
-        std::string result = agent->runTurn("go");
+        agent.setOutput(&out);
+        std::string result = agent.runTurn("go");
 
         expect(mock->syncCallCount() == 2);   // 丢弃后无第 3 次请求（若执行了 echo 会 continue）
         expect(result.find("我再查一下") != std::string::npos);
@@ -1258,13 +1295,13 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 2);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
         // 分册 2 块 1：触顶提示文案迁适配器——render 版适配器断言
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
         CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
         agent->setEventBus(&bus);
-        std::string result = agent->runTurn("大任务");
+        std::string result = agent.runTurn("大任务");
         bus.drainAll();
 
         expect(mock->syncCallCount() == 3);   // 2 工具轮 + 1 收尾请求
@@ -1286,13 +1323,13 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 1);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
         // 分册 2 块 1：触顶提示文案迁适配器
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
         CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
         agent->setEventBus(&bus);
-        std::string result = agent->runTurn("go");   // 不抛 = 独立 try/catch 兜住
+        std::string result = agent.runTurn("go");   // 不抛 = 独立 try/catch 兜住
         bus.drainAll();
 
         expect(result.find("已达工具调用上限") == std::string::npos);  // 出返回
@@ -1309,8 +1346,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
-        std::string result = agent->runTurn("go");
+        agent.setOutput(&out);
+        std::string result = agent.runTurn("go");
 
         expect(result.find("部分内容") != std::string::npos);   // 保留不回滚
         expect(out.kinds.back() == CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
@@ -1324,8 +1361,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock);
         registerConcludeTool(*agent);
-        agent->setOutput(&out);
-        std::string result = agent->runTurn("go");
+        agent.setOutput(&out);
+        std::string result = agent.runTurn("go");
 
         expect(mock->syncCallCount() == 2);
         // 分册 2 块 1：✻ worked 行出 finalContent（适配器渲染）——concluded
@@ -1341,8 +1378,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         MockOutput out;
         auto agent = makeAgent(mock);
-        agent->setOutput(&out);
-        std::string result = agent->runTurn("go");
+        agent.setOutput(&out);
+        std::string result = agent.runTurn("go");
 
         expect(mock->syncCallCount() == 2);   // 不强制收尾：执行工具继续
         expect(result.find("继续后完成") != std::string::npos);
@@ -1363,8 +1400,8 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
         MockOutput out;
         auto agent = makeAgent(mock);
         registerConcludeTool(*agent);
-        agent->setOutput(&out);
-        std::string result = agent->runTurn("go");
+        agent.setOutput(&out);
+        std::string result = agent.runTurn("go");
 
         expect(mock->syncCallCount() == 2);
         expect(result.find("两工具都执行") != std::string::npos);
@@ -1394,13 +1431,13 @@ const boost::ut::suite<"CLFAgentLoop"> tests = [] {
 
         MockOutput out;
         auto agent = makeAgent(mock, "edit", 2, /*stream=*/true);
-        agent->setOutput(&out);
+        agent.setOutput(&out);
         // 分册 2 块 1：触顶提示文案迁适配器——render 版适配器断言
         CLF::CLFTypes::CLFEventBus bus(false);
         CLF::CLFCore::CLFTimerLabels labels;
         CLF::CLFTUI::CLFTerminalEventAdapter adapter(&bus, &out, &labels, true);
         agent->setEventBus(&bus);
-        std::string result = agent->runTurn("大任务");
+        std::string result = agent.runTurn("大任务");
         bus.drainAll();
 
         expect(mock->streamCallCount() == 2);   // 主循环流式

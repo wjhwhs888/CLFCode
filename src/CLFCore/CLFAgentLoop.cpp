@@ -206,13 +206,14 @@ std::string CLFAgentLoop::runTurn(const std::string& userInput) {
 
         } catch (const std::exception& e) {
             if (++consecutiveErrors >= CLFRetryPolicy::kMaxRetries) {
-                if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+                emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
                 return std::string("[Error] Exception: ") + e.what();
             }
-            if (m_output) m_output->emitContent(
-                "\n✗ Exception: " + std::string(e.what())
+            // 分册 4：重试文案事件化（TurnError）
+            emitTurnError("\n✗ Exception: " + std::string(e.what())
                 + " — retry " + std::to_string(consecutiveErrors)
-                + "/" + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n");
+                + "/" + std::to_string(CLFRetryPolicy::kMaxRetries) + "\n",
+                false);
             // 可中断等待
             for (int w = 0; w < 20 && !m_interrupted; ++w)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -250,7 +251,7 @@ bool CLFAgentLoop::prepareTurn(const std::string& userInput) {
         m_eventBus->publish(ev);
     }
     m_interrupted = false;  // 新 turn 开始时重置中断标志
-    if (m_output) m_output->clearThinking();  // 清空上一轮推理内容
+    // 清空上一轮推理内容——分册 4：事件化（ThinkingCleared 已发，适配器渲染）
     if (m_eventBus) {
         CLF::CLFTypes::CLFAgentEvent ev;
         ev.m_type = CLF::CLFTypes::CLFEventType::ThinkingCleared;
@@ -292,17 +293,8 @@ bool CLFAgentLoop::prepareTurn(const std::string& userInput) {
     // API 调用的 usage 之和；触顶 wrapUp 在 summary 显示之后累加、计入
     // 下一轮，与累计生命周期一致）
     m_turnStartTokens = m_totalTokensUsed;
-    // P1-1: 状态点接线——Running 于 turn 开始
-    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
-    // 事件化重构步骤 2：StatusChanged 双轨发射
-    if (m_eventBus) {
-        CLF::CLFTypes::CLFAgentEvent ev;
-        ev.m_type = CLF::CLFTypes::CLFEventType::StatusChanged;
-        ev.m_turnId = m_currentTurnId;
-        ev.m_statusKind =
-            static_cast<int>(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
-        m_eventBus->publish(ev);
-    }
+    // P1-1: 状态点接线——Running 于 turn 开始（分册 4：事件化——emitStatus）
+    emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Running);
     return true;
 }
 
@@ -377,7 +369,8 @@ std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
     // 顺序：总结文本 → ✻ worked（分册 2 块 1 迁适配器 §3.2.1）。触顶提示
     // 文案同迁（适配器按 TurnFinished.capReached 渲染）——finalContent 纯净
     // P1-1: 迭代上限——任务未完成语义，Warn（对齐 dsh max-tokens=warning）
-    if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
+    // 分册 4：状态点事件化（emitStatus）
+    emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Warn);
     // 事件化重构步骤 2：TurnFinished 双轨发射（触顶路径——capReached 标志）
     // 分册 2：m_text = finalContent（落库数据源——writer 据此重建 assistant 消息）
     if (m_eventBus) {
@@ -389,6 +382,9 @@ std::string CLFAgentLoop::runWrapUp(std::string& finalContent,
             std::chrono::steady_clock::now() - turnStart).count();
         ev.m_todos = m_todoStore.getTodos();
         ev.m_capReached = true;
+        // 分册 4：wrapUp 内容渲染条件（原 647 直调：仅 stream 时显示——
+        // 同步路径内容由 runTurn 返回给 UI 层）
+        ev.m_emitText = m_config.m_stream;
         m_eventBus->publish(ev);
     }
     return m_config.m_stream ? std::string() : finalContent;
@@ -430,8 +426,8 @@ CLFAgentLoop::TurnRequestResult CLFAgentLoop::streamRequest(const std::string& b
 
     // 错误处理
     if (hadError) {
-        if (m_output) m_output->emitError("Stream error: " + errorMsg);
-        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        emitTurnError("Stream error: " + errorMsg, true);
+        emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
         return {TurnRequestResult::Action::ReturnError, errorMsg, {}};
     }
     if (interrupted || m_interrupted) {
@@ -495,8 +491,7 @@ void CLFAgentLoop::handleStreamDelta(const std::string& line, CLFStreamAccumulat
                 std::string chunk = acc.feedDelta(choice["delta"]);
                 if (!chunk.empty()) {
                     if (firstContent) { thinking.stop(); firstContent = false; }
-                    if (m_output) m_output->emitContent(chunk);
-                    // 事件化重构步骤 2：ContentDelta 双轨发射
+                    // 分册 4：内容渲染切轨——只发事件（适配器渲染）
                     if (m_eventBus) {
                         CLF::CLFTypes::CLFAgentEvent ev;
                         ev.m_type = CLF::CLFTypes::CLFEventType::ContentDelta;
@@ -507,12 +502,10 @@ void CLFAgentLoop::handleStreamDelta(const std::string& line, CLFStreamAccumulat
                 }
                 // 推理过程 → 独立通道（UI 层 Ctrl+O 折叠/展开）
                 // 只追加上次检查后新增的推理内容（避免重复累积）
-                if (acc.hasReasoning() && m_output) {
+                // 分册 4：推理渲染切轨——只发事件（适配器渲染）
+                if (acc.hasReasoning()) {
                     const auto& reasoning = acc.getReasoning();
                     if (reasoning.size() > m_lastReasoningSize) {
-                        m_output->appendThinking(
-                            reasoning.substr(m_lastReasoningSize));
-                        // 事件化重构步骤 2：ReasoningDelta 双轨发射
                         if (m_eventBus) {
                             CLF::CLFTypes::CLFAgentEvent ev;
                             ev.m_type = CLF::CLFTypes::CLFEventType::ReasoningDelta;
@@ -568,7 +561,7 @@ CLFAgentLoop::TurnRequestResult CLFAgentLoop::finalizeResponse(CLFAssistantRespo
     accumulateUsage(parsed);
     // finish_reason 检查
     if (!CLFProtocolAdapter::isValidFinish(parsed)) {
-        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
         return {TurnRequestResult::Action::ReturnError,
                 "Unexpected finish_reason: '" + parsed.m_finishReason + "'", {}};
     }
@@ -643,8 +636,8 @@ bool CLFAgentLoop::requestWrapUpBody(std::string& finalContent) {
                 if (!finalContent.empty()) finalContent += "\n";
                 finalContent += wrapUp.m_content;
                 m_context.addMessage("assistant", wrapUp.m_content);
-                if (m_output && m_config.m_stream)
-                    m_output->emitContent(wrapUp.m_content + "\n");
+                // 分册 4：wrapUp 内容渲染切轨——TurnFinished.m_emitText
+                // 由适配器渲染（capReached && stream 条件 core 算好）
             }
         }
         // 失败（含 response.m_error 非空）→ 降级：收尾 user 消息保留在
@@ -730,7 +723,8 @@ std::string CLFAgentLoop::finishTurn(
     m_context.addMessage("assistant", finalContent);
     // P1-1: 完成点显式接线（TurnGuard 不设 kind，F20）；kind 由调用方按
     // 结束原因传入：自然停/concluded = Done，max-tokens = Warn（A5 §3.2.1）
-    if (m_output) m_output->setStatusKind(kind);
+    // 分册 4：状态点事件化（emitStatus——适配器渲染）
+    emitStatus(kind);
     // 事件化重构步骤 2：TurnFinished 双轨发射（自然停/concluded 路径）
     // 分册 2：m_text = finalContent（落库数据源——writer 据此重建 assistant 消息）
     if (m_eventBus) {
@@ -1000,20 +994,20 @@ bool CLFAgentLoop::restoreSession(const std::string& filePath) {
 CLFAgentLoop::HttpErrorAction CLFAgentLoop::handleHttpError(
     const std::string& error, int& consecutiveErrors) {
     if (CLFRetryPolicy::isFatalHttpError(error)) {
-        if (m_output) m_output->emitError(error);
-        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        emitTurnError(error, true);
+        emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
         return HttpErrorAction::ReturnError;
     }
     // 按错误类别定重试上限：其他 4xx = 2（重试 1 次即止）/ 429·5xx·网络 = 3
     const int maxAttempts = CLFRetryPolicy::maxAttemptsForError(error);
     if (++consecutiveErrors >= maxAttempts) {
-        if (m_output) m_output->setStatusKind(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
+        emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind::Error);
         return HttpErrorAction::ReturnTooMany;
     }
-    if (m_output) m_output->emitContent(
-        "\n⚠ " + error + " — retry "
+    emitTurnError("\n⚠ " + error + " — retry "
         + std::to_string(consecutiveErrors) + "/"
-        + std::to_string(maxAttempts) + "\n");
+        + std::to_string(maxAttempts) + "\n",
+        false);
     // ③ 可中断等待 (每 100ms 检查一次)
     for (int w = 0; w < 20 * consecutiveErrors && !m_interrupted; ++w)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -1035,6 +1029,31 @@ void CLFAgentLoop::emitInterrupted() {
         ev.m_turnId = m_currentTurnId;
         m_eventBus->publish(ev);
     }
+}
+
+// 分册 4 渲染切轨：状态点集中发射（只发事件——适配器渲染 setStatusKind；
+// 替代 7 处 m_output 直调。bus 为空 = 无订阅者场景（qa 未装配适配器时）
+// 状态点不显示——qa 已按切轨改造装配适配器）
+void CLFAgentLoop::emitStatus(CLF::CLFTypes::ICLFOutput::StatusKind kind) {
+    if (!m_eventBus) return;
+    CLF::CLFTypes::CLFAgentEvent ev;
+    ev.m_type = CLF::CLFTypes::CLFEventType::StatusChanged;
+    ev.m_turnId = m_currentTurnId;
+    ev.m_statusKind = static_cast<int>(kind);
+    m_eventBus->publish(ev);
+}
+
+// 分册 4 渲染切轨：回合内错误/重试文案发射（TurnError 事件）。
+// isErrorChannel = emitError 错误样式通道（Stream error/致命 HTTP）；
+// false = emitContent（✗ Exception retry / ⚠ retry——文案自带前缀换行）
+void CLFAgentLoop::emitTurnError(const std::string& text, bool isErrorChannel) {
+    if (!m_eventBus) return;
+    CLF::CLFTypes::CLFAgentEvent ev;
+    ev.m_type = CLF::CLFTypes::CLFEventType::TurnError;
+    ev.m_turnId = m_currentTurnId;
+    ev.m_text = text;
+    ev.m_isError = isErrorChannel;
+    m_eventBus->publish(ev);
 }
 
 void CLFAgentLoop::injectSystemPrompt() {

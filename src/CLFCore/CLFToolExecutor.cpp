@@ -52,52 +52,8 @@ std::string extractKeyParam(const std::string& argsJson) {
     return argsJson;
 }
 
-// ============================================================================
-// 格式化工具结果显示
-// ============================================================================
-
-struct ToolResultDisplay {
-    bool ok;
-    std::string text;
-    int lines = 0;
-    int chars = 0;
-};
-ToolResultDisplay formatToolResult(const std::string& resultJson) {
-    try {
-        auto r = nlohmann::json::parse(resultJson);
-        if (r.contains("exitCode")) {
-            int code = r["exitCode"].get<int>();
-            if (code == 0) return {true, "ok", 0, 0};
-            std::string detail;
-            if (r.contains("stderr") && !r["stderr"].get<std::string>().empty())
-                detail = r["stderr"].get<std::string>();
-            else if (r.contains("stdout") && !r["stdout"].get<std::string>().empty())
-                detail = r["stdout"].get<std::string>();
-            if (detail.size() > 80) detail = CLFTextUtil::utf8SafeHead(detail, 77, "...");  // A2
-            return {false, detail.empty() ? ("exit " + std::to_string(code)) : detail, 0, 0};
-        }
-        bool success = r.value("success", true);
-        if (!success) {
-            std::string err = r.value("error", std::string("failed"));
-            return {false, err, 0, 0};
-        }
-        if (r.contains("content") && r["content"].is_string()) {
-            const auto& c = r["content"].get<std::string>();
-            int lines = 1;
-            for (char ch : c) if (ch == '\n') ++lines;
-            return {true, std::to_string(lines) + " lines, " + std::to_string(c.size()) + " chars", lines, static_cast<int>(c.size())};
-        }
-        if (r.contains("stdout") && r["stdout"].is_string()) {
-            const auto& out = r["stdout"].get<std::string>();
-            int lines = 1;
-            for (char ch : out) if (ch == '\n') ++lines;
-            return {true, std::to_string(lines) + " lines", lines, static_cast<int>(out.size())};
-        }
-        return {true, std::to_string(resultJson.size()) + " chars", 0, static_cast<int>(resultJson.size())};
-    } catch (...) {
-        return {true, std::to_string(resultJson.size()) + " chars", 0, static_cast<int>(resultJson.size())};
-    }
-}
+// formatToolResult/ToolResultDisplay 已上提 CLFTextUtil（分册 4 渲染切轨——
+// 适配器与 core 同函数重算 ✓/✗ 行，单点维护防口径漂移）
 
 // ============================================================================
 // Diff 预览相关结构
@@ -227,29 +183,31 @@ WritePreview prepareWritePreview(CLF::CLFPluginApi::ICLFFileService* fileService
 }
 
 // ============================================================================
-// renderDiff — 将结构化 diff 逐行 emit 到内容通道（带样式；C3 窄化）
+// buildDiffLines — 构建 diff 渲染行列表（分册 4 渲染切轨：原 renderDiff 的
+// 条目构建 + 截断——直调发射移除，行列表经 DiffPreview 事件传适配器）
 // ============================================================================
 
-void renderDiff(CLF::CLFTypes::ICLFContentOutput* output, const WritePreview& preview) {
+std::vector<std::pair<std::string, int>> buildDiffLines(const WritePreview& preview) {
     const auto& diff  = preview.diffLines;
     const auto& stats = preview.diffStats;
     using LS = CLF::CLFTypes::ICLFContentOutput::LineStyle;
+    std::vector<std::pair<std::string, int>> lines;
 
-    if (diff.empty() && !stats.truncated) return;
+    if (diff.empty() && !stats.truncated) return lines;
 
     // 摘要行
     if (stats.truncated) {
-        output->emitStyledLine("  ⎿  " + stats.truncReason, LS::Context);
+        lines.push_back({"  ⎿  " + stats.truncReason, static_cast<int>(LS::Context)});
     } else if (stats.added + stats.removed > 0) {
         std::string info = "  ⎿  +" + std::to_string(stats.added)
                          + " -" + std::to_string(stats.removed);
         if (stats.hunks > 0)
             info += " in " + std::to_string(stats.hunks) + " hunk" + (stats.hunks > 1 ? "s" : "");
-        output->emitStyledLine(info, LS::Context);
+        lines.push_back({info, static_cast<int>(LS::Context)});
     }
 
-    if (stats.truncated && diff.empty()) return;
-    if (diff.empty()) return;
+    if (stats.truncated && diff.empty()) return lines;
+    if (diff.empty()) return lines;
 
     // 第一遍：标记 hunk 边界
     int total = static_cast<int>(diff.size());
@@ -349,8 +307,10 @@ void renderDiff(CLF::CLFTypes::ICLFContentOutput* output, const WritePreview& pr
         entries = headTailCapWithMarker(
             entries, RenderEntry{"  … 其余 " + std::to_string(omitted) + " 行", LS::Context});
     }
+    // 分册 4：行列表产出（style 数值化——协议用数值，适配器各自映射）
     for (const auto& e : entries)
-        output->emitStyledLine(e.text, e.style);
+        lines.push_back({e.text, static_cast<int>(e.style)});
+    return lines;
 }
 
 } // anonymous namespace
@@ -464,7 +424,8 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
 
     // 中断检查（§3.5 检查点：fillPool 启动前 + prepare 内）
     if (isInterrupted()) {
-        if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⏹ 已中断\n");
+        // 分册 4：中断行移除直调（准死代码——fillPool 前置检查拦截；
+        // 回合中断观感由 Interrupted 事件渲染覆盖）
         out.kind = PrepareOutcome::Kind::Aborted;
         return out;
     }
@@ -474,16 +435,6 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
     if (!pc.keyParam.empty()) {
         header += "(" + pc.keyParam + ")";
     }
-    // 事件化重构步骤 2：ToolStarted 双轨发射（查找前——not_found 也发，
-    // 与现状一致）
-    if (m_eventBus) {
-        CLF::CLFTypes::CLFAgentEvent ev;
-        ev.m_type = CLF::CLFTypes::CLFEventType::ToolStarted;
-        ev.m_callId = call.m_id;
-        ev.m_name = call.m_name;
-        ev.m_argsPreview = pc.keyParam;
-        m_eventBus->publish(ev);
-    }
 
     // B1：工具查找前置（能力标签判定需 it；语义微调——不存在的工具不再计入统计，
     // 原名字匹配在查找前会误计幻觉工具名，B1 定案记录）
@@ -491,22 +442,25 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
         [&](const CLFTool& t) { return t.m_name == call.m_name; });
 
     if (it == m_tools.end()) {
+        // 分册 4：ToolStarted 事件化发射（not_found 也发——E1 配对纪律；
+        // showHeader=false——header 行不显示，与现状一致：unknown 前无 header）
+        emitToolStarted(call, pc.keyParam, false);
         out.kind = PrepareOutcome::Kind::Fallback;
         out.fallback.m_toolCallId = call.m_id;
         out.fallback.m_name = call.m_name;
         out.fallback.m_content = std::string("Tool not found: ") + call.m_name;
         out.errorKind = "not_found";
-        if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ unknown\n");
+        out.displayError = "  ⎿ ✗ unknown\n";
         return out;
     }
 
     pc.toolIndex = static_cast<size_t>(it - m_tools.begin());
     const CLFTool& tool = *it;
     pc.useProgressive = (m_labels && m_thinkingSec);
-    // 渐进模式下非写类工具不发射永久内容（由 showProgress 替代）
-    // B1：名字匹配 → m_risk == Write（风险级即能力声明）
-    if (m_contentOutput && (!pc.useProgressive || tool.m_risk == CLFToolRisk::Write))
-        m_contentOutput->emitContent("\n" + header + "\n");
+    // 分册 4：ToolStarted 事件化发射（header 条件 core 算好——非渐进 ||
+    // Write 显示 header，与现状 emitContent 条件逐字一致）
+    emitToolStarted(call, pc.keyParam,
+                    !pc.useProgressive || tool.m_risk == CLFToolRisk::Write);
 
     // 统计（B1：名字匹配 → 能力标签；口径 B1-4：read 桶含 list_directory。
     // prepare 串行闸门内执行——§3.4 天然串行安全；与现状"查找成功后计数"
@@ -524,7 +478,7 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
                          + m_securityPolicy.getModeName()
                          + ")] 当前模式禁止执行该操作。";
         out.errorKind = "permission";
-        if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ blocked\n");
+        out.displayError = "  ⎿ ✗ blocked\n";
         return out;
     }
 
@@ -541,7 +495,8 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
         }
         if (m_securityPolicy.isDangerousCommand(cmdText)) {
             needConfirm = true;
-            if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ 命中危险命令模式，需确认\n");
+            // 分册 4：⚠ 行事件化（随 ToolFinished——渲染序 ⚠ → ✗/✓）
+            out.warningText = "  ⎿ ⚠ 命中危险命令模式，需确认\n";
         }
     }
 
@@ -557,7 +512,7 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
                            [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
             if (method == "POST") {
                 needConfirm = true;
-                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ⚠ POST 请求有远端副作用，需确认\n");
+                out.warningText = "  ⎿ ⚠ POST 请求有远端副作用，需确认\n";
             }
         } catch (...) {
             // 参数解析失败：按默认 GET 处理，不额外升级
@@ -581,9 +536,7 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
             out.fallback.m_name = call.m_name;
             out.fallback.m_content = preview.errorMsg;
             out.errorKind = "";
-            if (m_contentOutput) {
-                m_contentOutput->emitContent("  ⎿ ✗ " + preview.errorMsg + "\n");
-            }
+            out.displayError = "  ⎿ ✗ " + preview.errorMsg + "\n";
             return out;
         }
 
@@ -595,19 +548,22 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
             out.fallback.m_content = "File too large to preview diff. "
                                "Use Auto mode.";
             out.errorKind = "";
-            if (m_contentOutput) {
-                m_contentOutput->emitContent("  ⎿ ✗ File too large to preview diff. "
-                                      "Use Auto mode.\n");
-            }
+            out.displayError = "  ⎿ ✗ File too large to preview diff. "
+                               "Use Auto mode.\n";
             return out;
         }
 
-        // --- Step 3: 渲染 diff 预览 ---
-        if (m_contentOutput) {
-            renderDiff(m_contentOutput, preview);
-            // 保证刷新
-            m_contentOutput->emitContent("");
-        }
+        // 预览摘要抄入 pc（finalize 的 diff 行显示 + DiffPreview 事件用）
+        pc.previewFilePath = preview.filePath;
+        pc.previewHasDiffLines = !preview.diffLines.empty();
+        pc.previewDiffTruncated = preview.diffStats.truncated;
+        pc.previewAdded = preview.diffStats.added;
+        pc.previewRemoved = preview.diffStats.removed;
+        pc.previewHunks = preview.diffStats.hunks;
+
+        // --- Step 3: 渲染 diff 预览（分册 4 事件化：行列表 → DiffPreview） ---
+        pc.previewDiffLines = buildDiffLines(preview);
+        emitDiffPreview(pc);
 
         // --- Step 4: 模式分流 ---
         if (needConfirm && m_confirmCallback) {
@@ -619,7 +575,7 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
                 out.fallback.m_name = call.m_name;
                 out.fallback.m_content = "[Denied by user] 用户拒绝了该操作。";
                 out.errorKind = "permission";
-                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
+                out.displayError = "  ⎿ ✗ denied\n";
                 // 中断检查留给调度器下一轮 fillPool（denied 结果照常提交，
                 // 剩余由调度器补"未执行"——与现状 denied+中断路径等价）
                 return out;
@@ -638,21 +594,10 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
                 out.fallback.m_name = call.m_name;
                 out.fallback.m_content = "File modified after preview. Please review again.";
                 out.errorKind = "";
-                if (m_contentOutput) {
-                    m_contentOutput->emitContent(
-                        "  ⎿ ✗ File modified after preview. Please review again.\n");
-                }
+                out.displayError = "  ⎿ ✗ File modified after preview. Please review again.\n";
                 return out;
             }
         }
-
-        // 预览摘要抄入 pc（finalize 的 diff 行显示用——TOCTOU/渲染已完成）
-        pc.previewFilePath = preview.filePath;
-        pc.previewHasDiffLines = !preview.diffLines.empty();
-        pc.previewDiffTruncated = preview.diffStats.truncated;
-        pc.previewAdded = preview.diffStats.added;
-        pc.previewRemoved = preview.diffStats.removed;
-        pc.previewHunks = preview.diffStats.hunks;
     } else {
         // 非 Write 类工具（execute_command 等 Command risk）的确认检查
         if (needConfirm && m_confirmCallback) {
@@ -664,7 +609,7 @@ CLFToolExecutor::PrepareOutcome CLFToolExecutor::prepare(
                 out.fallback.m_name = call.m_name;
                 out.fallback.m_content = "[Denied by user] 用户拒绝了该操作。";
                 out.errorKind = "permission";
-                if (m_contentOutput) m_contentOutput->emitContent("  ⎿ ✗ denied\n");
+                out.displayError = "  ⎿ ✗ denied\n";
                 return out;
             }
         }
@@ -725,20 +670,21 @@ CLFToolExecutor::RunOutcome CLFToolExecutor::run(
     return out;
 }
 
-// finalize — 提交游标内（模型序串行）：结果格式化 + ✓/✗ 行 + 统计/
-// 详情行 + ToolFinished 事件。Fallback 结果不经 run（prepare 合成），
-// ok 恒 true——不触发失败静默（denied/blocked 非 handler 失败，后续
-// 照常——现状语义）。
+// finalize — 提交游标内（模型序串行）：结果格式化 + 统计/详情行 +
+// ToolFinished 事件（✓/✗ 行全文 core 拼好——displayResult）。Fallback
+// 结果不经 run（prepare 合成），ok 恒 true——不触发失败静默（denied/
+// blocked 非 handler 失败，后续照常——现状语义）。
 CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
     const CLFToolCall& call, const PreparedCall& pc, RunOutcome&& raw,
-    bool isFallback, const std::string& errorKind) {
+    bool isFallback, const std::string& errorKind,
+    const std::string& displayError, const std::string& warningText) {
     FinalizeOutcome out;
     out.result = std::move(raw.result);
 
     if (isFallback) {
-        // 合成失败：UI 行已在 prepare 输出（✗ unknown/blocked/denied），
-        // 此处只发 ToolFinished + 提交
-        emitToolFinished(out.result, false, errorKind);
+        // 分册 4：✗ 行全文随事件（prepare 拼好——displayError）；渲染序
+        // ⚠ → ✗ 由适配器按字段序直显
+        emitToolFinished(out.result, false, errorKind, "", displayError, warningText);
     } else {
         const CLFTool& tool = m_tools[pc.toolIndex];
         // ok/展示文本已在 run 内判定（settle 时信号——调度器 fail-fast）
@@ -749,41 +695,43 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
             + ", result=" + std::to_string(out.result.m_content.size()) + " chars");
         out.ok = toolOk;
 
+        // 分册 4：✓/✗ 行全文 core 拼好（原 emitContent 段逐字搬移——
+        // displayResult；空 = 不显示（渐进读工具成功仅进度条））。
         // F10: 失败（!toolOk）也必须进永久内容——读工具失败的可见性
-        // （useProgressive 沿用 prepare 判定）
-        if (m_contentOutput && (!pc.useProgressive || pc.isWriteTool || !toolOk)) {
+        std::string displayResult;
+        if (!pc.useProgressive || pc.isWriteTool || !toolOk) {
             // 渐进模式下仅写类工具/失败走永久内容；读类工具成功仅 showProgress
             if (pc.isWriteTool && pc.previewHasDiffLines) {
                 if (pc.previewAdded + pc.previewRemoved > 0 && !pc.previewDiffTruncated) {
-                    m_contentOutput->emitContent(
+                    displayResult =
                         "  ✓ " + call.m_name + "(" + pc.previewFilePath
                         + ") — +" + std::to_string(pc.previewAdded)
                         + " -" + std::to_string(pc.previewRemoved) + " lines"
                         + ", " + std::to_string(pc.previewHunks) + " hunk"
-                        + (pc.previewHunks > 1 ? "s" : "") + "\n");
+                        + (pc.previewHunks > 1 ? "s" : "") + "\n";
                 } else if (pc.previewDiffTruncated) {
-                    m_contentOutput->emitContent(
+                    displayResult =
                         "  ✓ " + call.m_name + "(" + pc.previewFilePath
-                        + ") — written (diff truncated)\n");
+                        + ") — written (diff truncated)\n";
                 } else {
-                    m_contentOutput->emitContent(
+                    displayResult =
                         "  ✓ " + call.m_name + "(" + pc.previewFilePath
-                        + ") — written\n");
+                        + ") — written\n";
                 }
             } else if (toolOk && toolResultText.size() <= 200) {
-                m_contentOutput->emitContent("  ✓ " + call.m_name
-                    + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")") + "\n");
+                displayResult = "  ✓ " + call.m_name
+                    + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")") + "\n";
             } else if (toolOk) {
-                m_contentOutput->emitContent("  ✓ " + call.m_name
+                displayResult = "  ✓ " + call.m_name
                     + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")")
                     + " — " + std::to_string(raw.resultLines) + " lines, "
-                    + std::to_string(raw.resultChars) + " chars\n");
+                    + std::to_string(raw.resultChars) + " chars\n";
             } else {
                 auto reason = toolResultText.size() > 100
                     ? toolResultText.substr(0, 100) + "…" : toolResultText;
-                m_contentOutput->emitContent("  ✗ " + call.m_name
+                displayResult = "  ✗ " + call.m_name
                     + (pc.keyParam.empty() ? "" : "(" + pc.keyParam + ")")
-                    + " — " + reason + " (scroll for full detail)\n");
+                    + " — " + reason + " (scroll for full detail)\n";
             }
         }
 
@@ -808,8 +756,8 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
         }
 
         // ToolFinished（errorKind 为空——handler 路径的失败/成功由 ok 表达；
-        // 与现状 emitFinished(result, toolOk, "") 一致）
-        emitToolFinished(out.result, toolOk, "");
+        // 分册 4：✓/✗ 行全文 + ⚠ 行随事件）
+        emitToolFinished(out.result, toolOk, "", displayResult, "", warningText);
     }
 
     // T3: 每次调用末刷新（设计-任务清单UI显示 §3.4）——todo_write 等状态类
@@ -819,8 +767,25 @@ CLFToolExecutor::FinalizeOutcome CLFToolExecutor::finalize(
     return out;
 }
 
+// 分册 4：ToolStarted 事件发射（prepare 内——header 条件 core 算好）
+void CLFToolExecutor::emitToolStarted(const CLFToolCall& call,
+                                      const std::string& keyParam,
+                                      bool showHeader) {
+    if (!m_eventBus) return;
+    CLF::CLFTypes::CLFAgentEvent ev;
+    ev.m_type = CLF::CLFTypes::CLFEventType::ToolStarted;
+    ev.m_callId = call.m_id;
+    ev.m_name = call.m_name;
+    ev.m_argsPreview = keyParam;
+    ev.m_showHeader = showHeader;
+    m_eventBus->publish(ev);
+}
+
 void CLFToolExecutor::emitToolFinished(const CLFToolResult& r, bool ok,
-                                       const std::string& errorKind) {
+                                       const std::string& errorKind,
+                                       const std::string& displayResult,
+                                       const std::string& displayError,
+                                       const std::string& warningText) {
     if (!m_eventBus) return;
     CLF::CLFTypes::CLFAgentEvent ev;
     ev.m_type = CLF::CLFTypes::CLFEventType::ToolFinished;
@@ -829,6 +794,24 @@ void CLFToolExecutor::emitToolFinished(const CLFToolResult& r, bool ok,
     ev.m_ok = ok;
     ev.m_summary = r.m_content;
     ev.m_errorKind = errorKind;
+    ev.m_displayResult = displayResult;
+    ev.m_displayError = displayError;
+    ev.m_warningText = warningText;
+    m_eventBus->publish(ev);
+}
+
+// 分册 4：DiffPreview 事件发射（prepare Write 路径——renderDiff 直调移除后；
+// 行列表 = buildDiffLines 的截断后最终条目，适配器逐条 emitStyledLine 重建）
+void CLFToolExecutor::emitDiffPreview(const PreparedCall& pc) {
+    if (!m_eventBus) return;
+    CLF::CLFTypes::CLFAgentEvent ev;
+    ev.m_type = CLF::CLFTypes::CLFEventType::DiffPreview;
+    ev.m_text = pc.previewFilePath;
+    ev.m_lines = pc.previewDiffLines;
+    ev.m_diffAdded = pc.previewAdded;
+    ev.m_diffRemoved = pc.previewRemoved;
+    ev.m_diffHunks = pc.previewHunks;
+    ev.m_diffTruncated = pc.previewDiffTruncated;
     m_eventBus->publish(ev);
 }
 

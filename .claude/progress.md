@@ -123,6 +123,14 @@
   - **▶▶ 用户本机实测验收通过 ✅✅（2026-10-14，7 点反馈全过）**：
     - ① 总体很好（前期分析/执行/纠错起大作用）② 渲染频率略缓但平滑（事件总线时序——意料之中，输出不再突然一大段）③ 工具执行/显示/反馈稳定（大文本长回复尤佳）；">xxx"不再作为输出自问自答——提交才触发提问的策略起效（v0.9.1 双保险 + 系统提示身份约束）④ **ESC 中断改观最大**：工具执行中立即中断（此前某些情况需等工具返回/模型制动）⑤ confirm 无异常流畅，多触发阻塞等待确认/取消起效 ⑥ 任务清单显示最佳形态：第 6 步进行中待用户确认输入后才更新、全部完成才总结 ⑦ 界面降噪更好：有效信息最多、既看过程又重结果
     - **下一步**：总纲剩余——ContentDelta/ToolFinished 渲染切轨 + Exception 迁移（双轨收敛）
+  - **▶ 渲染切轨与双轨收敛实施完成 ✅（2026-10-14，未提交）**（设计 `设计-事件化重构-4-渲染切轨与双轨收敛.md`——用户拍板：diff 预览事件化——新 UI 写文件确认依赖）：
+    - **协议**：+2 事件（TurnError 错误/重试文案通道、DiffPreview diff 渲染——全集 23）+ 补字段（showHeader/warningText/displayResult/displayError/emitText——core 拼好显示条件与全文，适配器零推断）
+    - **core 切轨**：AgentLoop 15 处直调 → 白名单 2 处（onInterrupt/requestRefresh）；emitStatus/emitTurnError 集中发射；Executor renderDiff → buildDiffLines + DiffPreview 事件；header/✗/⚠/✓ 行全文 core 拼随事件；formatToolResult 上提 CLFTextUtil
+    - **适配器**：8 类事件渲染启用（渲染序 ⚠ → ✗ → ✓/✗ 固定）
+    - **qa 装配**：三套件 wrapper 化（bus false 手动 + render 适配器 + drainAll）——qa_CLFAgentLoop 43 tests / 40145 asserts 全绿 = 逐字等价实证；A5 断言 4→5（Done 状态点事件化）
+    - **实抓**：qa 全组 exit=3 + Debug 弹窗（front() empty）——makeAgent 漏 setEventBus 致零事件（断言重定向定位——用完删）；修复后 45/45 三轮全绿 + 冒烟
+    - **偏差记录**：displayResult 全文 core 拼（替代适配器重算——TUI 文案原则例外）；warningText 移 ToolFinished（发射时危险判定未知）；中断行准死代码确认
+    - **待用户实机**：流式显示/工具行/错误提示/中断/进度条观感逐字对比
   - **待办（下一步）**：① **用户本机实测确认**（分册 3 全量：并行执行/ESC 中断/顺序回退 cap=1/确认串行——通过后进入下一步）② 总纲剩余：ContentDelta/ToolFinished 渲染切轨 + Exception 迁移（双轨收敛——流式渲染从 core 直调切总线）③ resume 回显（块 3）实机验收 ④ 占位册（跨进程协议与新 UI 接入——用户 Qt/HTML 后端服务化时激活）⑤ 失败静默"失败即停"调整（实机触发后再说，用户定调：一个参数的事）
   - **▶ 插入批：默认模式 auto + 计时进位显示 ✅（2026-10-14，未提交）**：用户两个小调整——① 代码默认 `m_securityMode` "edit"→"auto"（CLFTypes.hpp）+ 用户两个配置文件显式值同步（local 优先加载，两个都改）+ config/README 默认值文档 + qa L2 断言同步 ② 计时进位：StatusTimer（Working for）/ thought 摘要 / Thought 折叠块三处手写 `N + "s"` 统一改用现成 `formatDurationSeconds`（✻ worked 行本就用它，61s→"1m1s"）；验证 ctest 45/45 全绿（qa_CLFEventBus 并行偶发 flaky 单独重跑通过，与本次无关）+ --version 冒烟；CHANGELOG 未发布段已加两条
 

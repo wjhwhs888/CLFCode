@@ -157,8 +157,10 @@ const boost::ut::suite<"CLFTerminalEventAdapter"> tests = [] {
 
         const auto& got = adapter.received();
         // 同步路径事件全集：TurnStarted / ThinkingCleared（增量通道）/
-        // StatusChanged / TurnFinished——通道队列独立，交错序无保证，按集合断言
-        expect(got.size() == 4_u);
+        // StatusChanged / TurnFinished——通道队列独立，交错序无保证，按集合断言。
+        // 分册 4 切轨后 StatusChanged ×2（prepareTurn Running + finishTurn Done——
+        // 状态点全事件化）→ 5 个
+        expect(got.size() == 5_u);
         auto findOf = [&](CLFEventType t) {
             for (const auto& ev : got)
                 if (ev.m_type == t) return &ev;

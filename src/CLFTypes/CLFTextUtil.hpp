@@ -124,4 +124,20 @@ public:
     static int estimateTokensForMessage(const CLFMessage& msg);
 };
 
+// ============ 工具结果格式化（分册 4 上提，2026-10-14）============
+// 自 CLFToolExecutor.cpp 匿名命名空间上提——渲染切轨后适配器（TUI 层）
+// 与 core finalize 同函数重算 ✓/✗ 行（单点维护防口径漂移）。纯函数：
+// 解析工具结果 JSON → ok/展示文本/行数/字符数。
+// example:
+//   auto rd = formatToolResult(R"({"success":true,"content":"hi"})");
+//   // rd.ok == true, rd.text == "1 lines, 2 chars"
+
+struct CLFToolResultDisplay {
+    bool ok = true;
+    std::string text;
+    int lines = 0;
+    int chars = 0;
+};
+CLFToolResultDisplay formatToolResult(const std::string& resultJson);
+
 } // namespace CLF::CLFCore
