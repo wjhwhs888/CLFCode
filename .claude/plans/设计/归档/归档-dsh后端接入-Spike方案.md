@@ -1,6 +1,8 @@
 # 设计-dsh 后端接入 Spike 方案（M0）
 
-> 配套（dsh 参考目录，由 dsh Web 会话 agent 产出，仅作参考）：`dsh/设计-dsh后端接入-实现方案.md`（M0-M3 总方案）、`../分析/分析-dsh终端客户端接入.md`（背景与决策）、`../分析/dsh/dsh-python-sdk-jsonrpc-蓝本报告.md`（C++ 对译依据）
+> **归档注记（2026-10-14）**：Spike S0-S5 全部完成（go）——探测使命完成；后续决策 = **dsh 决策门挂起**（dsh 成熟度不足——2026-09-21 用户定调，实证见 memory dsh-decision-lean），结论已沉淀入 `设计-阶段3-第三方集成插件式方案.md` 与 `设计/dsh/`。本方案归档，激活阶段 3 时如需 Spike 结论回查本档。
+
+> 配套（dsh 参考目录，由 dsh Web 会话 agent 产出，仅作参考）：`dsh/设计-dsh后端接入-实现方案.md`（M0-M3 总方案）、`../分析/dsh/dsh-python-sdk-jsonrpc-蓝本报告.md`（C++ 对译依据）
 
 ## 结论先行
 

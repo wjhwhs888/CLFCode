@@ -1,5 +1,7 @@
 # 问题-CLFCode 终端作为 deepseek-harness 客户端接入
 
+> **废弃注记（2026-10-14）**：本文档方向（CLFCode 终端作为 dsh 客户端）已被阶段 3 决策门取代——dsh 成熟度不足（决策门挂起），相关现状资料以 `分析-dsh沙箱机制.md` 与 `设计/dsh/` 为准。本文档保留为历史问题分析。
+
 ## 背景与目标
 
 deepseek-harness（`dsh`，DeepSeek AI 开源）是"一切皆插件"的 agent 框架（TS/pnpm monorepo，约 200 包）。咱们的 FTXUI 终端是其缺位的内置形态之一（它内置 web/headless 两个 profile，无终端 REPL）。
