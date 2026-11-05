@@ -2,6 +2,15 @@
 
 ## 进行中
 
+### ▶ Subagent：机制调研与排期（2026-11-05，实施顺序待用户拍板）
+- **排期【已定】**：多模态图片输入先行；subagent 后置。多模态设计下一步做详细分析（修正 + 补充 + 需拍板项一起讨论）
+- **调研（Claude Code CLI 实证）**：后台 subagent 完成会**自动唤醒**父级开新轮（idle）/ 折叠进在途请求（running）；结果以 user 角色 `<task-notification>` 合成消息到达（`origin.kind`）；前台模式阻塞到子 agent 结束；ESC 杀回合内在途子 agent，Ctrl+B 转后台，双击 Ctrl+C/ESC 杀全部
+- **分析文档需修订**：`分析/分析-subagent机制与实现要点.md` §3「终端 CLI 不做自动唤醒」不成立（Claude Code 就是自动唤醒）；§7「handler 绝对不能等」需限定为 CLFCode/dsh 调度器约束，非普适结论
+- **代码落地 6 处硬缺口**（已逐条核代码）：`setOutput(nullptr)` 空指针 / 无公开中断入口 / `prepareTurn` 吞掉预取消 / 结果注入不落库（`TurnStarted.text` 是 user 消息唯一来源）/ 子 agent confirm 路径未设计 / `runTurn` 返回累积文本且靠字符串前缀判三态
+- **实现顺序【已定】**：共享异步任务底座（注册表 + 完成通知 + 唤醒 + 停止/崩溃标记）→ 后台 shell 命令（第一个消费者，**刚需，做完整**）→ subagent（第二个消费者）。依据：Claude Code 的 subagent / shell / monitor 共用同一任务通知通道
+- **用户拍板【已定】**：① 后台任务是刚需 ② 自动唤醒**默认开**，提供命令临时关闭（关闭后结果排队，用户下次输入时注入）③ 多模态同样先做详细分析再实施
+- **待拍板**：后台工具形态——用户倾向参数式（`execute_command` + `run_in_background`），pro 建议独立工具（结果契约单一性，见对话结论）；待用户定
+
 ### ▶ 修复：HTTP 415 重复 Content-Type 头 ✅（2026-11-05，未提交）
 - **用户报告**：截图 `测试/image/http-415-连接异常.png`——问"你是谁"即 415；询问是否与多模态有关
 - **结论：与多模态无关**——v0.10.0 无任何图片代码；根因在 HTTP 请求头
@@ -13,7 +22,7 @@
 - **验证**：ctest 46/46 全绿；真实 API 冒烟 `--prompt` 正常回复
 - **发布准备 ✅**：CHANGELOG 正式段 `v0.10.1 (2026-11-05)` + VERSION bump `v0.10.1`
 - **▶ v0.10.1 已发布 ✅（2026-11-05，用户执行 release.ps1）**：产物 `release/CLFCode-v0.10.1-win64.zip`
-- **待办**：源码改动尚未提交、tag v0.10.1 未打（待用户定）
+- **▶ 收尾 ✅（2026-11-05）**：源码提交 `50c2937` + master 双远端（Gitee/GitHub）推送；`v0.10.1` annotated tag 重指 `50c2937` 并强推覆盖（原平台在创建 release 时自动生成的 tag 指向旧提交 `9673fc7`，zip 本身由修复后源码构建，无需重新发布）
 
 ### ▶ 多模态图片输入（工具读图 + 软着陆）设计 v2 ✅ 出稿，待用户调研后拍板（2026-10-30）
 - **背景**：用户实机发现无法识别图片。取证确认非接口调用 bug，而是整条链路纯文本（`CLFMessage.m_content` 字符串 / `serializeMessage` 字符串 content / 全仓无 image_url·base64·vision / 输入与剪贴板仅文本 / readFile 按文本读 / 窗口与落库无图片概念）。上游 `deepseek-flash`（V4.1-Flash）原生支持图片，OpenAI 兼容 `image_url`
@@ -24,7 +33,7 @@
 - **用户拍板【已定】**：① 第一批入口 = **工具读图为主**（自然语言指路 + 模型自己找 + read_file 读图）② 持久化 = 路径引用 ③ 历史 = 最近 3 轮，更早文字占位 ④ 路径边界 = 沿用 read_file 工作区校验 ⑤ 能力 = 配置表 + `flash` 兜底 + `/vision on/off` 会话开关 ⑥ **软着陆跳过**——模型不支持/超限/失败一律不报错、不中断，模型自行重试或总结 ⑦ 限制 = 单图 10MiB / 4 张 / 总量 20MiB
 - **设计 v2 ✅**：`设计/设计-多模态图片输入.md`（顶部 ⚠ 口径变更 v1→v2：宿主自动附加→工具读图；前端拦截报错→软着陆跳过）
   - 新模块 `CLFImageInput`（魔数/base64/历史裁剪/请求预算）；`CLFImageRef` + `CLFMessage.m_images` + `CLFToolResult.m_images`；read_file 插件图片分支返回 images 路径引用；宿主 executor 能力门禁；协议 = tool 纯文本 + 追加 user 图片消息；发送层 400 降级重试；事件 ToolFinished/HistoryToolTrace + writer/replayer + 适配器占位渲染；`/vision` 命令；三个配置键
-- **待用户确认**：① 协议采用「tool 文本 + 追加 user 图片消息」保守方案 ② 会话开关默认 false（需 /vision on）③ 测试图片目录完整路径（未找到 `测试/image`）
+- **待用户确认**：① 协议采用「tool 文本 + 追加 user 图片消息」保守方案 ② 会话开关默认 false（需 /vision on）③ ✅ 测试图片已就位：`.claude/plans/测试/image/`（`dsh桌面端.png` 1.5MB / `http-415-连接异常.png` 35KB）
 - **待做（确认后）**：设计 §七 步骤 0-9——竖切取证（真实图片）→ 类型/配置 → CLFImageInput → read_file 图片分支 → 宿主注入 → 协议/历史/预算 → 落库恢复/适配器 → /vision → 测试/实机 → 文档归档
 
 ### ▶ 中断修复与平台收敛阶段性任务 ⏳ 审查完成、排期四波定稿（2026-09-23，待开工）
