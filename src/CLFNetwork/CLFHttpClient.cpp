@@ -45,9 +45,12 @@ CLFHttpResponse CLFHttpClient::postJson(const std::string& path, const std::stri
     }
     ActiveCliGuard guard(m_cliMutex, m_activeCli);
 
+    // Content-Type 只能由 Post 的 content_type 参数设置（唯一来源）：
+    // httplib 的 detail::set_header 是 unordered_multimap::emplace（无条件追加），
+    // headers 里再放一份会发出重复 Content-Type 头 → DeepSeek 网关
+    // 415 "Expected request with Content-Type: application/json"（2026-11-05 实抓）
     httplib::Headers headers = {
-        {"Authorization", "Bearer " + m_apiKey},
-        {"Content-Type", "application/json"}
+        {"Authorization", "Bearer " + m_apiKey}
     };
 
     auto res = cli->Post(path, headers, jsonBody, "application/json");
@@ -89,9 +92,10 @@ CLFHttpResponse CLFHttpClient::postJsonStream(
     }
     ActiveCliGuard guard(m_cliMutex, m_activeCli);
 
+    // 同 postJson：Content-Type 只由 Post 的 content_type 参数设置，
+    // headers 中重复设置会产生重复请求头（DeepSeek 网关 415 根因）
     httplib::Headers headers = {
-        {"Authorization", "Bearer " + m_apiKey},
-        {"Content-Type", "application/json"}
+        {"Authorization", "Bearer " + m_apiKey}
     };
 
     // SSE 行缓冲：网络 chunk 边界可能切开一行数据，需缓冲尾部跨块拼接

@@ -39,6 +39,15 @@ clf_add_test(qa_CLFTextUtil         clf_types)
 # —— clf_capabilities ——
 clf_add_test(qa_CLFFileOps          clf_capabilities)
 
+# —— clf_network ——
+# 请求头回归（2026-11-05 DeepSeek 415 实抓：重复 Content-Type）；
+# clf_network 的 OpenSSL/schannel 依赖照 qa_CLFAgentLoop 惯例显式传递
+if(WIN32)
+    clf_add_test(qa_CLFHttpClient   clf_network ${CLF_OPENSSL_LIBS} ws2_32 crypt32)
+else()
+    clf_add_test(qa_CLFHttpClient   clf_network ${CLF_OPENSSL_LIBS})
+endif()
+
 # —— clf_core ——
 clf_add_test(qa_CLFToolExecutor     clf_core clf_tui)
 clf_add_test(qa_CLFToolScheduler    clf_core)

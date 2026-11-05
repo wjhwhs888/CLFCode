@@ -2,6 +2,31 @@
 
 ## 进行中
 
+### ▶ 修复：HTTP 415 重复 Content-Type 头 ✅（2026-11-05，未提交）
+- **用户报告**：截图 `测试/image/http-415-连接异常.png`——问"你是谁"即 415；询问是否与多模态有关
+- **结论：与多模态无关**——v0.10.0 无任何图片代码；根因在 HTTP 请求头
+- **根因链（实测取证）**：`CLFHttpClient` 在 headers 中手动放了一份 `Content-Type`，`Post(path, headers, body, "application/json")` 的 content_type 参数又放一份；httplib 的 `detail::set_header` = `unordered_multimap::emplace`（无条件追加）→ 实际发出**两个** `Content-Type` 头。DeepSeek 网关（2026-11-03 起）对重复头返回 415，旧网关容忍
+  - curl 对照：单头 200 / 双头 415（`Expected request with Content-Type: application/json`）
+  - 真实复现：`CLFCode.exe --prompt "你是谁"` → `[Error] Too many errors: HTTP 415: Expected request with Content-Type: application/json`
+- **修复**：`CLFHttpClient` 的 postJson / postJsonStream 两处删除 headers 中手动 Content-Type（唯一来源 = Post 的 content_type 参数）
+- **回归钉**：新增 `qa_CLFHttpClient`（本地回环 httplib::Server 断言两条路径 Content-Type 头数量 == 1）；哨兵自证：临时加回重复头 → H1 FAIL exit=1，还原后 PASS
+- **验证**：ctest 46/46 全绿；真实 API 冒烟 `--prompt` 正常回复
+- **发布准备 ✅**：CHANGELOG 正式段 `v0.10.1 (2026-11-05)` + VERSION bump `v0.10.1`
+- **▶ v0.10.1 已发布 ✅（2026-11-05，用户执行 release.ps1）**：产物 `release/CLFCode-v0.10.1-win64.zip`
+- **待办**：源码改动尚未提交、tag v0.10.1 未打（待用户定）
+
+### ▶ 多模态图片输入（工具读图 + 软着陆）设计 v2 ✅ 出稿，待用户调研后拍板（2026-10-30）
+- **背景**：用户实机发现无法识别图片。取证确认非接口调用 bug，而是整条链路纯文本（`CLFMessage.m_content` 字符串 / `serializeMessage` 字符串 content / 全仓无 image_url·base64·vision / 输入与剪贴板仅文本 / readFile 按文本读 / 窗口与落库无图片概念）。上游 `deepseek-flash`（V4.1-Flash）原生支持图片，OpenAI 兼容 `image_url`
+- **调研产出 ✅**：`分析/分析-多模态图片输入机制调研.md`
+  - **dsh 源码**（E:\deepseek-harness）：模型能力 = 声明式 `inputModalities`（flash=text+image，pro 默认 text，无模型名分支）；读图入口 = `read_image` 工具（不支持时返回错误文本，不抛异常）；图片只允许 user 消息与 tool result；持久化 sha256 引用 + 内容寻址附件库；历史每轮重发 + 超预算持久化卸载最旧；切 text-only 模型历史图片静默降级文字占位
+  - **Claude Code**：粘贴/拖拽走 base64 inline；写路径不自动附加，由 `Read` 工具读图片；历史每轮重发，超限从最旧剥离重试；模型不支持时软失败（模型自行重试/总结，用户 flash/pro 实测）
+  - **DeepSeek 协议**：Chat Completions user 消息 `image_url` 明确支持；tool 消息 schema 允许但官方文档矛盾，实测 200；dsh 官方序列化保守——tool 保持纯文本、图片作为紧随其后的 user 消息注入
+- **用户拍板【已定】**：① 第一批入口 = **工具读图为主**（自然语言指路 + 模型自己找 + read_file 读图）② 持久化 = 路径引用 ③ 历史 = 最近 3 轮，更早文字占位 ④ 路径边界 = 沿用 read_file 工作区校验 ⑤ 能力 = 配置表 + `flash` 兜底 + `/vision on/off` 会话开关 ⑥ **软着陆跳过**——模型不支持/超限/失败一律不报错、不中断，模型自行重试或总结 ⑦ 限制 = 单图 10MiB / 4 张 / 总量 20MiB
+- **设计 v2 ✅**：`设计/设计-多模态图片输入.md`（顶部 ⚠ 口径变更 v1→v2：宿主自动附加→工具读图；前端拦截报错→软着陆跳过）
+  - 新模块 `CLFImageInput`（魔数/base64/历史裁剪/请求预算）；`CLFImageRef` + `CLFMessage.m_images` + `CLFToolResult.m_images`；read_file 插件图片分支返回 images 路径引用；宿主 executor 能力门禁；协议 = tool 纯文本 + 追加 user 图片消息；发送层 400 降级重试；事件 ToolFinished/HistoryToolTrace + writer/replayer + 适配器占位渲染；`/vision` 命令；三个配置键
+- **待用户确认**：① 协议采用「tool 文本 + 追加 user 图片消息」保守方案 ② 会话开关默认 false（需 /vision on）③ 测试图片目录完整路径（未找到 `测试/image`）
+- **待做（确认后）**：设计 §七 步骤 0-9——竖切取证（真实图片）→ 类型/配置 → CLFImageInput → read_file 图片分支 → 宿主注入 → 协议/历史/预算 → 落库恢复/适配器 → /vision → 测试/实机 → 文档归档
+
 ### ▶ 中断修复与平台收敛阶段性任务 ⏳ 审查完成、排期四波定稿（2026-09-23，待开工）
 - **背景**：用户与 flash 2026-09-22~23 头脑风暴产出四份设计文档，pro 按 `agent协作规范.md` v1.0（审查门开工前必填、证据高于结论）完成全量审查
 - **指导总纲**：`设计/设计-中断修复与平台收敛总排期.md`（本任务的唯一权威：审查门结论 + 排期四波 + 裁剪决策）
